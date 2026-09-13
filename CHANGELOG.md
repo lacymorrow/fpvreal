@@ -24,8 +24,6 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
 
 ## [Non publié]
 
-## [1.0.0] - 2026-09-13
-
 Première version publique. Le jeu existait déjà en 0.3.0 ; ce qui change ici,
 c'est qu'il est fait pour être rencontré par quelqu'un d'autre que son auteur.
 
@@ -1487,7 +1485,6 @@ Le détail, rubrique par rubrique.
   selftest borne famille par famille — ce qui est garanti pour les six, c'est
   que la moitié haute du cadre reste libre.
 
-[Non publié]: https://github.com/lionrayonnant/FPVThePlanet/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/lionrayonnant/FPVThePlanet/compare/v0.3.0...v1.0.0
+[Non publié]: https://github.com/lionrayonnant/FPVThePlanet/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/lionrayonnant/FPVThePlanet/compare/v0.1.0-beta...v0.3.0
 [0.1.0-beta]: https://github.com/lionrayonnant/FPVThePlanet/releases/tag/v0.1.0-beta
