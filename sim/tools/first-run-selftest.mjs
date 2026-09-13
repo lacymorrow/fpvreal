@@ -299,7 +299,7 @@ t('the default is unchanged: acro', () => {
 	assert.equal(new FlightController('race').preset, 'race');
 });
 
-t('a caller can start the machine in angle, which is the keyboard case', () => {
+t('a caller can start the machine in angle, though nothing in the game does', () => {
 	const fc = new FlightController({ mode: 'angle' });
 	assert.equal(fc.mode, 'angle');
 	// And the mode cycle still works from there — nothing is taken away.

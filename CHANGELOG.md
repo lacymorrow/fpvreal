@@ -326,14 +326,14 @@ Le détail, rubrique par rubrique.
 
 ### Modifié
 
-- **Sans manette, le vol démarre en mode angle.** Le clavier était en pratique
-  injouable : acro par défaut, manches binaires — une tape valait 820 °/s — et
-  un état d'entrée qui pouvait larguer le joueur à 40 m/s et 80° d'inclinaison.
-  Les axes clavier montent maintenant sur 150 ms et atteignent toujours la
-  butée si on tient, et le tirage d'entrée est plafonné. Une manette reçoit
-  toujours de l'acro, strictement inchangé. **Aucun gain PID, aucune constante
-  mesurée, aucun rayon de collision n'a bougé** : c'est de la mise en forme
-  d'entrée et un défaut de mode.
+- **Le clavier est jouable.** Il ne l'était pas : manches binaires — une tape
+  valait 820 °/s — et un état d'entrée qui pouvait larguer le joueur à 40 m/s
+  et 80° d'inclinaison. Les axes clavier montent maintenant sur 150 ms et
+  atteignent toujours la butée si on tient, et le tirage d'entrée est plafonné
+  en l'absence de manette. **L'acro reste le mode par défaut pour tout le
+  monde** : la rampe est ce qui le rend tenable sans manche, pas un changement
+  de mode. **Aucun gain PID, aucune constante mesurée, aucun rayon de collision
+  n'a bougé** : c'est de la mise en forme d'entrée.
 - Le dépôt est public, donc les deux bascules que cela impliquait : le flux de
   mise à jour passe de `provider: generic` sur un domaine placeholder à
   `provider: github`, et `deploy/deploy.sh` n'exige plus de jeton — une Release

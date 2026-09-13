@@ -219,36 +219,25 @@ let camSpec = null;
 let lastNightGain = 0;
 const settings = new Settings(document.getElementById('ui'), input);
 
-// The flight mode a machine STARTS in, decided here because only main.js knows
-// what is plugged in — flightController.js must stay ignorant of input devices.
+// The ceiling on the entry draw. Bible §20 hands you a machine already in
+// flight, and 3 % of the time that means 40 m/s at 80 degrees of bank one and a
+// half metres off the deck. That is the intended shock with a stick in your
+// hands; with four arrow keys it is a crash you were never given the means to
+// avoid — the keys have no travel, so the correction the draw demands is one
+// the hardware cannot express.
 //
-// Acro on a gamepad is the game, and nothing about the gamepad experience
-// changes. Acro on a KEYBOARD is not a difficulty setting, it is a wall: the
-// arrow keys have no travel, so the smallest tap the hardware can express is
-// full deflection, and full deflection at the freestyle preset is 820 deg/s.
-// Most people arriving on launch day have no radio on the desk, and the first
-// thing that happened to them was an unrecoverable tumble.
-//
-// The question asked is "is a pad plugged in at all", not `usingGamepad`, which
-// only turns true once a stick has actually moved: this runs before the first
-// stick input, and a pad sitting there silently is still the device this player
-// is about to fly with. Same question briefingArgs() asks, for the same reason.
-// M still cycles acro -> angle -> altitude, so nothing is taken away.
-function defaultFlightMode() {
-	const pad = input.usingGamepad || input.getGamepad?.();
-	return pad ? 'acro' : 'angle';
-}
-
-// The ceiling on the entry draw, for the same reason and asking the same
-// question. Bible §20 hands you a machine already in flight, and 3 % of the
-// time that means 40 m/s at 80 degrees of bank one and a half metres off the
-// deck. That is the intended shock with a stick in your hands; with four arrow
-// keys it is a crash you were never given the means to avoid.
+// The question is "is a pad plugged in at all", not `usingGamepad`, which only
+// turns true once a stick has actually moved: this runs before the first input,
+// and a pad sitting there silently is still the device this player is about to
+// fly with. Same question briefingArgs() asks, for the same reason.
 //
 // A pad gets null — the draw is untouched, weight for weight. See
-// entry-state.js:capCategory().
+// entry-state.js:capCategory(). This is deliberately the ONLY concession the
+// keyboard gets on entry: the flight mode itself stays acro for everyone, by
+// decision, and the keyboard's own ramp in input.js is what makes that flyable.
 function entryCategoryCap() {
-	return defaultFlightMode() === 'acro' ? null : 'ACTIVE';
+	const pad = input.usingGamepad || input.getGamepad?.();
+	return pad ? null : 'ACTIVE';
 }
 // The briefing (D16). What it shows is read LIVE from the input stack, so a
 // key rebound a minute ago is the key it names. The slot is filled here, right
@@ -461,7 +450,7 @@ function applyBenchConfig() {
 		physics.setProfile(profile);
 		PROFILE = physics.profile;
 		audio.setProfile(physics.profile);
-		controller = new FlightController({ profile: PROFILE, rates: build?.rates, mode: defaultFlightMode() });
+		controller = new FlightController({ profile: PROFILE, rates: build?.rates });
 		console.log(`[bench] airframe -> ${PROFILE.family} (${PROFILE.label})`);
 		// The player's drone follows the airframe (#286): its props, its livery
 		// and its frame are those of the individual actually flying, not of the
@@ -1244,7 +1233,6 @@ async function finishBoot(preloading, { arm = true } = {}) {
 
 	applyLensAndLink();
 
-
 	// Armed under the loading screen: the target is resolved, the camera sits on
 	// the machine (entry attitude included), its props are in frame and its OSD
 	// is up — all of it before the screen lets go, never after. After the
@@ -1574,7 +1562,7 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	// bootLive() builds its own controller, so in both cases they have to be set
 	// BEFORE the call. With no individual (bare ?live=), `opts.rates` is optional
 	// in flightController.js and falls back to RATE_PRESETS[this.preset].
-	controller = new FlightController({ profile: PROFILE, rates: benchRates ?? undefined, mode: defaultFlightMode() });
+	controller = new FlightController({ profile: PROFILE, rates: benchRates ?? undefined });
 
 	// LEGAL, not polish. Google requires the copyright of the imagery it serves
 	// to be displayed wherever that imagery is rendered, and the live terrain IS
@@ -3301,7 +3289,7 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 		PROFILE = build.profile;
 		flightBuild = build;
 		flightBuildSeed = buildSeed;
-		controller = new FlightController({ profile: PROFILE, rates: build.rates, mode: defaultFlightMode() });
+		controller = new FlightController({ profile: PROFILE, rates: build.rates });
 		logBuild(build);
 		// `arm: false`: the same rule as the live path just above, the [ JACK IN ]
 		// gesture arms the flight (see runHack()'s `commit`).
@@ -3520,7 +3508,7 @@ startup()
 		// fly a nominal profile — they now keep a portrait all the same.
 		flightBuildSeed = build ? buildSeed : nominalBuildSeed(PROFILE?.family);
 		controller = new FlightController(
-			{ ...(PROFILE ? { profile: PROFILE, rates: build?.rates } : {}), mode: defaultFlightMode() },
+			{ ...(PROFILE ? { profile: PROFILE, rates: build?.rates } : {}) },
 		);
 		if (build) logBuild(build);
 		else if (PROFILE) console.log(`[target] family ${PROFILE.family} — ${PROFILE.label} (nominal)`);
