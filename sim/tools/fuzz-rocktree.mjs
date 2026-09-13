@@ -23,7 +23,8 @@
 //      are shared and persistent, and cancellation deliberately no longer
 //      terminates them (src/rocktree-worker-pool.js) — a worker stuck in a
 //      decode is stuck for the rest of the session, and six of them stop the
-//      terrain dead;
+//      terrain dead. unpack.mjs grew checkedCount() and a strip-run guard for
+//      exactly this; `unpack-bounds` is their regression gate;
 //   2. geometry that decodes "successfully" and is wrong in a way the next
 //      stage cannot survive — an index past the end of the vertex array goes
 //      to Rapier's trimesh, and physics.js already documents that a bad
@@ -108,49 +109,15 @@ const noise = (r) => {
 	return buf;
 };
 
-// --- counting the work a buffer asks for, WITHOUT doing it -------------------
-//
-// unpackIndices() allocates `len` slots and unpackLayerBoundsAndOctants() runs
-// an inner loop `v` times per varint — both numbers read straight off the wire.
-// A target that simply called them would BE the denial of service it reports,
-// so the cost is counted first, from the same varints, and the call is only
-// made when it is small. Duplicated rather than imported because the point is
-// precisely that the real functions do not do this.
-
-function scanVarints(buf, max = 1e6) {
-	const out = [];
-	const pos = { i: 0 };
-	while (pos.i < buf.length && out.length < max) {
-		try { out.push(pb.readVarint(buf, pos)); } catch { return out; }
-	}
-	return out;
-}
-
-// What unpackIndices() would allocate: `new Uint32Array(len)`, len straight off
-// the wire.
-const indexWork = (buf) => (buf?.length ? scanVarints(buf, 1)[0] ?? 0 : 0);
-
-// What unpackLayerBoundsAndOctants() would iterate: `len` outer steps, plus the
-// sum of the next `len` varints — its inner `for (let j = 0; j < v; j++)`.
-function layerWork(buf) {
-	if (!buf?.length) return 0;
-	const vs = scanVarints(buf);
-	const len = vs[0] ?? 0;
-	let total = len;
-	for (let i = 1; i < vs.length && i <= len; i++) total += vs[i];
-	return total;
-}
-
-// A varint, as the wire spells one.
+// A varint, as the wire spells one — the unpack-bounds generator writes its
+// own fields rather than carving them out of a fixture: the leading length is
+// the whole subject, and reaching it by flipping bits inside a 56 KB body
+// finds it about never.
 function putVarint(out, v) {
 	let n = v;
 	while (n >= 0x80) { out.push((n % 0x80) + 0x80); n = Math.floor(n / 0x80); }
 	out.push(n);
 }
-
-// A mesh whose two length-driven loops are small enough to actually run.
-const CHEAP = 4e6;
-const cheapMesh = (m) => indexWork(m.indices) <= CHEAP && layerWork(m.layerAndOctantCounts) <= CHEAP;
 
 // --- targets -----------------------------------------------------------------
 
@@ -220,11 +187,6 @@ const targets = [
 		// The matrix places every vertex. 16 doubles or nothing.
 		if (!(node.matrix instanceof Float64Array)) return `matrix came back as ${pretty(node.matrix)}`;
 		if (node.matrix.length !== 16) return null;   // a short matrix makes the build meaningless, and it throws below anyway
-		// Cost is COUNTED before anything is decoded — see the header. A mesh
-		// whose declared counts are absurd is unpack-cost's finding, not this
-		// target's, and running it here would hang the fuzzer exactly the way it
-		// hangs a pool worker.
-		if (!node.meshes.every((m) => m && cheapMesh(m))) return null;
 		let built;
 		try {
 			built = buildNodeGeometries({ matrix: node.matrix, meshes: node.meshes, sphereRadius: RADIUS, originEcef: ORIGIN_ECEF, originBasis: BASIS, exclude });
@@ -258,33 +220,40 @@ const targets = [
 },
 
 {
-	name: 'unpack-cost',
-	known: 'unpackIndices() allocates the length the bytes declare, and unpackLayerBoundsAndOctants() runs its inner loop the number of times the bytes declare — neither is bounded by the mesh',
-	note: 'the two length fields of a mesh — opaque byte strings whose leading varint whatever answered the NodeData request chose, and which the unpackers believe',
-	// The field bytes are built here rather than carved out of a fixture: the
-	// leading varint is the whole subject, and reaching it by flipping bits
-	// inside a 56 KB body finds it about never. This IS the shape parseNode
-	// hands the unpackers — `one(f, 3)` and `one(f, 8)` are raw subarrays.
+	name: 'unpack-bounds',
+	note: 'the two length fields of a mesh — opaque byte strings whose leading varint whatever answered the NodeData request chose',
+	// checkedCount() and the strip-run guard in unpack.mjs are what stand
+	// between a varint and `new Uint32Array(2**40)`. This target is their
+	// regression gate: without them, eight bytes of input ask for an 8 GiB
+	// allocation or spin a shared, unkillable pool worker for ever.
 	gen(r) {
-		const verts = int(r, 0, 4000);
-		const len = pick(r, [0, 1, 12, verts, 2 ** 20, 2 ** 31, 2 ** 40, Number.MAX_SAFE_INTEGER]);
 		const bytes = [];
-		putVarint(bytes, len);
-		for (let i = 0, n = int(r, 0, 40); i < n; i++) putVarint(bytes, pick(r, [0, 1, 7, 2 ** 20, 2 ** 40]));
-		return { field: new Uint8Array(bytes), verts };
+		putVarint(bytes, pick(r, [0, 1, 12, 2 ** 20, 2 ** 31, 2 ** 40, Number.MAX_SAFE_INTEGER, int(r, 0, 60)]));
+		for (let i = 0, n = int(r, 0, 60); i < n; i++) putVarint(bytes, pick(r, [0, 1, 7, int(r, 0, 40), 2 ** 20, 2 ** 40]));
+		return { field: new Uint8Array(bytes), verts: int(r, 0, 64), strip: int(r, 0, 64) };
 	},
-	check({ field, verts }) {
-		// Counted from the same varints the unpackers read, never executed:
-		// executing it is the denial of service being reported.
-		const idx = indexWork(field);
-		const layers = layerWork(field);
-		// The mesh is the bound. A strip cannot hold more indices than the mesh
-		// has vertices to visit, and an octant run cannot paint more of the
-		// strip than the strip holds — both are checkable before a byte is
-		// unpacked, and neither is checked.
-		const ceiling = Math.max(1024, verts * 4);
-		if (idx > ceiling) return `unpackIndices would allocate ${idx.toExponential(2)} slots (${(idx * 4).toExponential(2)} bytes) for a ${verts}-vertex mesh`;
-		if (layers > ceiling) return `unpackLayerBoundsAndOctants would loop ${layers.toExponential(2)} times for a ${verts}-vertex mesh`;
+	check({ field, verts, strip }) {
+		let indices = null;
+		try { indices = unpack.unpackIndices(field); } catch (err) {
+			if (!(err instanceof Error) || !err.message) return `unpackIndices threw a useless error: ${pretty(err)}`;
+		}
+		// A refusal is fine. What is not fine is believing a length the buffer
+		// cannot back: every element past the first costs at least one byte.
+		if (indices && indices.length > field.length) return `unpackIndices allocated ${indices.length} slots from a ${field.length}-byte field`;
+
+		const someStrip = new Uint32Array(strip);
+		for (let i = 0; i < strip; i++) someStrip[i] = i % Math.max(1, verts);
+		let out = null;
+		try { out = unpack.unpackLayerBoundsAndOctants(field, someStrip, verts); } catch (err) {
+			if (!(err instanceof Error) || !err.message) return `unpackLayerBoundsAndOctants threw a useless error: ${pretty(err)}`;
+			return null;
+		}
+		if (out.octantOf.length !== verts) return `octantOf is ${out.octantOf.length} long for ${verts} vertices`;
+		if (out.layerBounds.length !== 10) return `layerBounds is ${out.layerBounds.length} long`;
+		// The bounds index into the strip and are recorded in order.
+		for (let i = 1; i < 10; i++) if (out.layerBounds[i] < out.layerBounds[i - 1]) return `layerBounds went backwards: ${[...out.layerBounds]}`;
+		if (out.layerBounds[9] > someStrip.length) return `layerBounds[9] = ${out.layerBounds[9]} past a ${someStrip.length}-index strip`;
+		for (const o of out.octantOf) if (!(o >= 0 && o <= 7)) return `octantOf holds ${o}`;
 		return null;
 	},
 },
@@ -383,6 +352,19 @@ if (chosen.length === 0) {
 	process.exit(2);
 }
 
+// A shrunk protobuf is a few hundred bytes, and printing them as a list of
+// numbers hides what matters. Hex, with the length, is what a decoder bug is
+// read from — and it pastes straight back into a reproducer.
+const hex = (buf) => `${buf.length} bytes ${[...buf.subarray(0, 64)].map((b) => b.toString(16).padStart(2, '0')).join('')}${buf.length > 64 ? '…' : ''}`;
+
+function describe(input) {
+	if (input instanceof Uint8Array) return hex(input);
+	if (!input || typeof input !== 'object') return pretty(input);
+	const out = [];
+	for (const [k, v] of Object.entries(input)) out.push(`${k}: ${v instanceof Uint8Array ? hex(v) : pretty(v)}`);
+	return `{ ${out.join(', ')} }`;
+}
+
 console.log(`fuzz-rocktree: ${chosen.length} target(s), ${cases} cases each, seed 0x${seed.toString(16)}\n`);
 
 let failed = 0;
@@ -397,19 +379,6 @@ for (const target of chosen) {
 		if (f.stack && verbose) console.log(f.stack.split('\n').slice(1, 4).map((l) => `        ${l.trim()}`).join('\n'));
 	}
 }
-
-// A shrunk protobuf is a few hundred bytes, and printing them as a list of
-// numbers hides what matters. Hex, with the length, is what a decoder bug is
-// read from — and it pastes straight back into a reproducer.
-function describe(input) {
-	if (input instanceof Uint8Array) return hex(input);
-	if (!input || typeof input !== 'object') return pretty(input);
-	const out = [];
-	for (const [k, v] of Object.entries(input)) out.push(`${k}: ${v instanceof Uint8Array ? hex(v) : pretty(v)}`);
-	return `{ ${out.join(', ')} }`;
-}
-
-const hex = (buf) => `${buf.length} bytes ${[...buf.subarray(0, 64)].map((b) => b.toString(16).padStart(2, '0')).join('')}${buf.length > 64 ? '…' : ''}`;
 
 const skipped = only ? [] : targets.filter((t) => t.known && !chosen.includes(t));
 if (skipped.length) console.log(`\nskipped (known failure): ${skipped.map((t) => t.name).join(', ')} — run with --known`);

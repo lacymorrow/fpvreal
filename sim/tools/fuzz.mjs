@@ -5,6 +5,7 @@
 //   node tools/fuzz.mjs --list           what is covered
 //   node tools/fuzz.mjs --only flight    one target
 //   node tools/fuzz.mjs --cases 20000 --seed 7 --verbose
+//   node tools/fuzz.mjs --known          the known-failure targets too
 //
 // The threat model, target by target, is written in each `note`. It is not
 // "throw random bytes at a function": a function is only fuzzed with inputs it
@@ -13,7 +14,17 @@
 // and only invariants it really promises are checked. Anything else produces
 // findings nobody should act on.
 //
+// A target carrying `known: '<why>'` reproduces a defect nobody has fixed yet.
+// It stays in the file — it is how the fix gets verified — but it is left OUT
+// of the default run, because a red CI that is red on purpose stops being read.
+// `--list` names them, `--known` runs them, `--only <name>` runs one.
+//
+// A target carrying `async: true` has an async check (the Worker pool) and runs
+// through runTargetAsync with a smaller case count.
+//
 // The HTTP surface is fuzzed separately, against a real server: tools/fuzz-api.mjs.
+// The rocktree decode path — the only bytes in this game a remote machine chose
+// — is fuzzed in tools/fuzz-rocktree.mjs, which needs its own binary fixtures.
 
 import fs from 'node:fs';
 import path from 'node:path';
