@@ -324,6 +324,36 @@ Le détail, rubrique par rubrique.
 
 ### Modifié
 
+- **Le brouillage du lien vidéo est nettement adouci**, analogique et digital.
+  Il ne l'était pas trop par nature : il ne s'appliquait simplement jamais en
+  LIVE — `bootLive()` n'appelait pas `setLink()`, donc `_linkMode` restait à
+  `LINK_OFF`. Le câbler a rendu visibles des valeurs calibrées à une époque où
+  personne ne volait dessus.
+
+  Le vrai moteur n'était pas l'obstruction mais le RSSI annoncé de la cible :
+  tirée entre -52 et -72 dBm contre une référence de -35, la plus faible
+  démarrait 37 dB dans le rouge avant le moindre bâtiment, et se retrouvait
+  dégradée en stationnaire à découvert. `BASE_LOSS_WEIGHT` en retient désormais
+  la moitié. La bande de dégradation part de 22 dB au lieu de 18,
+  l'obstruction plafonne à 34 dB au lieu de 38, et la diffraction à 7 au lieu
+  de 8. `LOSS_CLEAN` et `LOSS_DEAD` bougent **ensemble** : `geofence.js` code en
+  dur `FENCE_SPAN = 58` et suppose que c'est exactement leur écart, sans quoi
+  sortir de la zone ne coupe plus le lien.
+
+  Résultat mesuré, par cible et par obstacle — à découvert 1,00 quelle que soit
+  la cible ; derrière un mur de 3 m, 0,76 à 0,97 ; derrière un immeuble de
+  30 m, 0,36 à 0,57. Côté digital, seule la sévérité *après* la falaise est
+  réduite (fraction de blocs, déplacement, quantification, coutures) ; le seuil
+  d'entrée reste à 0,60, sa valeur d'origine.
+- Le serveur sait identifier un joueur derrière un CDN (`FPVTP_TRUST_CF_IP=1`,
+  lecture de `CF-Connecting-IP`). Sans ça, mettre le domaine derrière Cloudflare
+  — ce qu'on veut faire, la bande passante étant du statique immuable — écrasait
+  tous les visiteurs sur les adresses de l'edge : la limite de cinq inscriptions
+  par heure et par adresse devenait cinq pour Internet entier. Le drapeau est
+  **volontairement opt-in** : cet en-tête n'est digne de confiance que si
+  l'origine n'accepte que le CDN, et `deploy/README.md` porte la règle de
+  pare-feu qui rend cela vrai.
+
 - **Le clavier est jouable.** Il ne l'était pas : manches binaires — une tape
   valait 820 °/s — et un état d'entrée qui pouvait larguer le joueur à 40 m/s
   et 80° d'inclinaison. Les axes clavier montent maintenant sur 150 ms et
@@ -570,6 +600,12 @@ Le détail, rubrique par rubrique.
   de trous par construction ; son gain chiffré est faible.
 
 ### Corrigé
+
+- Le `README.md` indiquait `npx electron-builder` seul pour construire l'app de
+  bureau. La commande empaquette `dist/` tel qu'elle le trouve sans jamais le
+  reconstruire, et `dist/` est gitignoré : changer de branche puis empaqueter
+  livrait la nouvelle coquille Electron autour de l'ancien jeu. Constaté en
+  pratique. Le workflow de release, lui, a toujours construit avant.
 
 - **L'imagerie Google n'était créditée nulle part sur le seul chemin qu'un
   inconnu emprunte.** `setCredit()` n'était appelé que depuis le chemin des
