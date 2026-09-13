@@ -175,6 +175,24 @@ export function keyLabel(key) {
 	return Object.hasOwn(KEY_LABELS, k) ? KEY_LABELS[k] : k.toUpperCase();
 }
 
+// The label of the key an action is CURRENTLY bound to, read from the same
+// stored map input.js loads.
+//
+// For the surfaces that PAINT a key and are not handed the live map: the flight
+// OSD writes `[V] FPV` and `PAUSED / PRESS SPACE` while both actions are
+// remappable, so a player who rebound them read an instruction that was simply
+// false. main.js already passes the cut key by hand (setCut); rather than grow
+// two more injection points through the flight loop, the OSD asks the map
+// directly — it is the same single source of truth.
+//
+// Falls back to the default binding when there is no storage at all (Node, a
+// private window) or nothing is stored.
+export function storedKeyLabel(actionId) {
+	let raw = null;
+	try { raw = localStorage.getItem(KEY_MAP_STORAGE); } catch { /* no storage: defaults */ }
+	return keyLabel(loadKeyMap(raw)[actionId]?.[0]);
+}
+
 // One row per action, in KEY_ACTIONS order, keys already labelled — what the
 // Settings tab and the briefing render.
 export function keyMapRows(map) {

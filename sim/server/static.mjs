@@ -1,22 +1,22 @@
-// Le serveur de fichiers du jeu : le `dist/` de Vite à la racine, et les
-// données d'installation (`scenes.json`, `scenes/<slug>/*`) depuis le
-// répertoire de données — pas depuis `dist/`, parce que le catalogue est propre
-// à chaque installation et commence vide, tandis que celui de `public/` n'est
-// que celui du dev.
+// The game's file server: Vite's `dist/` at the root, and the installation
+// data (`scenes.json`, `scenes/<slug>/*`) from the data directory — not from
+// `dist/`, because the catalogue belongs to each installation and starts
+// empty, whereas the one in `public/` is only the dev's.
 //
-// Écrit à la main, sans dépendance : c'est la règle du dépôt côté serveur.
+// Written by hand, with no dependency: that is the repository's server-side
+// rule.
 //
-// PAS DE REPLI SPA. Un fichier absent rend un 404 JSON, jamais index.html :
-// c'est exactement ce que l'issue #275 a coûté côté client (une scène absente
-// et une scène présente rendaient toutes deux 200 text/html, et `res.ok` ne
-// disait plus rien). Le garde-fou de src/loader.js reste, mais il n'a plus à
-// servir.
+// NO SPA FALLBACK. A missing file returns a JSON 404, never index.html: that
+// is exactly what issue #275 cost on the client side (a missing scene and a
+// present scene both returned 200 text/html, and `res.ok` no longer said
+// anything). The guard rail in src/loader.js stays, but it no longer has to do
+// the work.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths as defaultPaths } from '../tools/lib/paths.mjs';
 
-// Ce que le jeu sert réellement, rien de plus.
+// What the game actually serves, nothing more.
 const TYPES = {
 	'.js': 'text/javascript; charset=utf-8',
 	'.css': 'text/css; charset=utf-8',
@@ -29,24 +29,24 @@ const TYPES = {
 	'.opus': 'audio/ogg',
 	'.woff2': 'font/woff2',
 	'.svg': 'image/svg+xml',
-	// Les licences de fontes voyagent dans le build : lisibles, pas téléchargées.
+	// Font licences travel in the build: readable, not downloaded.
 	'.txt': 'text/plain; charset=utf-8',
 };
 
-// Types servis compressés quand un `.br`/`.gz` précalculé existe à côté du
-// fichier (tools/precompress.mjs, lancé par `npm run build`, #21). Rien n'est
-// compressé à la volée : ce serveur tourne aussi dans le process principal
-// d'Electron, sans dépendance, et 2,9 Mo de JavaScript compressés par requête
-// y coûteraient du CPU pour un résultat identique à chaque fois. Les types
-// absents d'ici (chunks .bin, JPEG, Opus) sont déjà compressés par nature.
+// Types served compressed when a precomputed `.br`/`.gz` sits next to the
+// file (tools/precompress.mjs, run by `npm run build`, #21). Nothing is
+// compressed on the fly: this server also runs inside Electron's main process,
+// without dependencies, and compressing 2.9 MB of JavaScript per request would
+// cost CPU there for an identical result every time. The types absent from
+// here (.bin chunks, JPEG, Opus) are already compressed by nature.
 const COMPRESSIBLE = new Set(['.js', '.mjs', '.css', '.html', '.json', '.svg', '.txt', '.wasm']);
-// Ordre de préférence quand le navigateur accepte les deux.
+// Preference order when the browser accepts both.
 const ENCODINGS = [['br', '.br'], ['gzip', '.gz']];
 
-// Une scène ne change jamais sous son slug (REMOVE puis réacquisition rend le
-// même slug, mais alors tout le contenu est réécrit).
+// A scene never changes under its slug (REMOVE then re-acquisition yields the
+// same slug, but then the whole content is rewritten).
 const IMMUTABLE = 'public, max-age=31536000, immutable';
-// Le manifeste est relu à chaque boot : lui seul doit être revalidé.
+// The manifest is re-read at every boot: it alone must be revalidated.
 const REVALIDATE = 'no-cache';
 
 const SLUG_RE = /^[a-z0-9-]+$/;
@@ -61,25 +61,66 @@ function jsonError(res, code, message) {
 	res.end(s);
 }
 
-// Un chemin venu du réseau ne sort jamais de sa racine, quoi qu'il contienne :
-// on résout, puis on vérifie que le résultat est toujours sous la racine.
-function safeJoin(root, rel) {
-	const full = path.resolve(root, '.' + (rel.startsWith('/') ? rel : '/' + rel));
-	const base = path.resolve(root);
+// A path coming from the network never escapes its root, whatever it holds.
+//
+// TWO gates, because a lexical one is not enough. Resolving the string catches
+// `..`, `%2e%2e`, backslashes and doubled slashes — but `path.resolve` knows
+// nothing of the filesystem, and `statSync`/`createReadStream` follow symlinks.
+// A link at `scenes/<slug>/pwn.json` pointing at /etc/passwd is lexically
+// impeccable and was served with a 200. Nothing the server exposes can create
+// such a link, but the scenes directory is filled by unpacking third-party
+// terrain archives and by deploy.sh copying a release tarball, and `dist/` is
+// build output: one crafted archive turns a local file read into an HTTP one.
+//
+// So: the lexical check first, because it is free and rejects the common case;
+// then one `realpathSync` to ask the filesystem where the path really lands.
+// That is ONE extra syscall per request, on the hot path for every tile and
+// chunk — and it is a resolve of the full path, not one per segment.
+//
+// `base` must ALREADY be real (see `realRoot`): the deployed tree is reached
+// through /opt/fpvtp/current, itself a symlink, so comparing a resolved
+// candidate against an unresolved root would reject every legitimate request.
+function safeJoin(base, rel) {
+	const full = path.resolve(base, '.' + (rel.startsWith('/') ? rel : '/' + rel));
 	if (full !== base && !full.startsWith(base + path.sep)) return null;
-	return full;
+	let real;
+	// ENOENT is the ordinary "no such file": hand back the lexical path and let
+	// the caller's statSync produce the usual 404, with the usual message.
+	try { real = fs.realpathSync(full); } catch { return full; }
+	if (real !== base && !real.startsWith(base + path.sep)) return null;
+	return real;
 }
 
-// ETag faible : taille + date de modification suffisent pour des fichiers que
-// personne ne réécrit en place, et ne coûtent pas la lecture des 40 Mo d'un
-// chunk.
+// The roots, resolved once and remembered. A root is a fixed property of the
+// process: the deploy script repoints /opt/fpvtp/current and then restarts the
+// service, so there is no live rug-pull to defend against, and resolving per
+// request would pay for it on every tile.
+//
+// Only SUCCESSES are cached. A data directory can be empty at boot and gain
+// its scenes/ later, so a failed resolve must be retried rather than frozen
+// into a lexical path that would not match once the directory shows up behind
+// a symlink.
+const rootCache = new Map();
+
+function realRoot(dir) {
+	const abs = path.resolve(dir);
+	const hit = rootCache.get(abs);
+	if (hit) return hit;
+	let real;
+	try { real = fs.realpathSync(abs); } catch { return abs; }
+	rootCache.set(abs, real);
+	return real;
+}
+
+// Weak ETag: size + modification date are enough for files nobody rewrites in
+// place, and they do not cost reading the 40 MB of a chunk.
 function etagOf(st) {
 	return `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"`;
 }
 
-// Une seule plage, la seule forme qu'un navigateur envoie pour reprendre un
-// téléchargement. Une plage multiple ou illisible est ignorée (réponse
-// complète), ce que la RFC autorise ; hors bornes rend 416.
+// A single range, the only form a browser sends to resume a download. A
+// multiple or unreadable range is ignored (full response), which the RFC
+// allows; out of bounds returns 416.
 function parseRange(header, size) {
 	const m = /^bytes=(\d*)-(\d*)$/.exec((header ?? '').trim());
 	if (!m) return null;
@@ -101,11 +142,11 @@ function parseRange(header, size) {
 	return { start, end };
 }
 
-// La variante précompressée à servir pour `file`, ou null : encodage accepté
-// par le client (Accept-Encoding, jeton nu ou avec q non nul), type
-// compressible, fichier `.br`/`.gz` présent ET pas plus vieux que sa source —
-// un build partiel qui aurait laissé un vieux `.br` à côté d'un asset neuf
-// servirait sinon du code d'une autre version sous un nom immutable.
+// The precompressed variant to serve for `file`, or null: encoding accepted
+// by the client (Accept-Encoding, bare token or with a non-zero q),
+// compressible type, `.br`/`.gz` file present AND not older than its source —
+// otherwise a partial build that left an old `.br` next to a fresh asset would
+// serve code from another version under an immutable name.
 function precompressedVariant(req, file, st) {
 	const ext = path.extname(file).toLowerCase();
 	if (!COMPRESSIBLE.has(ext)) return null;
@@ -129,13 +170,13 @@ function precompressedVariant(req, file, st) {
 
 function sendFile(req, res, file, st, cacheControl) {
 	const type = TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
-	// Jamais de compression sur une plage : les offsets d'un Range portent sur
-	// la représentation servie, et le seul usage d'un Range ici (reprendre un
-	// chunk de scène) ne concerne aucun type compressible de toute façon.
+	// Never compress a range: a Range's offsets apply to the representation
+	// served, and the only use of a Range here (resuming a scene chunk)
+	// concerns no compressible type anyway.
 	const variant = req.headers.range ? null : precompressedVariant(req, file, st);
-	// Une ETag par représentation (RFC 9110 §8.8.3) : la même valeur pour le
-	// clair et le brotli ferait renvoyer un 304 à un client dont le cache tient
-	// l'autre encodage.
+	// One ETag per representation (RFC 9110 §8.8.3): the same value for the
+	// plain and the brotli one would return a 304 to a client whose cache holds
+	// the other encoding.
 	const etag = variant ? etagOf(st).replace(/"$/, `-${variant.encoding}"`) : etagOf(st);
 	const head = {
 		'content-type': type,
@@ -144,9 +185,9 @@ function sendFile(req, res, file, st, cacheControl) {
 		'accept-ranges': 'bytes',
 		'last-modified': new Date(st.mtimeMs).toUTCString(),
 	};
-	// `Vary` dès que la réponse PEUT dépendre d'Accept-Encoding, compressée ou
-	// non : un cache intermédiaire qui aurait vu la version claire ne doit pas
-	// la servir à un client qui accepte brotli, ni l'inverse.
+	// `Vary` as soon as the response CAN depend on Accept-Encoding, compressed
+	// or not: an intermediate cache that saw the plain version must not serve
+	// it to a client that accepts brotli, nor the other way round.
 	if (COMPRESSIBLE.has(path.extname(file).toLowerCase())) head.vary = 'accept-encoding';
 	if (variant) head['content-encoding'] = variant.encoding;
 
@@ -188,20 +229,20 @@ export function createStatic({ distDir, paths = defaultPaths } = {}) {
 
 	return function serveStatic(req, res) {
 		if (req.method !== 'GET' && req.method !== 'HEAD') {
-			return jsonError(res, 405, `${req.method} non supporté sur un fichier`);
+			return jsonError(res, 405, `${req.method} not supported on a file`);
 		}
 
 		let pathname;
 		try {
 			pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
 		} catch {
-			return jsonError(res, 400, 'URL illisible');
+			return jsonError(res, 400, 'unreadable URL');
 		}
-		if (pathname.includes('\0')) return jsonError(res, 400, 'URL illisible');
+		if (pathname.includes('\0')) return jsonError(res, 400, 'unreadable URL');
 
-		// scenes.json vit dans le répertoire de données, et une installation
-		// neuve n'en a pas encore : un catalogue vide est la bonne réponse, pas
-		// un 404 — c'est ce que readScenes() rend déjà côté API.
+		// scenes.json lives in the data directory, and a fresh installation does
+		// not have one yet: an empty catalogue is the right answer, not a 404 —
+		// which is what readScenes() already returns on the API side.
 		if (pathname === '/scenes.json') {
 			if (!fs.existsSync(paths.SCENES_JSON)) {
 				const s = '[]';
@@ -220,21 +261,22 @@ export function createStatic({ distDir, paths = defaultPaths } = {}) {
 		if (pathname.startsWith('/scenes/')) {
 			const rel = pathname.slice('/scenes/'.length);
 			const slug = rel.split('/')[0];
-			if (!SLUG_RE.test(slug)) return jsonError(res, 404, `chemin de scène invalide : ${pathname}`);
-			file = safeJoin(paths.SCENES_DIR, rel);
+			if (!SLUG_RE.test(slug)) return jsonError(res, 404, `invalid scene path: ${pathname}`);
+			file = safeJoin(realRoot(paths.SCENES_DIR), rel);
 			cacheControl = path.basename(rel) === 'manifest.json' ? REVALIDATE : IMMUTABLE;
 		} else {
-			file = safeJoin(dist, pathname === '/' ? '/index.html' : pathname);
-			// Vite hache le nom de ses assets ; le reste du build (index.html en
-			// tête) doit être revalidé, sinon une mise à jour ne se voit jamais.
+			file = safeJoin(realRoot(dist), pathname === '/' ? '/index.html' : pathname);
+			// Vite hashes the names of its assets; the rest of the build
+			// (index.html first) must be revalidated, otherwise an update is
+			// never seen.
 			cacheControl = pathname.startsWith('/assets/') ? IMMUTABLE : REVALIDATE;
 		}
-		if (!file) return jsonError(res, 404, `hors racine : ${pathname}`);
+		if (!file) return jsonError(res, 404, `outside the root: ${pathname}`);
 
 		let st;
 		try { st = fs.statSync(file); }
-		catch { return jsonError(res, 404, `${pathname} introuvable`); }
-		if (!st.isFile()) return jsonError(res, 404, `${pathname} introuvable`);
+		catch { return jsonError(res, 404, `${pathname} not found`); }
+		if (!st.isFile()) return jsonError(res, 404, `${pathname} not found`);
 
 		return sendFile(req, res, file, st, cacheControl);
 	};

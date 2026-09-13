@@ -1,14 +1,16 @@
 #!/usr/bin/env node
-// Coupe une version (issue #257).
+// Cuts a version (issue #257).
 //
 //   npm run release -- patch|minor|major|X.Y.Z [--dry-run] [--date=YYYY-MM-DD]
 //
-// Effets, dans cet ordre : bump de sim/package.json (+ le lockfile), datation de
-// la section « Non publié » du CHANGELOG, commit `chore(release): vX.Y.Z`, tag
-// annoté. Le push reste manuel — pousser le tag déclenche .github/workflows/release.yml,
-// donc on ne le fait jamais dans le dos de qui lance la commande.
+// Effects, in this order: bump sim/package.json (and the lockfile), date the
+// CHANGELOG's open section (the UNRELEASED heading, named in
+// release-model.mjs), commit `chore(release): vX.Y.Z`, annotated tag. Pushing
+// stays manual — pushing the tag is what triggers
+// .github/workflows/release.yml, so it is never done behind the back of
+// whoever runs the command.
 //
-// Toute la logique de décision est dans release-model.mjs ; ici, les effets de bord.
+// Every decision lives in release-model.mjs; here, only the side effects.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -35,12 +37,13 @@ function today() {
 	return new Date().toISOString().slice(0, 10);
 }
 
-// Le champ version est réécrit à la ligne près : le reste du package.json garde
-// sa mise en forme, et un `npm install` ne vient pas tout remuer après coup.
+// The version field is rewritten line by line: the rest of package.json keeps
+// its formatting, and an `npm install` does not come and reshuffle everything
+// afterwards.
 function writePackageVersion(file, version) {
 	const raw = fs.readFileSync(file, 'utf8');
 	if (!/^\s*"version":\s*"[^"]*"/m.test(raw)) {
-		die(`${path.relative(ROOT, file)} n'a pas de champ "version"`);
+		die(`${path.relative(ROOT, file)} has no "version" field`);
 	}
 	fs.writeFileSync(file, raw.replace(/^(\s*)"version":\s*"[^"]*"/m, `$1"version": "${version}"`));
 }
@@ -60,10 +63,10 @@ const kind = args.find((a) => !a.startsWith('-'));
 const dryRun = args.includes('--dry-run');
 const dateArg = args.find((a) => a.startsWith('--date='))?.slice('--date='.length);
 
-if (!kind) die('usage : npm run release -- patch|minor|major|X.Y.Z [--dry-run]');
+if (!kind) die('usage: npm run release -- patch|minor|major|X.Y.Z [--dry-run]');
 
 const pkg = JSON.parse(fs.readFileSync(PKG, 'utf8'));
-if (!pkg.version) die('sim/package.json n\'a pas de champ "version"');
+if (!pkg.version) die('sim/package.json has no "version" field');
 
 let next;
 try {
@@ -74,10 +77,10 @@ try {
 const tag = tagOf(next);
 
 const dirty = git('status', '--porcelain');
-if (dirty && !dryRun) die(`l'arbre de travail n'est pas propre :\n${dirty}`);
+if (dirty && !dryRun) die(`the working tree is not clean:\n${dirty}`);
 
 const tagged = execFileSync('git', ['tag', '--list', tag], { cwd: ROOT, encoding: 'utf8' }).trim();
-if (tagged) die(`le tag ${tag} existe déjà`);
+if (tagged) die(`tag ${tag} already exists`);
 
 let changelog;
 try {
@@ -87,10 +90,10 @@ try {
 }
 
 const branch = git('rev-parse', '--abbrev-ref', 'HEAD');
-console.log(`release: ${pkg.version} → ${next} (tag ${tag}, branche ${branch})`);
+console.log(`release: ${pkg.version} → ${next} (tag ${tag}, branch ${branch})`);
 
 if (dryRun) {
-	console.log('release: --dry-run, rien n\'a été écrit.');
+	console.log('release: --dry-run, nothing was written.');
 	process.exit(0);
 }
 
@@ -104,7 +107,7 @@ git('add', '--', ...staged);
 git('commit', '-m', `chore(release): ${tag}`);
 git('tag', '-a', tag, '-m', tag);
 
-console.log(`release: commit et tag ${tag} créés. Pour publier :`);
+console.log(`release: commit and tag ${tag} created. To publish:`);
 console.log(`  git push -u origin ${branch}`);
 console.log(`  git push origin ${tag}`);
-console.log('release: le push du tag déclenche la GitHub Release.');
+console.log('release: pushing the tag triggers the GitHub Release.');

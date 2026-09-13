@@ -1,14 +1,14 @@
-// L'API du jeu : /__operator (l'état opérateur) et /__map-api (scènes,
+// The game's API: /__operator (the operator state) and /__map-api (scenes,
 // acquisition, jobs).
 //
-// Extraite telle quelle de tools/map-api-plugin.mjs (issue #259) : elle n'a
-// jamais eu de dépendance à Vite — les deux tables de routes sont du node:http
-// nu, et le plugin ne lui apportait que son logger. Elle sert désormais les deux
-// hébergements : `npm run dev` (l'adaptateur Vite, tools/map-api-plugin.mjs) et
-// le serveur autonome (server/index.mjs). Aucune route n'a changé de chemin, de
-// méthode, de code de statut ni de forme de réponse.
+// Extracted as-is from tools/map-api-plugin.mjs (issue #259): it never had any
+// dependency on Vite — both route tables are bare node:http, and the plugin
+// only brought it its logger. It now serves both hostings: `npm run dev` (the
+// Vite adapter, tools/map-api-plugin.mjs) and the standalone server
+// (server/index.mjs). No route changed its path, its method, its status code
+// or its response shape.
 //
-// Aucune dépendance serveur : du node:http, rien d'autre.
+// No server dependency: node:http, nothing else.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,15 +48,14 @@ const BASE = '/__map-api';
 
 const OP_BASE = '/__operator';
 
-// Les chemins de données du processus (tools/lib/paths.mjs). Un seul serveur par
-// processus — `jobs`/`current` plus bas font déjà cette hypothèse — donc un état
-// de module suffit ; createApi() le repose pour l'appelant qui en fournit
-// d'autres.
+// The process's data paths (tools/lib/paths.mjs). One server per process —
+// `jobs`/`current` below already assume that — so module state is enough;
+// createApi() resets it for a caller that supplies other paths.
 let P = defaultPaths;
 
-// `local` ou `shared` (createApi). Deux choses en dépendent, et rien d'autre :
-// la clé d'opérateur (auth.mjs) et l'acquisition, fermée en `shared` quoi qu'il
-// arrive. Même raison d'être un état de module que P : un serveur par processus.
+// `local` or `shared` (createApi). Two things depend on it, and nothing else:
+// the operator key (auth.mjs) and acquisition, closed in `shared` whatever
+// happens. Same reason to be module state as P: one server per process.
 let MODE = 'local';
 
 function ensureOperatorDir() {
@@ -66,14 +65,14 @@ function ensureOperatorDir() {
 const ID_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 function _readOperator(id) {
-	if (!ID_RE.test(id)) throw new Error('id invalide');
+	if (!ID_RE.test(id)) throw new Error('invalid id');
 	const file = path.join(P.OPERATOR_DIR, `${id}.json`);
 	if (!fs.existsSync(file)) return null;
 	return migrate(JSON.parse(fs.readFileSync(file, 'utf8')));
 }
 
 function _writeOperator(state) {
-	if (!ID_RE.test(state.id)) throw new Error('id invalide');
+	if (!ID_RE.test(state.id)) throw new Error('invalid id');
 	ensureOperatorDir();
 	const file = path.join(P.OPERATOR_DIR, `${state.id}.json`);
 	const tmp = `${file}.${process.pid}.tmp`;
@@ -107,12 +106,12 @@ function _listOperators() {
 // path: they come from the URL, and nothing else stands between them and the
 // filesystem.
 function tracksDirFor(id) {
-	if (!ID_RE.test(id)) throw new Error('id invalide');
+	if (!ID_RE.test(id)) throw new Error('invalid id');
 	return path.join(P.OPERATOR_DIR, 'tracks', id);
 }
 
 function trackFileFor(id, sid) {
-	if (!SESSION_ID_RE.test(sid)) throw new Error('id de session invalide');
+	if (!SESSION_ID_RE.test(sid)) throw new Error('invalid session id');
 	return path.join(tracksDirFor(id), `${sid}.json`);
 }
 
@@ -158,32 +157,36 @@ function operatorSummary(s) {
 		counts: {
 			areas: s.terrainCache.length,
 			sessions: s.sessions.length,
-			// Le Target Log est dérivé des sessions (PHASE 17, spec D1).
+			// The Target Log is derived from the sessions (PHASE 17, spec D1).
 			targets: targetLogEntries(s.sessions).length,
 		},
 	};
 }
 
-// `dialogueMemory` (PHASE 21) : mémoire anti-répétition du moteur de dialogue,
-// écrite via le même `operator.patch()` débouncé que `settings`. Purement
-// cosmétique — un fichier opérateur sans cette clé se relit comme une mémoire
-// neuve (src/dialogue.js) — donc pas de validation de forme côté serveur, au
-// même titre que `settings` : elle est bornée côté client (anneau de 256
-// entrées, table de 512 vus, dans tools/dialogue/engine.mjs).
+// `dialogueMemory` (PHASE 21): the dialogue engine's anti-repetition memory,
+// written through the same debounced `operator.patch()` as `settings`. Purely
+// cosmetic — an operator file without this key reads back as a fresh memory
+// (src/dialogue.js) — so no shape validation on the server side, just like
+// `settings`: it is bounded on the client side (a ring of 256 entries, a table
+// of 512 seen, in tools/dialogue/engine.mjs).
 //
-// `coverage` (issue #245) : là où le drone est passé, en cellules slippy z=20.
-// Même contrat que dialogueMemory — écrite par operator.patch() une fois par
-// session (src/session.js), cosmétique, sans validation de forme ici parce que
-// bornée côté client : MAX_CELLS = 8000 et W_MAX = 8 dans src/coverage.js, et
-// fromStored() y rend une couverture vierge pour tout ce qui n'est pas la
-// forme attendue. Un opérateur sans cette clé se relit comme une carte vierge.
+// `coverage` (issue #245): where the drone has been, in slippy cells at z=20.
+// Same contract as dialogueMemory — written by operator.patch() once per
+// session (src/session.js), cosmetic, with no shape validation here because it
+// is bounded on the client side: MAX_CELLS = 8000 and W_MAX = 8 in
+// src/coverage.js, and fromStored() there returns a blank coverage for
+// anything that is not the expected shape. An operator without this key reads
+// back as a blank map.
 const OP_WRITABLE_KEYS = new Set(['settings', 'dialogueMemory', 'coverage']);
 
-// Traduit une erreur de lecture d'opérateur en code HTTP : id malformé → 400,
-// fichier d'un schéma trop récent → 409, tout le reste (JSON corrompu, E/S) → 500.
+// Turns an operator read error into an HTTP code: malformed id → 400, file
+// from a too recent schema → 409, everything else (corrupt JSON, I/O) → 500.
+// The schema case is recognised on the `schemaVersion` prefix rather than on
+// the whole sentence: the message belongs to operator-store.mjs, and matching
+// its exact wording would make this 409 hostage to a rewording there.
 function opReadErrorStatus(e) {
-	if (e.message === 'id invalide') return 400;
-	if (e.message === 'schemaVersion trop récent') return 409;
+	if (e.message === 'invalid id') return 400;
+	if (e.message.startsWith('schemaVersion')) return 409;
 	return 500;
 }
 
@@ -193,37 +196,37 @@ const opRoutes = [
 	}],
 
 	['POST', /^\/$/, async (req, res) => {
-		// L'inscription est en libre service (c'est le cas nominal sur le VPS) :
-		// elle a donc un plafond par adresse, et lui seul. Rien en `local`.
+		// Signup is self-service (that is the nominal case on the VPS): it
+		// therefore has a per-address ceiling, and only that. Nothing in `local`.
 		const flood = checkSignup({ mode: MODE, req });
 		if (flood) return json(res, flood.status, { error: flood.error });
 		const b = await readBody(req, res);
 		let name;
 		try { name = validateName(b.name); }
 		catch (e) { return json(res, 400, { error: e.message }); }
-		// Garde contre la collision d'id à ~1/65536 : on retire jusqu'à un id libre.
+		// Guard against the ~1/65536 id collision: draw again until an id is free.
 		let state;
 		do { state = freshState({ id: newId(name), name }); }
 		while (fs.existsSync(path.join(P.OPERATOR_DIR, state.id + '.json')));
-		// La clé est rendue ICI et nulle part ailleurs : le serveur n'en garde que
-		// l'empreinte, et aucune route ne sait la relire en clair.
+		// The key is handed out HERE and nowhere else: the server only keeps its
+		// digest, and no route knows how to read it back in the clear.
 		const key = generateKey();
 		state.keyHash = hashKey(key);
 		_writeOperator(state);
 		json(res, 201, { operator: publicOperator(state), key });
 	}],
 
-	// « Qui suis-je ? », répondu par la CLÉ et rien d'autre (issue #60). C'est ce
-	// qui permet de retrouver son opérateur depuis un autre navigateur sur un
-	// serveur `shared`, où aucune liste ne dit qui existe. Placée AVANT /:id :
-	// les deux motifs se recouvrent, et c'est la première trouvée qui répond.
+	// "Who am I?", answered by the KEY and nothing else (issue #60). That is
+	// what makes it possible to find your operator again from another browser
+	// on a `shared` server, where no list says who exists. Placed BEFORE /:id:
+	// the two patterns overlap, and the first one found answers.
 	['GET', /^\/whoami$/, async (req, res) => {
 		const id = operatorIdForKey(P.OPERATOR_DIR, bearerOf(req));
-		if (!id) return json(res, 404, { error: 'aucun opérateur pour cette clé' });
+		if (!id) return json(res, 404, { error: 'no operator for this key' });
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: 'aucun opérateur pour cette clé' });
+		if (!state) return json(res, 404, { error: 'no operator for this key' });
 		const rec = reconcileStaleSessions(state);
 		if (rec.changed) _writeOperator(rec.state);
 		json(res, 200, { operator: publicOperator(markTracks(stripOperatorPhotoData(rec.state))) });
@@ -235,15 +238,15 @@ const opRoutes = [
 		catch (e) {
 			return json(res, opReadErrorStatus(e), { error: e.message });
 		}
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
-		// Le terminal recharge l'opérateur à chaque retour au menu : c'est le
-		// moment où l'on rattrape les sessions dont l'onglet est mort en vol.
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
+		// The terminal reloads the operator on every return to the menu: that is
+		// when the sessions whose tab died in flight are caught up.
 		const rec = reconcileStaleSessions(state);
 		if (rec.changed) _writeOperator(rec.state);
-		// Les `dataUrl` des captures ne partent PAS ici (spec D4) : le terminal
-		// recharge l'opérateur à chaque retour au menu, et une trentaine de
-		// sessions photographiées pèseraient des dizaines de mégaoctets à chaque
-		// fois. VIEW SESSION va les chercher une par une sur la route dédiée.
+		// The captures' `dataUrl` do NOT travel here (spec D4): the terminal
+		// reloads the operator on every return to the menu, and thirty or so
+		// photographed sessions would weigh tens of megabytes every time. VIEW
+		// SESSION fetches them one by one on the dedicated route.
 		//
 		// `hasTrack` (issue #24) is derived here, from the tracks directory: the
 		// UI can say NO TRACK on an old flight without a second request.
@@ -253,82 +256,82 @@ const opRoutes = [
 	['PATCH', /^\/([^/]+)$/, async (req, res, [id]) => {
 		const b = await readBody(req, res);
 		if (!OP_WRITABLE_KEYS.has(b.key)) {
-			return json(res, 400, { error: `clé non modifiable : ${b.key}` });
+			return json(res, 400, { error: `key is not writable: ${b.key}` });
 		}
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) {
 			return json(res, opReadErrorStatus(e), { error: e.message });
 		}
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
-		// `controlVector` sortait d'ici avec sa validation (#33). Les deux sont
-		// tombés ENSEMBLE : garder la validation sans la clé écrivable aurait
-		// rendu une 400 opaque à un vieux client qui patche encore le vecteur,
-		// alors que la liste blanche le refuse déjà avec un message clair.
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
+		// `controlVector` used to leave here with its validation (#33). Both went
+		// TOGETHER: keeping the validation without the writable key would have
+		// returned an opaque 400 to an old client still patching the vector,
+		// whereas the allowlist already refuses it with a clear message.
 		state[b.key] = b.value;
 		_writeOperator(state);
 		json(res, 200, { operator: publicOperator(state) });
 	}],
 
-	// Météo du monde pour une zone (PHASE 04). Lecture d'abord : si le world
-	// state connaît déjà le jour, on le relit sans toucher au réseau — c'est ce
-	// qui garantit que deux acquisitions rapprochées voient le même temps. La
-	// clé `worldState` n'est PAS dans OP_WRITABLE_KEYS : le monde n'est pas un
-	// réglage, le client ne l'écrit jamais, seul le serveur le remplit.
+	// World weather for an area (PHASE 04). Read first: if the world state
+	// already knows the day, it is read back without touching the network —
+	// that is what guarantees two nearby acquisitions see the same weather. The
+	// `worldState` key is NOT in OP_WRITABLE_KEYS: the world is not a setting,
+	// the client never writes it, only the server fills it in.
 	['GET', /^\/([^/]+)\/weather$/, async (req, res, [id], url) => {
-		// Number('') et Number(null) valent tous les deux 0 — une coordonnée
-		// parfaitement valide au milieu du golfe de Guinée. Sans ce garde-fou,
-		// un paramètre absent ou vide remplit le world state de zones fantômes
-		// « 0.00,0.00 » et sert une météo qui n'est celle de personne.
+		// Number('') and Number(null) are both 0 — a perfectly valid coordinate
+		// in the middle of the Gulf of Guinea. Without this guard rail, an
+		// absent or empty parameter fills the world state with phantom
+		// "0.00,0.00" areas and serves weather that belongs to nobody.
 		const num = (v) => (v === null || v.trim() === '' ? NaN : Number(v));
 		const lat = num(url.searchParams.get('lat'));
 		const lon = num(url.searchParams.get('lon'));
 		if (!Number.isFinite(lat) || !Number.isFinite(lon)
 			|| lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-			return json(res, 400, { error: 'lat/lon manquants ou hors limites' });
+			return json(res, 400, { error: 'lat/lon missing or out of bounds' });
 		}
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 
 		const day = url.searchParams.get('day') || undefined;
 		const { snapshot, changed } = await resolveWeather(state.worldState ?? (state.worldState = {}), {
 			lat, lon, day,
-			onWarn: (e) => console.warn(`[weather] ${e.message} — repli`),
+			onWarn: (e) => console.warn(`[weather] ${e.message} — falling back`),
 		});
 		if (changed) _writeOperator(state);
 		json(res, 200, { snapshot });
 	}],
 
-	// Rattache un terrain déjà acquis à l'opérateur (PHASE 05, écran « TERRAIN
-	// ACQUIRED » -> KEEP TERRAIN). Le client n'envoie que le slug : le reste
-	// (nom, coordonnées, poids) vient de public/scenes.json, jamais du client —
-	// mêmes garde-fous que pour worldState, sur des données différentes.
+	// Attaches an already acquired terrain to the operator (PHASE 05, "TERRAIN
+	// ACQUIRED" screen -> KEEP TERRAIN). The client only sends the slug: the
+	// rest (name, coordinates, weight) comes from public/scenes.json, never
+	// from the client — same guard rails as for worldState, on different data.
 	//
-	// Écart assumé au principe « slug only » (PHASE 08) : le client joint aussi
-	// `signalDensity`, l'estimation de densité de signal affichée par le Global
-	// Scanner. Elle dépend de `state.place` (réponse Nominatim runtime) et de
-	// l'aire dessinée — le serveur n'a pas de quoi la recalculer depuis
-	// scenes.json. C'est une estimation d'écran, pas une donnée de terrain
-	// autoritative : on se contente d'en contrôler la forme.
+	// A deliberate departure from the "slug only" principle (PHASE 08): the
+	// client also attaches `signalDensity`, the signal density estimate the
+	// Global Scanner displays. It depends on `state.place` (a runtime Nominatim
+	// answer) and on the drawn area — the server has no way to recompute it
+	// from scenes.json. It is a screen estimate, not authoritative terrain
+	// data: only its shape is checked.
 	['POST', /^\/([^/]+)\/terrain-cache$/, async (req, res, [id]) => {
 		const b = await readBody(req, res);
 		const slug = String(b.slug ?? '').trim();
-		if (!slug) return json(res, 400, { error: 'slug manquant' });
+		if (!slug) return json(res, 400, { error: 'slug missing' });
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 		const scene = readScenes().find((s) => s.slug === slug);
-		if (!scene) return json(res, 404, { error: `aucune carte "${slug}"` });
+		if (!scene) return json(res, 404, { error: `no map "${slug}"` });
 		const entry = {
 			slug: scene.slug, name: scene.name, lat: scene.lat, lon: scene.lon,
 			bytes: scene.bytes ?? dirSize(path.join(P.SCENES_DIR, slug)),
 			keptAt: new Date().toISOString(),
 		};
-		// Estimation d'écran (densité de signal du Global Scanner), pas une donnée
-		// de terrain autoritative — on ne fait que contrôler la forme.
+		// A screen estimate (the Global Scanner's signal density), not
+		// authoritative terrain data — only the shape is checked.
 		const d = b.signalDensity;
 		if (d && typeof d === 'object'
 			&& Number.isFinite(d.level)
@@ -341,16 +344,16 @@ const opRoutes = [
 		json(res, 200, { operator: publicOperator(state) });
 	}],
 
-	// Ouvre une session : un squelette PENDING sur disque. Deux écritures réseau
-	// par vol, ce POST à l'ouverture et un PATCH à la clôture. Rien pendant le
-	// vol. Une session close ne se rouvre pas (D9, 2026-09-08 : l'atterrissage
-	// a disparu, et avec lui la reprise).
+	// Opens a session: a PENDING skeleton on disk. Two network writes per
+	// flight, this POST at the opening and a PATCH at the closing. Nothing
+	// during the flight. A closed session does not reopen (D9, 2026-09-08:
+	// landing disappeared, and resuming with it).
 	['POST', /^\/([^/]+)\/sessions$/, async (req, res, [id]) => {
 		const b = await readBody(req, res);
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 
 		let session;
 		try {
@@ -368,20 +371,20 @@ const opRoutes = [
 				}
 				const scan = generateTargetScan({ seed: String(b.targetSeed), count: b.targetCount, swarmChance });
 				if (!Number.isInteger(b.targetIndex) || b.targetIndex < 0 || b.targetIndex >= scan.candidates.length) {
-					return json(res, 400, { error: `targetIndex hors borne : ${b.targetIndex}` });
+					return json(res, 400, { error: `targetIndex out of range: ${b.targetIndex}` });
 				}
 				target = resolveTarget(scan, b.targetIndex);
 			} else {
-				console.warn('[session] ouverture sans TARGET SCAN — aucune cible (chemin dev)');
+				console.warn('[session] opened without a TARGET SCAN — no target (dev path)');
 			}
 			session = validateSession(openSession({
 				operatorId: state.id,
 				area: b.area,
 				weatherSnapshot: sanitizeWeatherSnapshot(b.weatherSnapshot ?? null),
 				target,
-				// Numéros d'affichage (PHASE 17). Le serveur seul les attribue :
-				// lui seul connaît le compteur. On n'incrémente qu'APRÈS la
-				// validation, pour qu'une session refusée ne consomme rien.
+				// Display numbers (PHASE 17). The server alone assigns them: it
+				// alone knows the counter. The increment happens only AFTER
+				// validation, so that a refused session consumes nothing.
 				seq: (state.sessionSeq ?? 0) + 1,
 				targetSeq: target ? (state.targetSeq ?? 0) + 1 : undefined,
 			}));
@@ -394,24 +397,24 @@ const opRoutes = [
 		json(res, 201, { session: stripPhotoData(session) });
 	}],
 
-	// Clôture : pose end, result et la télémétrie agrégée. POST est accepté en
-	// plus de PATCH pour navigator.sendBeacon (qui ne sait faire que POST) au
-	// moment où l'onglet se ferme.
+	// Closing: sets end, result and the aggregated telemetry. POST is accepted
+	// alongside PATCH for navigator.sendBeacon (which can only do POST) at the
+	// moment the tab closes.
 	['PATCH', /^\/([^/]+)\/sessions\/([^/]+)$/, closeSessionRoute],
 	['POST', /^\/([^/]+)\/sessions\/([^/]+)$/, closeSessionRoute],
 
-	// OPERATOR NOTE (PHASE 15) : texte libre, attaché à une session qu'elle soit
-	// encore PENDING ou déjà close — contrairement à la clôture ci-dessus, une
-	// note n'est pas un verdict, elle peut s'ajouter après coup.
+	// OPERATOR NOTE (PHASE 15): free text, attached to a session whether it is
+	// still PENDING or already closed — unlike the closing above, a note is not
+	// a verdict, it can be added afterwards.
 	['PATCH', /^\/([^/]+)\/sessions\/([^/]+)\/comment$/, async (req, res, [id, sid]) => {
 		const b = await readBody(req, res);
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 
 		const i = state.sessions.findIndex((s) => s.id === sid);
-		if (i < 0) return json(res, 404, { error: `aucune session "${sid}"` });
+		if (i < 0) return json(res, 404, { error: `no session "${sid}"` });
 
 		let session;
 		try { session = validateSession(annotateSession(state.sessions[i], b.comment)); }
@@ -422,28 +425,29 @@ const opRoutes = [
 		json(res, 200, { session: stripPhotoData(session) });
 	}],
 
-	// Capture (PHASE 16). Écrite tout de suite sur la session, pas attendue la
-	// clôture : un onglet mort en vol ne doit pas perdre les photos déjà prises.
-	// Base64 dans le JSON de session, comme le reste de l'état opérateur — pas
-	// de stockage binaire séparé. Plafond de body relevé rien que pour cette
-	// route : une capture dépasse largement le mégaoctet des autres requêtes.
+	// Capture (PHASE 16). Written to the session right away, not held back
+	// until the closing: a tab that dies in flight must not lose the photos
+	// already taken. Base64 inside the session JSON, like the rest of the
+	// operator state — no separate binary storage. Body cap raised for this
+	// route alone: a capture goes well past the megabyte of the other
+	// requests.
 	['POST', /^\/([^/]+)\/sessions\/([^/]+)\/photos$/, async (req, res, [id, sid]) => {
-		// La SEULE écriture dont la taille dépende du client (base64 dans le JSON
-		// de session). PHOTO_BODY_MAX borne une requête, ce plafond-ci borne le
-		// cumul — sans quoi N inconnus remplissent le disque du VPS. Le vol, lui,
-		// n'est jamais bloqué : ouvrir et clore une session passe toujours.
+		// The ONLY write whose size depends on the client (base64 in the session
+		// JSON). PHOTO_BODY_MAX bounds one request, this ceiling bounds the
+		// total — without it N strangers fill the VPS's disk. The flight itself
+		// is never blocked: opening and closing a session always passes.
 		const full = checkOperatorQuota({ mode: MODE, dir: P.OPERATOR_DIR, id });
 		if (full) return json(res, full.status, { error: full.error });
 		const b = await readBody(req, res, PHOTO_BODY_MAX);
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 
 		const i = state.sessions.findIndex((s) => s.id === sid);
-		if (i < 0) return json(res, 404, { error: `aucune session "${sid}"` });
+		if (i < 0) return json(res, 404, { error: `no session "${sid}"` });
 		if (state.sessions[i].result !== 'PENDING') {
-			return json(res, 409, { error: `session "${sid}" déjà ${state.sessions[i].result}` });
+			return json(res, 409, { error: `session "${sid}" already ${state.sessions[i].result}` });
 		}
 
 		let session;
@@ -455,26 +459,25 @@ const opRoutes = [
 		json(res, 201, { session: stripPhotoData(session) });
 	}],
 
-	// La piste de vol (issue #24). Écrite UNE fois, à la clôture (D4), après le
-	// PATCH de la session : une piste sans session n'a pas de sens, et perdre la
-	// piste ne doit jamais coûter la session. Idempotent — un second PUT
-	// remplace, ce qui rend un renvoi après timeout inoffensif.
+	// The flight track (issue #24). Written ONCE, at the closing (D4), after
+	// the session PATCH: a track without a session makes no sense, and losing
+	// the track must never cost the session. Idempotent — a second PUT
+	// replaces, which makes a resend after a timeout harmless.
 	//
-	// Plafond de body relevé comme la route des captures : 18 000 échantillons
-	// tiennent dans quelques centaines de kilo-octets, mais pas dans le
-	// mégaoctet des requêtes ordinaires.
+	// Body cap raised like the captures route: 18,000 samples fit in a few
+	// hundred kilobytes, but not in the megabyte of ordinary requests.
 	['PUT', /^\/([^/]+)\/sessions\/([^/]+)\/track$/, async (req, res, [id, sid]) => {
-		// Comme les captures : la taille de cette écriture dépend du client, donc
-		// elle passe par le quota. Le vol lui-même n'est jamais bloqué.
+		// Like the captures: the size of this write depends on the client, so it
+		// goes through the quota. The flight itself is never blocked.
 		const full = checkOperatorQuota({ mode: MODE, dir: P.OPERATOR_DIR, id });
 		if (full) return json(res, full.status, { error: full.error });
 		const b = await readBody(req, res, PHOTO_BODY_MAX);
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 		if (!state.sessions.some((s) => s.id === sid)) {
-			return json(res, 404, { error: `aucune session "${sid}"` });
+			return json(res, 404, { error: `no session "${sid}"` });
 		}
 
 		let file, track;
@@ -491,39 +494,40 @@ const opRoutes = [
 		json(res, 200, { sessionId: sid, n: track.n, truncated: track.truncated });
 	}],
 
-	// Une piste, décodée : échantillons en unités réelles, plus les trois
-	// événements ponctuels. C'est la seule route qui rende les tableaux complets.
+	// One track, decoded: samples in real units, plus the three point events.
+	// It is the only route that returns the full arrays.
 	['GET', /^\/([^/]+)\/sessions\/([^/]+)\/track$/, async (req, res, [id, sid]) => {
 		let file;
 		try { file = trackFileFor(id, sid); }
 		catch (e) { return json(res, 400, { error: e.message }); }
-		if (!fs.existsSync(file)) return json(res, 404, { error: `aucune piste pour "${sid}"` });
+		if (!fs.existsSync(file)) return json(res, 404, { error: `no track for "${sid}"` });
 		let track;
 		try { track = decodeTrack(readTrackFile(file)); }
-		catch (e) { return json(res, 500, { error: `piste illisible : ${e.message}` }); }
+		catch (e) { return json(res, 500, { error: `unreadable track: ${e.message}` }); }
 		json(res, 200, { sessionId: sid, track });
 	}],
 
-	// La session COMPLÈTE, captures comprises (PHASE 17, spec D4). Toutes les
-	// autres réponses élident les `dataUrl` ; seul l'écran VIEW SESSION paie le
-	// poids des images, une fois, à son ouverture.
+	// The COMPLETE session, captures included (PHASE 17, spec D4). Every other
+	// response elides the `dataUrl`; only the VIEW SESSION screen pays the
+	// weight of the images, once, when it opens.
 	['GET', /^\/([^/]+)\/sessions\/([^/]+)$/, async (req, res, [id, sid]) => {
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 		const session = state.sessions.find((s) => s.id === sid);
-		if (!session) return json(res, 404, { error: `aucune session "${sid}"` });
+		if (!session) return json(res, 404, { error: `no session "${sid}"` });
 		json(res, 200, { session: { ...session, hasTrack: trackIdsFor(id).has(sid) } });
 	}],
 
-	// L'index que la carte enrichie consomme (issue #24) : pour chaque piste
-	// retenue, une polyligne décimée (~100 points), le départ, la fin et les
-	// photos géolocalisées. JAMAIS les tableaux d'échantillons — 200 pistes
-	// complètes feraient 3 Mo pour dessiner des traits d'un pixel.
+	// The index the enriched map consumes (issue #24): for every retained
+	// track, a decimated polyline (~100 points), the start, the end and the
+	// geolocated photos. NEVER the sample arrays — 200 complete tracks would be
+	// 3 MB to draw one-pixel lines.
 	//
-	// `?bbox=south,west,north,east` filtre : la vue monde n'a pas à tout
-	// embarquer. Une piste est gardée si sa bbox recoupe celle demandée.
+	// `?bbox=south,west,north,east` filters: the world view does not have to
+	// carry everything. A track is kept if its bbox overlaps the requested
+	// one.
 	['GET', /^\/([^/]+)\/tracks$/, async (req, res, [id], url) => {
 		let dir;
 		try { dir = tracksDirFor(id); }
@@ -534,7 +538,7 @@ const opRoutes = [
 		if (raw) {
 			const n = raw.split(',').map(Number);
 			if (n.length !== 4 || !n.every(Number.isFinite)) {
-				return json(res, 400, { error: 'bbox : attendu south,west,north,east' });
+				return json(res, 400, { error: 'bbox: expected south,west,north,east' });
 			}
 			box = {
 				minLat: Math.min(n[0], n[2]), minLon: Math.min(n[1], n[3]),
@@ -550,8 +554,8 @@ const opRoutes = [
 		for (const f of names) {
 			const sid = f.slice(0, -5);
 			let entry;
-			// Un fichier corrompu ne fait pas tomber l'index : on saute la piste
-			// et la carte dessine le reste.
+			// A corrupt file does not take the index down: skip the track and the
+			// map draws the rest.
 			try { entry = trackIndexEntry(readTrackFile(path.join(dir, f)), { sessionId: sid }); }
 			catch { continue; }
 			if (box) {
@@ -564,21 +568,21 @@ const opRoutes = [
 		json(res, 200, { tracks });
 	}],
 
-	// DELETE SESSION (PHASE 17, spec D3). Suppression franche : l'entrée et ses
-	// captures disparaissent, et sa cible quitte donc le Target Log, qui en est
-	// dérivé. Le terrain n'est jamais touché.
+	// DELETE SESSION (PHASE 17, spec D3). Outright removal: the entry and its
+	// captures disappear, and its target therefore leaves the Target Log, which
+	// is derived from them. The terrain is never touched.
 	['DELETE', /^\/([^/]+)\/sessions\/([^/]+)$/, async (req, res, [id, sid]) => {
 		let state;
 		try { state = _readOperator(id); }
 		catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-		if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+		if (!state) return json(res, 404, { error: `no operator "${id}"` });
 		let next;
 		try { next = deleteSession(state, sid); }
 		catch (e) { return json(res, e.status ?? 400, { error: e.message }); }
 		_writeOperator(next);
-		// La piste part avec la session (issue #24) : elle n'a plus rien à
-		// désigner, et un orphelin continuerait de peser sur le quota.
-		try { fs.rmSync(trackFileFor(id, sid)); } catch { /* pas de piste, ou déjà partie */ }
+		// The track leaves with the session (issue #24): it no longer has
+		// anything to point at, and an orphan would keep weighing on the quota.
+		try { fs.rmSync(trackFileFor(id, sid)); } catch { /* no track, or already gone */ }
 		json(res, 200, { removed: sid });
 	}],
 ];
@@ -588,12 +592,12 @@ async function closeSessionRoute(req, res, [id, sid]) {
 	let state;
 	try { state = _readOperator(id); }
 	catch (e) { return json(res, opReadErrorStatus(e), { error: e.message }); }
-	if (!state) return json(res, 404, { error: `aucun opérateur "${id}"` });
+	if (!state) return json(res, 404, { error: `no operator "${id}"` });
 
 	const i = state.sessions.findIndex((s) => s.id === sid);
-	if (i < 0) return json(res, 404, { error: `aucune session "${sid}"` });
+	if (i < 0) return json(res, 404, { error: `no session "${sid}"` });
 	if (state.sessions[i].result !== 'PENDING') {
-		return json(res, 409, { error: `session "${sid}" déjà ${state.sessions[i].result}` });
+		return json(res, 409, { error: `session "${sid}" already ${state.sessions[i].result}` });
 	}
 
 	let session;
@@ -609,8 +613,8 @@ async function closeSessionRoute(req, res, [id, sid]) {
 	json(res, 200, { session: stripPhotoData(session) });
 }
 
-// Un seul job à la fois : télécharger deux cartes en parallèle sature la même
-// liaison et ne va pas plus vite, mais rend la progression illisible.
+// One job at a time: downloading two maps in parallel saturates the same link
+// and goes no faster, but makes the progress unreadable.
 const jobs = new Map();
 let current = null;
 
@@ -625,8 +629,8 @@ function json(res, code, body) {
 	res.end(s);
 }
 
-// Une capture encodée en base64 dépasse vite le mégaoctet d'un body JSON
-// ordinaire (photo + ~33 % d'overhead base64) : plafond dédié pour cette route.
+// A base64-encoded capture quickly goes past the megabyte of an ordinary JSON
+// body (photo + ~33% base64 overhead): a dedicated cap for this route.
 const PHOTO_BODY_MAX = 8e6;
 
 // A cross-site request that skips the preflight can only carry a CORS-safelisted
@@ -667,7 +671,7 @@ function readBody(req, res, maxBytes = 1e6) {
 				b = '';
 				// Answer, THEN stop listening. Destroying the socket first
 				// turned the 413 the server meant to send into an ECONNRESET
-				// the GUI reads as « network error » (#84). The rest of the
+				// the GUI reads as "network error" (#84). The rest of the
 				// body is still never parsed, which is the point of the cap.
 				json(res, 413, { error: 'body too large' });
 				reject(new Error('body too large'));
@@ -688,48 +692,92 @@ function readBody(req, res, maxBytes = 1e6) {
 	});
 }
 
-// Une bbox venue du navigateur n'est pas de confiance : on la valide avant de la
-// passer à un sous-processus.
+// A bbox coming from the browser is not trusted: validate it before handing it
+// to a subprocess.
 function requireBox(b) {
 	if (!b || !['south', 'west', 'north', 'east'].every((k) => Number.isFinite(b[k]))) {
-		throw new Error('bbox manquante ou invalide');
+		throw new Error('bbox missing or invalid');
 	}
 	const box = {
 		south: Math.min(b.south, b.north), west: Math.min(b.west, b.east),
 		north: Math.max(b.south, b.north), east: Math.max(b.west, b.east),
 	};
-	if (box.south < -85 || box.north > 85 || box.west < -180 || box.east > 180) throw new Error('bbox hors limites');
-	if (box.south === box.north || box.west === box.east) throw new Error('bbox d\'aire nulle');
+	if (box.south < -85 || box.north > 85 || box.west < -180 || box.east > 180) throw new Error('bbox out of bounds');
+	if (box.south === box.north || box.west === box.east) throw new Error('bbox has zero area');
 	return box;
 }
 
-// Un tracé venu du navigateur n'est pas de confiance : les bornes ici sont les
-// mêmes que celles de parseRing() dans cmd/export-obj/main.go, pour qu'un tracé
-// accepté ici ne se fasse pas refuser trois appels plus loin par le Go.
+// An outline coming from the browser is not trusted: the bounds here are the
+// same as those of parseRing() in cmd/export-obj/main.go, so that an outline
+// accepted here is not refused three calls later by the Go side.
 function requirePoly(p) {
-	if (!Array.isArray(p) || p.length % 2 !== 0) throw new Error('tracé manquant ou invalide');
-	if (p.length < 6) throw new Error('un polygone a au moins 3 sommets');
-	if (p.length > 400) throw new Error('au plus 200 sommets');
-	if (!p.every(Number.isFinite)) throw new Error('tracé : coordonnée non numérique');
+	if (!Array.isArray(p) || p.length % 2 !== 0) throw new Error('outline missing or invalid');
+	if (p.length < 6) throw new Error('a polygon has at least 3 vertices');
+	if (p.length > 400) throw new Error('at most 200 vertices');
+	if (!p.every(Number.isFinite)) throw new Error('outline: non-numeric coordinate');
 	const b = polygonBounds(p);
-	if (b.south < -85 || b.north > 85 || b.west < -180 || b.east > 180) throw new Error('tracé hors limites');
-	if (b.south === b.north || b.west === b.east) throw new Error('tracé d\'aire nulle');
-	if (b.east - b.west >= 180) throw new Error('tracé à cheval sur l\'antiméridien');
+	if (b.south < -85 || b.north > 85 || b.west < -180 || b.east > 180) throw new Error('outline out of bounds');
+	if (b.south === b.north || b.west === b.east) throw new Error('outline has zero area');
+	if (b.east - b.west >= 180) throw new Error('outline straddles the antimeridian');
 	return p;
 }
 
-// Les routes acceptent l'une OU l'autre forme de zone. Rendre les deux serait
-// ambigu ; n'en rendre aucune est l'erreur habituelle d'un appelant.
+// The routes accept one OR the other zone shape. Sending both would be
+// ambiguous; sending neither is a caller's usual mistake.
 function requireZone(b) {
-	if (b.poly && b.bbox) throw new Error('bbox et poly sont exclusifs');
+	if (b.poly && b.bbox) throw new Error('bbox and poly are mutually exclusive');
 	if (b.poly) return { poly: requirePoly(b.poly) };
 	return { bbox: requireBox(b.bbox) };
 }
 
-// b.provider est facultatif (le défaut du registre s'applique alors) ; s'il est
-// fourni, il doit nommer un fournisseur inscrit — providers.get() porte déjà le
-// message français ("fournisseur inconnu : ...") que la GUI affiche, et le
-// throw remonte au catch générique du middleware qui le rend en 400.
+// --- the ceiling on how much work one request may ask for -------------------
+//
+// requireBox/requirePoly bound the SHAPE (in bounds, non-degenerate, at most
+// 200 vertices) but not its SIZE, and size is what costs. A ring is legal up
+// to 180° x 170°, and polygonGrid then allocates cols x rows and walks every
+// cell: measured at zoom 20, a 1° square is 8.5 M cells and 388 ms, 2° is
+// 34 M and 1.7 s, 4° is 136 M and 7.8 s. The server is single-process
+// (see the note on P/MODE above), so those seconds are seconds during which
+// nobody else's terminal, session write or scene fetch is served. /plan and
+// /probe are worse in the other direction: each one fans out to kh.google.com
+// until traverse() hits its own MAX_NODES.
+//
+// 4 M cells is deliberately far above anything real. `add-map --radius 25`
+// (the default) sweeps 51 x 51 = 2,601 cells; the largest zone this manual
+// documents, radius 35, is 71 x 71 = 5,041. 4 M is a 2000 x 2000 grid, about
+// 50 x 50 km at zoom 20 — some three orders of magnitude past any zone anyone
+// would actually acquire, and still bounded at ~0.2 s and a few MB. The point
+// is not to be tight, it is to be finite.
+const MAX_GRID_CELLS = 4_000_000;
+
+// The mask is only ever used to DRAW the staircase of kept tiles, and
+// scanner.js already stops drawing it once tiles fall below 7 px. Past this
+// size it is pure weight — 4 M cells would be an 8 MB JSON array on a route
+// the scanner may call on every mouse move. Above the ceiling `keep` is
+// omitted and the client falls back to the bounding box, a branch it already
+// has. `masked`/`columns` stay, so the figures on the rail do not change.
+const MAX_MASK_CELLS = 250_000;
+
+// Refuses a zone whose grid at this zoom would be unaffordable, BEFORE any
+// grid is allocated — tileGrid() only computes bounds, it allocates nothing.
+// The message names the limit and what to do about it, because the two ways
+// out are not obvious: shrink the zone, or drop the zoom.
+function requireAffordable(zone, zoom) {
+	const box = zone.poly ? polygonBounds(zone.poly) : zone.bbox;
+	const g = tileGrid(box, zoom);
+	const cells = g.cols * g.rows;
+	if (cells > MAX_GRID_CELLS) {
+		throw new Error(
+			`zone too large at zoom ${zoom}: ${cells.toLocaleString('en')} tiles, `
+			+ `limit ${MAX_GRID_CELLS.toLocaleString('en')} — reduce the zone or lower the zoom`);
+	}
+	return zone;
+}
+
+// b.provider is optional (the registry default applies then); when supplied it
+// must name a registered provider — providers.get() already carries the
+// message the GUI displays, and the throw travels up to the middleware's
+// generic catch, which renders it as a 400.
 function requireProvider(b) {
 	if (b.provider == null) return undefined;
 	return providers.get(b.provider).id;
@@ -745,18 +793,18 @@ function centreOf(zone) {
 	return { lat: (b.south + b.north) / 2, lon: (b.west + b.east) / 2 };
 }
 
-// Décrit une zone : géométrie exacte + estimations. `columns` vient du plan Go
-// quand il est fourni (il a élagué les colonnes hors couverture), sinon de la
-// grille calculée localement.
+// Describes a zone: exact geometry + estimates. `columns` comes from the Go
+// plan when it is supplied (it pruned the columns outside coverage), otherwise
+// from the locally computed grid.
 function describe(zone, zoom, altitude, planColumns) {
 	const c = centreOf(zone);
 	const box = zone.poly ? polygonBounds(zone.poly) : zone.bbox;
 	const grid = zone.poly ? polygonGrid(zone.poly, zoom) : tileGrid(box, zoom);
 	const columns = Number.isFinite(planColumns) ? planColumns : grid.columns;
 
-	// L'aire du TRACÉ, pas celle de son emprise : sur un corridor le long d'un
-	// fleuve les deux diffèrent d'un facteur deux ou trois, et c'est cette
-	// valeur-là que l'écran présente comme « surface de la zone ».
+	// The area of the OUTLINE, not of its bounding box: on a corridor along a
+	// river the two differ by a factor of two or three, and that is the value
+	// the screen presents as "zone area".
 	const dimensions = boxDimensions(box);
 	if (zone.poly) dimensions.area = polygonArea(zone.poly);
 
@@ -764,9 +812,13 @@ function describe(zone, zoom, altitude, planColumns) {
 		box, centre: c,
 		...(zone.poly ? { poly: zone.poly } : {}),
 		dimensions,
-		// Uint8Array ne survit pas à JSON.stringify : la carte a besoin du masque
-		// pour dessiner l'escalier, on le rend donc en tableau ordinaire.
-		grid: { ...grid, keep: grid.keep ? Array.from(grid.keep) : undefined, masked: grid.masked ?? 0 },
+		// A Uint8Array does not survive JSON.stringify: the map needs the mask
+		// to draw the staircase, so it is returned as an ordinary array.
+		grid: {
+			...grid,
+			keep: grid.keep && grid.keep.length <= MAX_MASK_CELLS ? Array.from(grid.keep) : undefined,
+			masked: grid.masked ?? 0,
+		},
 		tileMeters: tileSizeMeters(zoom, c.lat),
 		estimate: estimateCost({ columns, zoom, altitude }),
 	};
@@ -795,15 +847,15 @@ function startJob(opts) {
 	const emit = (event, data) => {
 		if (event === 'log') {
 			job.log.push(data);
-			// Le log d'un gros export fait des dizaines de milliers de lignes ;
-			// on n'en garde que la queue pour le rattrapage après rechargement.
+			// A big export's log runs to tens of thousands of lines; only the
+			// tail is kept, for catching up after a reload.
 			if (job.log.length > 2000) job.log.splice(0, job.log.length - 2000);
 		}
 		for (const send of job.listeners) send(event, data);
 	};
 
-	// Certains champs de parsePrepLine sont des compteurs qui s'accumulent
-	// (un événement par chunk/sheet), le reste est un dernier état connu.
+	// Some parsePrepLine fields are counters that accumulate (one event per
+	// chunk/sheet), the rest is a last known state.
 	const ACCUMULATED = new Set(['chunksDone', 'chunkBytes', 'textureSheets', 'textureBytes']);
 	const mergeStat = (stat) => {
 		for (const [k, v] of Object.entries(stat)) {
@@ -815,24 +867,24 @@ function startJob(opts) {
 		signal: ctrl.signal,
 		onLog: (ev) => {
 			if (ev.stream === 'progress') { job.hits = ev.hits; emit('progress', { hits: ev.hits, phase: job.phase }); return; }
-			// Après un skip (tuile déjà en cache), on saute directement à decode :
-			// prep tourne quand même, il n'y a simplement rien eu à télécharger.
+			// After a skip (tile already cached), jump straight to decode: prep
+			// still runs, there was simply nothing to download.
 			if (ev.stream === 'phase') { job.phase = ev.done ? 'decode' : ev.line; emit('phase', { phase: job.phase }); return; }
 			if (ev.stream === 'stat') { mergeStat(ev.stat); emit('stat', { ...job.pipeline }); return; }
 			emit('log', { stream: ev.stream, line: ev.line });
 		},
 	}).then((r) => {
 		job.state = 'done'; job.endedAt = Date.now(); job.result = r;
-		// Rejoué tel quel à une connexion SSE tardive (voir la route /events plus
-		// bas) : sans ça, un rechargement de page après la fin du job ne recevait
-		// qu'un {message} vide — slug/bytes/stats disparaissaient, et l'écran
-		// TERRAIN ACQUIRED de PHASE 05 n'avait plus de quoi proposer KEEP/REMOVE.
+		// Replayed as-is to a late SSE connection (see the /events route below):
+		// without it, a page reload after the job ended only received an empty
+		// {message} — slug/bytes/stats disappeared, and PHASE 05's TERRAIN
+		// ACQUIRED screen had nothing left to offer KEEP/REMOVE with.
 		job.final = { event: 'done', data: { slug: r.slug, bytes: dirSize(r.outDir), stats: r.stats } };
 		emit(job.final.event, job.final.data);
 	}).catch((e) => {
 		job.state = e instanceof Cancelled ? 'cancelled' : 'error';
 		job.endedAt = Date.now();
-		job.error = e instanceof Cancelled ? 'Annulé.' : e.message;
+		job.error = e instanceof Cancelled ? 'Cancelled.' : e.message;
 		job.final = { event: job.state === 'cancelled' ? 'cancelled' : 'error', data: { message: job.error } };
 		emit(job.final.event, job.final.data);
 	}).finally(() => {
@@ -856,9 +908,9 @@ const DESTRUCTION_ERROR = 'removal is disabled on a shared server';
 function destructionClosed() { return MODE === 'shared'; }
 
 const routes = [
-	// `acquire` (issue #60) : l'état RÉEL du droit d'acquérir — le drapeau posé ET
-	// le mode local. Le client s'en sert pour masquer DRAW BOX / DRAW SHAPE /
-	// ACQUIRE AREA ; c'est de l'affichage, la garde est sur POST /jobs.
+	// `acquire` (issue #60): the REAL state of the right to acquire — the flag
+	// set AND local mode. The client uses it to hide DRAW BOX / DRAW SHAPE /
+	// ACQUIRE AREA; that is display, the guard is on POST /jobs.
 	// `mode` (V1) : where the game runs, 'local' or 'shared'. A distributed
 	// desktop build has acquisition CLOSED and is still a local installation,
 	// so the footer and the LOCAL-tab notice key on this, not on `acquire`.
@@ -866,8 +918,9 @@ const routes = [
 		scenes: sceneList(), acquire: acquireEnabled(MODE), mode: MODE,
 	})],
 
-	// Liste des fournisseurs inscrits + le défaut du registre (Task 7, issue
-	// #18) : la GUI en peuple son sélecteur plutôt que de coder les ids en dur.
+	// The list of registered providers + the registry default (Task 7, issue
+	// #18): the GUI populates its selector from it instead of hard-coding the
+	// ids.
 	['GET', /^\/providers$/, async (req, res) => json(res, 200, {
 		providers: listProviders(), default: providers.DEFAULT_PROVIDER_ID,
 	})],
@@ -876,53 +929,55 @@ const routes = [
 		if (destructionClosed()) return json(res, 403, { error: DESTRUCTION_ERROR });
 		const scenes = readScenes();
 		const i = scenes.findIndex((s) => s.slug === slug);
-		if (i < 0) return json(res, 404, { error: `aucune carte "${slug}"` });
+		if (i < 0) return json(res, 404, { error: `no map "${slug}"` });
 		const [entry] = scenes.splice(i, 1);
 		writeScenes(scenes);
 		fs.rmSync(path.join(P.SCENES_DIR, slug), { recursive: true, force: true });
 		let raw = false;
 		if (url.searchParams.get('raw') === '1') {
-			// On retrouve la tuile brute par son nom, quelle que soit la forme de
-			// la zone, et chez SON fournisseur. La règle vit dans add-map-core
-			// (rawTileDirFor) : le CLI remove-map.mjs la partage, au lieu de
-			// recalculer un chemin Flyover pour toute scène (issue #154).
+			// The raw tile is found by its name, whatever the shape of the zone,
+			// and at ITS provider. The rule lives in add-map-core
+			// (rawTileDirFor): the remove-map.mjs CLI shares it, instead of
+			// recomputing a Flyover path for every scene (issue #154).
 			const dir = await rawTileDirFor(entry);
 			if (fs.existsSync(dir)) { fs.rmSync(dir, { recursive: true, force: true }); raw = true; }
 		}
 		json(res, 200, { removed: slug, raw });
 	}],
 
-	// Description instantanée d'une zone : aucune requête réseau, appelable à
-	// chaque déplacement de la souris. Indépendante du fournisseur (géométrie
-	// et coût estimé seulement) : pas de b.provider ici.
+	// Instant description of a zone: no network request, callable on every
+	// mouse move. Provider-independent (geometry and estimated cost only): no
+	// b.provider here.
 	['POST', /^\/describe$/, async (req, res) => {
 		const b = await readBody(req, res);
-		const zone = requireZone(b);
-		json(res, 200, describe(zone, intIn(b.zoom, 13, 20, 20), intIn(b.altitude, 1, 60, 20)));
+		const zoom = intIn(b.zoom, 13, 20, 20);
+		const zone = requireAffordable(requireZone(b), zoom);
+		json(res, 200, describe(zone, zoom, intIn(b.altitude, 1, 60, 20)));
 	}],
 
-	// Plan réel : interroge la région du fournisseur choisi, élague les colonnes
-	// hors emprise, et rend l'emprise de couverture — sans télécharger une seule
-	// tuile.
+	// A real plan: queries the chosen provider's region, prunes the columns
+	// outside the footprint, and returns the coverage footprint — without
+	// downloading a single tile.
 	['POST', /^\/plan$/, async (req, res) => {
 		const b = await readBody(req, res);
-		const zone = requireZone(b);
 		const provider = requireProvider(b);
 		const zoom = intIn(b.zoom, 13, 20, 20), altitude = intIn(b.altitude, 1, 60, 20);
+		const zone = requireAffordable(requireZone(b), zoom);
 		const c = centreOf(zone);
 		const plan = await planScan({ lat: c.lat, lon: c.lon, zoom, altitude, provider, ...zone });
 		json(res, 200, { plan, ...describe(zone, zoom, altitude, plan.columns) });
 	}],
 
-	// Sonde : la seule preuve qu'il y a vraiment de la photogrammétrie ici.
+	// Probe: the only proof that there really is photogrammetry here.
 	['POST', /^\/probe$/, async (req, res) => {
 		const b = await readBody(req, res);
-		const zone = requireZone(b);
 		const provider = requireProvider(b);
+		const zoom = intIn(b.zoom, 13, 20, 20);
+		const zone = requireAffordable(requireZone(b), zoom);
 		const c = centreOf(zone);
 		json(res, 200, await probeCoverage({
 			lat: c.lat, lon: c.lon, provider, ...zone,
-			zoom: intIn(b.zoom, 13, 20, 20), altitude: intIn(b.altitude, 1, 60, 20),
+			zoom, altitude: intIn(b.altitude, 1, 60, 20),
 		}));
 	}],
 
@@ -932,20 +987,21 @@ const routes = [
 	})],
 
 	['POST', /^\/jobs$/, async (req, res) => {
-		// La seule route qui fait naître une scène sur disque, donc la seule qui
-		// porte la garde. Rien à voir avec la clé d'opérateur : celle-ci dit qui
-		// parle, celle-là ce qui a le droit d'exister ici (D2).
+		// The only route that brings a scene into existence on disk, hence the
+		// only one that carries the guard. Nothing to do with the operator key:
+		// that one says who speaks, this one what has the right to exist here
+		// (D2).
 		if (!acquireEnabled(MODE)) {
-			return json(res, 403, { error: 'acquisition de terrain désactivée sur ce serveur' });
+			return json(res, 403, { error: 'terrain acquisition is disabled on this server' });
 		}
-		if (current) return json(res, 409, { error: 'une extraction est déjà en cours', jobId: current.id });
+		if (current) return json(res, 409, { error: 'an extraction is already running', jobId: current.id });
 		const b = await readBody(req, res);
-		const zone = requireZone(b);
+		const zone = requireAffordable(requireZone(b), intIn(b.zoom, 13, 20, 20));
 		const provider = requireProvider(b);
 		const name = String(b.name ?? '').trim();
-		if (!name) return json(res, 400, { error: 'nom manquant' });
+		if (!name) return json(res, 400, { error: 'name missing' });
 		const slug = (b.slug ? slugify(b.slug) : slugify(name));
-		if (!slug) return json(res, 400, { error: 'le nom ne donne aucun identifiant utilisable' });
+		if (!slug) return json(res, 400, { error: 'the name yields no usable identifier' });
 
 		const c = centreOf(zone);
 		const job = startJob({
@@ -960,16 +1016,16 @@ const routes = [
 	['DELETE', /^\/jobs\/([0-9a-f-]+)$/, async (req, res, [id]) => {
 		if (destructionClosed()) return json(res, 403, { error: DESTRUCTION_ERROR });
 		const job = jobs.get(id);
-		if (!job) return json(res, 404, { error: 'job inconnu' });
+		if (!job) return json(res, 404, { error: 'unknown job' });
 		job.ctrl.abort();
 		json(res, 200, { cancelling: id });
 	}],
 
-	// SSE. Le buffer de log est rejoué à la connexion, pour qu'un rechargement de
-	// page pendant un export de dix minutes ne perde pas le fil.
+	// SSE. The log buffer is replayed on connection, so that a page reload
+	// during a ten-minute export does not lose the thread.
 	['GET', /^\/jobs\/([0-9a-f-]+)\/events$/, async (req, res, [id]) => {
 		const job = jobs.get(id);
-		if (!job) return json(res, 404, { error: 'job inconnu' });
+		if (!job) return json(res, 404, { error: 'unknown job' });
 		res.writeHead(200, {
 			'content-type': 'text/event-stream; charset=utf-8',
 			'cache-control': 'no-store',
@@ -977,7 +1033,7 @@ const routes = [
 			'x-accel-buffering': 'no',
 		});
 		const send = (event, data) => {
-			try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* client parti */ }
+			try { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); } catch { /* client gone */ }
 		};
 		send('state', { state: job.state, phase: job.phase, hits: job.hits, pipeline: job.pipeline, error: job.error });
 		for (const l of job.log) send('log', l);
@@ -986,10 +1042,10 @@ const routes = [
 			const ka = setInterval(() => { try { res.write(': ka\n\n'); } catch { /* */ } }, 15000);
 			req.on('close', () => { job.listeners.delete(send); clearInterval(ka); });
 		} else {
-			// job.final porte le VRAI événement terminal (voir startJob) : une
-			// connexion tardive (rechargement après la fin du job) doit voir
-			// exactement ce qu'une connexion restée ouverte aurait reçue, slug et
-			// stats compris — pas une reconstruction générique.
+			// job.final carries the REAL terminal event (see startJob): a late
+			// connection (a reload after the job ended) must see exactly what a
+			// connection left open would have received, slug and stats
+			// included — not a generic reconstruction.
 			const fallback = { event: job.state === 'done' ? 'done' : job.state, data: { message: job.error ?? '' } };
 			const { event, data } = job.final ?? fallback;
 			send(event, data);
@@ -999,11 +1055,11 @@ const routes = [
 	}],
 ];
 
-// La fabrique. `paths` vient de tools/lib/paths.mjs (le défaut du processus en
-// dev, le `--data` du serveur autonome) ; `logger` est celui de Vite en dev, la
-// console en autonome. `mode` fait partie de la signature dès maintenant mais
-// aucune route ne le regarde : c'est T3 qui s'en servira (clé d'opérateur,
-// acquisition fermée en `shared`).
+// The factory. `paths` comes from tools/lib/paths.mjs (the process default in
+// dev, the standalone server's `--data`); `logger` is Vite's in dev, the
+// console in standalone. `mode` has been part of the signature from the start
+// but no route looked at it: T3 is what uses it (operator key, acquisition
+// closed in `shared`).
 export function createApi({ paths = defaultPaths, mode = 'local', logger = console } = {}) {
 	P = paths;
 	MODE = mode;
@@ -1019,26 +1075,26 @@ export function createApi({ paths = defaultPaths, mode = 'local', logger = conso
 		if (onOperator) {
 			const url = new URL(req.url, 'http://localhost');
 			const p = url.pathname.slice(OP_BASE.length) || '/';
-			// En `shared`, la racine n'a que deux réponses possibles : créer un
-			// opérateur (sans clé — sinon personne ne pourrait jamais s'inscrire) ou
-			// rien. Pas de liste publique : sur un serveur qui reçoit des inconnus,
-			// énumérer les opérateurs est déjà une fuite.
+			// In `shared`, the root has only two possible answers: create an
+			// operator (without a key — otherwise nobody could ever sign up) or
+			// nothing. No public list: on a server that receives strangers,
+			// enumerating the operators is already a leak.
 			if (MODE === 'shared' && p === '/' && req.method === 'GET') {
-				return json(res, 404, { error: 'pas d\'annuaire d\'opérateurs sur ce serveur' });
+				return json(res, 404, { error: 'no operator directory on this server' });
 			}
 			if (!(p === '/' && req.method === 'POST')) {
-				// /whoami ne nomme pas un opérateur, il en CHERCHE un : la clé seule
-				// décide, sans quoi il faudrait déjà savoir qui l'on est pour le
-				// demander. Un id généré porte toujours un suffixe hexadécimal
-				// (operator-store.newId), donc « whoami » n'en désigne jamais un.
+				// /whoami does not name an operator, it LOOKS one up: the key
+				// alone decides, otherwise you would already have to know who
+				// you are to ask. A generated id always carries a hexadecimal
+				// suffix (operator-store.newId), so "whoami" never names one.
 				const named = /^\/([^/]+)/.exec(p)?.[1] ?? null;
 				const denied = checkKey({ mode: MODE, dir: P.OPERATOR_DIR, req, id: named === 'whoami' ? null : named });
 				if (denied) return json(res, denied.status, { error: denied.error });
 			}
 			const onPath = opRoutes.filter(([, re]) => re.test(p));
-			if (!onPath.length) return json(res, 404, { error: `route inconnue : ${p}` });
+			if (!onPath.length) return json(res, 404, { error: `unknown route: ${p}` });
 			const route = onPath.find(([method]) => method === req.method);
-			if (!route) return json(res, 405, { error: `${req.method} non supporté sur ${p}`, allow: onPath.map(([m]) => m) });
+			if (!route) return json(res, 405, { error: `${req.method} not supported on ${p}`, allow: onPath.map(([m]) => m) });
 			try {
 				return await route[2](req, res, route[1].exec(p).slice(1), url);
 			} catch (e) {
@@ -1053,21 +1109,21 @@ export function createApi({ paths = defaultPaths, mode = 'local', logger = conso
 		if (!req.url?.startsWith(BASE)) return next();
 		const url = new URL(req.url, 'http://localhost');
 		const p = url.pathname.slice(BASE.length) || '/';
-		// /__map-api/* ne nomme aucun opérateur : c'est la clé seule qui dit qui
-		// parle. En `local` l'en-tête n'est pas même lu.
+		// /__map-api/* names no operator: the key alone says who speaks. In
+		// `local` the header is not even read.
 		{
 			const denied = checkKey({ mode: MODE, dir: P.OPERATOR_DIR, req });
 			if (denied) return json(res, denied.status, { error: denied.error });
 		}
-		// Plusieurs routes partagent un chemin (GET et POST /jobs) : on
-		// cherche la méthode parmi TOUTES celles qui matchent le chemin, et
-		// on ne répond 405 que si aucune ne convient.
+		// Several routes share a path (GET and POST /jobs): look for the method
+		// among ALL those that match the path, and answer 405 only if none
+		// fits.
 		const onPath = routes.filter(([, re]) => re.test(p));
-		if (!onPath.length) return json(res, 404, { error: `route inconnue : ${p}` });
+		if (!onPath.length) return json(res, 404, { error: `unknown route: ${p}` });
 		const route = onPath.find(([method]) => method === req.method);
 		if (!route) {
 			return json(res, 405, {
-				error: `${req.method} non supporté sur ${p}`,
+				error: `${req.method} not supported on ${p}`,
 				allow: onPath.map(([m]) => m),
 			});
 		}

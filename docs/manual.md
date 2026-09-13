@@ -1,431 +1,446 @@
-# Manuel — FPVThePlanet!
+# Manual — FPVThePlanet!
 
-Le manuel technique : commandes, pipeline de cartes, modèle de vol, réglages.
-Pour savoir ce qu'est ce projet et comment y jouer, voir le
+The technical manual: commands, map pipeline, flight model, tuning.
+For what this project is and how to play it, see the
 [README](../README.md).
 
-Toutes les commandes de ce document se lancent depuis `sim/`.
+Every command in this document is run from `sim/`.
 
 ```bash
 cd sim
-npm run selftest           # vérifications hors-navigateur (voir la limite en bas de page)
-npm run selftest:operator  # état opérateur, terminal, scanner, météo du monde
+npm run selftest           # out-of-browser checks (see the limitation at the bottom of the page)
+npm run selftest:operator  # operator state, terminal, scanner, world weather
 ```
 
-## Sommaire
+> **Issue numbers.** The `#NNN` references scattered through this document point
+> at the predecessor repository, which stays private. They do not resolve here,
+> and a number that happens to exist on this repository is a *different* issue.
+> They are kept because the repository's own history quotes them; read them as
+> provenance, not as links.
 
-`grep -n '^#' docs/manual.md` pour la ligne exacte d'une section.
+## Contents
 
-- Contrôles
-- Ajouter une carte — depuis le jeu (GLOBAL SCANNER) · l'ancienne GUI ·
-  en ligne de commande · prérequis · options · dimensionner `--radius` ·
-  retoucher une carte
-- Musique — le pipeline de génération · boucles · normalisation · write-once
-- Supprimer une carte — quand une zone ne renvoie rien
-- Le terminal opérateur
-- Faire tourner le jeu sans Vite — le serveur autonome
-- Le pipeline de dialogue (RTC du crew) — `dialogue:gen` · `dialogue:inspect` ·
-  `dialogue:check` · les deux dos · la politique de relecture
-- Cartes disponibles
-- Exporter une scène en `.glb`
-- Versionner et publier — l'intégration continue · couper une version
+`grep -n '^#' docs/manual.md` for the exact line of a section.
+
+- Controls
+- Adding a map — from the game (GLOBAL SCANNER) · the legacy GUI ·
+  from the command line · prerequisites · options · sizing `--radius` ·
+  reworking a map
+- Music — the generation pipeline · loops · normalisation · write-once
+- Removing a map — when an area returns nothing
+- The operator terminal
+- Running the game without Vite — the standalone server
+- The dialogue pipeline (crew RTC) — `dialogue:gen` · `dialogue:inspect` ·
+  `dialogue:check` · the two backends · the review policy
+- Available maps
+- Exporting a scene to `.glb`
+- Versioning and publishing — continuous integration · cutting a version
 - Architecture
-- Limite connue : `selftest` spécifique à la Tour Eiffel
-- Détails techniques du pré-traitement — fournisseurs et décodeurs · fixtures
-  rocktree · trois réglages qui comptent · sur le gris
-- Le modèle de vol — le vent · la pluie · le brouillard · le son · le rendu FPV ·
-  le lien vidéo · limites de zone · régler le PID
+- Known limitation: `selftest` is Eiffel-Tower specific
+- Technical details of the preprocessing — providers and decoders · rocktree
+  fixtures · three settings that matter · about the grey
+- The flight model — wind · rain · fog · sound · FPV rendering ·
+  the video link · zone limits · tuning the PID
 
-## Contrôles
+## Controls
 
-**Manette / radio USB** détectée automatiquement (Mode 2 par défaut), remappable
-dans **Tab** avec des barres de niveau en direct pour identifier chaque axe.
-**Chrome recommandé** : la Gamepad API y est plus permissive (détection sur
-simple mouvement de stick) que sur Firefox, plus strict sur le focus de
-l'onglet et parfois l'appui d'un bouton avant de faire apparaître le
-périphérique.
+**Gamepad / USB radio** detected automatically (Mode 2 by default), remappable
+in **Tab** with live level bars to identify each axis.
+**Chrome recommended**: the Gamepad API is more permissive there (detection on a
+simple stick movement) than on Firefox, which is stricter about tab focus and
+sometimes wants a button press before the device shows up at all.
 
-**Clavier** : `W`/`S` gaz · `A`/`D` lacet · flèches ou souris roulis-tangage ·
-`R` respawn · `M` mode (acro/angle/altitude) · `C` caméra libre · `Tab` réglages.
+**Keyboard**: `W`/`S` throttle · `A`/`D` yaw · arrows or mouse roll-pitch ·
+`R` respawn · `M` mode (acro/angle/altitude) · `C` free camera · `Tab` settings.
 
-## Ajouter une carte
+## Adding a map
 
-Une carte = une zone téléchargée (Google Earth — voir
-[Fournisseurs et décodeurs](#fournisseurs-et-décodeurs)) puis convertie pour
-le moteur.
+A map = an area downloaded (Google Earth — see
+[Providers and decoders](#providers-and-decoders)) and then converted for
+the engine.
 
-### Depuis le jeu — `GLOBAL SCANNER` (voie principale)
-
-```bash
-npm run dev        # puis http://localhost:5173 → [ GLOBAL SCANNER ]
-```
-
-Le scanner est le point d'entrée mondial du jeu (PHASE 03) : on cherche un lieu
-(`SEARCH LOCATION`, ou des coordonnées « lat, lon »), on cadre, on dessine la zone
-— `DRAW BOX` pour un rectangle, `DRAW SHAPE` pour un tracé libre — et
-`AREA ANALYSIS` affiche avant de lancer la grille de tuiles, le
-nombre de requêtes, la surface, le poids estimé et la durée. `PROBE AREA`
-télécharge un échantillon réel au centre de la zone — c'est la seule preuve
-fiable qu'il y a de la photogrammétrie ici. `ACQUIRE AREA` lance le vrai
-pipeline avec les logs en direct, et propose `[ FLY ]` à la fin.
-
-Le fond est monochrome par défaut (`MONO`, OpenStreetMap inversé et désaturé) ;
-`SAT` et `TERRAIN` sont là quand reconnaître un bâtiment ou un relief aide à
-cadrer. `SIGNAL DENSITY` / `TARGETS EST.` sont des estimations d'activité radio
-(Bible §6) : elles partent de la catégorie OSM d'un point de la zone et de sa
-surface, sans rien tirer au sort — la génération de cibles, elle, est PHASE 7.
-
-#### Le tracé libre
-
-Un fleuve, une avenue, un contour de quartier ne sont pas des rectangles : les
-suivre au rectangle oblige à embarquer les blocs voisins. `DRAW SHAPE` (issue #30)
-délimite la zone au polygone.
-
-**Une tuile est retenue dès que le tracé la touche, même d'un coin.** La zone
-extraite est donc toujours un *sur-ensemble* de ce qui est dessiné — même règle
-que le rectangle, déjà arrondi vers l'extérieur sur le treillis. Deux
-conséquences voulues : ce qu'on dessine est toujours entièrement couvert, et un
-corridor plus fin qu'une tuile (~25 m au zoom 20) reste extractible, là où une
-règle « centre dans le tracé » lui rendrait zéro colonne.
-
-La carte ne montre alors plus un rectangle bleu mais **l'escalier** des tuiles
-retenues : la forme réellement extraite, par opposition au tracé lissé qui reste
-en pointillé. Contrairement au treillis, il est dessiné à toute échelle.
-
-`TILES` annonce le nombre de colonnes réellement balayées sur celui de l'emprise
-(« 8,069 / 15,812 ») : sur un tracé, le produit `cols × rows` serait l'emprise et
-laisserait croire à deux fois plus de téléchargement qu'il n'y en a.
-
-Le prédicat « cette tuile touche-t-elle le tracé ? » vit dans
-`tools/lib/tiles.mjs`, partagé par le scanner (navigateur) et l'API de dev
-(Node) : `node tools/map-poly-selftest.mjs` le vérifie sur des cas raisonnés à
-la main.
-
-### L'ancienne GUI d'extraction
-
-`http://localhost:5173/add-map.html` fait toujours la même chose, en français et
-hors du jeu. Le scanner l'a absorbée ; elle disparaîtra avec la mise en scène de
-l'acquisition (PHASE 5).
-
-Le sélecteur **FOURNISSEUR** y propose `Auto` (seul `Google Earth` est inscrit
-depuis le retrait d'Apple Flyover, 2026-09-07) ou `Google Earth` explicitement.
-
-Deux choses valent d'être comprises :
-
-- **La zone est quantifiée.** Une tuile fait environ 25 m de côté au zoom 20 ;
-  la zone réellement extraite est celle dessinée arrondie au treillis. La
-  carte affiche ce treillis, et le tracé dessiné reste en pointillé à côté. Sur un
-  polygone, l'emprise cède la place à l'escalier des tuiles retenues.
-  Ce treillis n'est pas un décor : il vient de `tileGrid()` (`tools/lib/tiles.mjs`)
-  — c'est exactement la grille que l'acquisition balaiera. Le grisage d'une
-  région hors couverture déclarée (`plan.pruned`) reste dans le code pour un
-  futur fournisseur à régions déclarées ; `google-earth` ne le déclenche jamais
-  (sa traversée `rocktree` n'a pas cette notion).
-- **Les estimations sont des fourchettes, pas des chiffres.** À nombre de colonnes
-  égal, un lotissement et un quartier de tours rendent du simple au quadruple de
-  données. Les constantes viennent de mesures sur les cartes existantes
-  (`tools/lib/estimates.json`), pas d'un doigt mouillé.
-
-L'interface et son API (`/__map-api`) n'existent que sous `npm run dev` : elles ne
-partent pas dans `npm run build`. Il en va de même pour la couche opérateur
-(`/__operator`), servie par le même plugin de dev. Comme `main.js` appelle
-désormais cette couche pendant le boot, un bundle issu de `vite build` n'est pas
-jouable en V1 — c'est voulu (décision D1 : `npm run dev` *est* le jeu).
-
-### En ligne de commande
-
-Tout le pipeline tient en une commande :
+### From the game — `GLOBAL SCANNER` (the main route)
 
 ```bash
-npm run add-map -- "Nom affiché dans le menu" <lat> <lon>
+npm run dev        # then http://localhost:5173 → [ GLOBAL SCANNER ]
 ```
 
-Exemple, pour une zone centrée sur le Sacré-Cœur :
+The scanner is the game's worldwide entry point (PHASE 03): you search for a
+place (`SEARCH LOCATION`, or coordinates "lat, lon"), frame it, draw the area
+— `DRAW BOX` for a rectangle, `DRAW SHAPE` for a free outline — and
+`AREA ANALYSIS` shows, before launching the tile grid, the
+number of requests, the surface, the estimated weight and the duration.
+`PROBE AREA` downloads a real sample at the centre of the area — that is the
+only reliable proof that there is photogrammetry here. `ACQUIRE AREA` launches
+the real pipeline with live logs, and offers `[ FLY ]` at the end.
+
+The base layer is monochrome by default (`MONO`, OpenStreetMap inverted and
+desaturated); `SAT` and `TERRAIN` are there for when recognising a building or a
+relief helps to frame the shot. `SIGNAL DENSITY` / `TARGETS EST.` are estimates
+of radio activity (Bible §6): they start from the OSM category of a point in the
+area and from its surface, without drawing anything at random — target
+generation itself is PHASE 7.
+
+#### The free outline
+
+A river, an avenue, the contour of a neighbourhood are not rectangles: following
+them with a rectangle forces you to take the neighbouring blocks along.
+`DRAW SHAPE` (issue #30) bounds the area with a polygon.
+
+**A tile is kept as soon as the outline touches it, even by a corner.** The
+extracted area is therefore always a *superset* of what is drawn — the same rule
+as the rectangle, already rounded outwards onto the lattice. Two intended
+consequences: what you draw is always entirely covered, and a corridor thinner
+than a tile (~25 m at zoom 20) stays extractable, where a "centre inside the
+outline" rule would give it zero columns.
+
+The map then no longer shows a blue rectangle but **the staircase** of the tiles
+that were kept: the shape actually extracted, as opposed to the smoothed outline,
+which stays dashed. Unlike the lattice, it is drawn at every scale.
+
+`TILES` announces the number of columns actually swept out of the bounding box
+("8,069 / 15,812"): on an outline, the product `cols × rows` would be the
+bounding box and would suggest twice as much downloading as there really is.
+
+The predicate "does this tile touch the outline?" lives in
+`tools/lib/tiles.mjs`, shared by the scanner (browser) and the dev API
+(Node): `node tools/map-poly-selftest.mjs` checks it on cases reasoned out
+by hand.
+
+### The legacy extraction GUI
+
+`http://localhost:5173/add-map.html` still does the same thing, in French and
+outside the game. The scanner has absorbed it; it will disappear along with the
+staging of acquisition (PHASE 5).
+
+Its **FOURNISSEUR** selector offers `Auto` (only `Google Earth` is registered
+since Apple Flyover was withdrawn, 2026-09-07) or `Google Earth` explicitly.
+
+Two things are worth understanding:
+
+- **The area is quantised.** A tile is about 25 m across at zoom 20;
+  the area actually extracted is the one drawn, rounded onto the lattice. The
+  map displays that lattice, and the drawn outline stays dashed next to it. On a
+  polygon, the bounding box gives way to the staircase of the tiles kept.
+  This lattice is not decoration: it comes from `tileGrid()` (`tools/lib/tiles.mjs`)
+  — it is exactly the grid the acquisition will sweep. The greying-out of a
+  region outside declared coverage (`plan.pruned`) stays in the code for a
+  future provider with declared regions; `google-earth` never triggers it
+  (its `rocktree` traversal has no such notion).
+- **The estimates are ranges, not figures.** For an equal number of columns, a
+  housing estate and a district of towers return anything from one to four times
+  the data. The constants come from measurements on the existing maps
+  (`tools/lib/estimates.json`), not from a wet finger in the air.
+
+That interface and its map GUI page exist only under `npm run dev`: `add-map.html`
+is not a build entry, and the Vite plugin that mounts the API is `apply: 'serve'`.
+The API itself is not dev-only, though — `sim/server/api.mjs` serves both
+`/__map-api` and the operator layer `/__operator` in production, which is what
+makes a `npm run build` bundle playable behind the standalone server (see
+[Running the game without Vite](#running-the-game-without-vite--the-standalone-server)).
+
+### From the command line
+
+The whole pipeline fits in one command:
+
+```bash
+npm run add-map -- "Name shown in the menu" <lat> <lon>
+```
+
+For example, for an area centred on the Sacré-Cœur:
 
 ```bash
 npm run add-map -- "Sacré-Cœur" 48.8867 2.3431
 ```
 
-Ça enchaîne, dans l'ordre :
+That chains, in order:
 
-1. **Téléchargement** — le fournisseur (`google-earth` par défaut) traverse
-   l'octree `rocktree` autour de `lat,lon` et écrit ses nœuds dans
+1. **Download** — the provider (`google-earth` by default) traverses
+   the `rocktree` octree around `lat,lon` and writes its nodes to
    `sim/.cache/google-earth/<lat>-<lon>-<zoom>-<radius>-<altitude>/`.
-2. **Post-traitement** — `tools/prep.mjs` convertit ce `.obj` (ECEF, un JPEG par
-   matériau) en binaires prêts pour le moteur (ENU en mètres, textures
-   regroupées en planches) dans `public/scenes/<slug>/`. Voir
-   [Détails techniques](#détails-techniques-du-pré-traitement) pour ce que fait
-   réellement cette étape et pourquoi elle est nécessaire.
-3. **Enregistrement** — la carte est ajoutée à `public/scenes.json`, donc elle
-   apparaît dans le menu au prochain `npm run dev` (pas besoin de relancer le
-   serveur s'il tourne déjà, un simple rechargement de page suffit).
+2. **Post-processing** — `tools/prep.mjs` converts that `.obj` (ECEF, one JPEG
+   per material) into engine-ready binaries (ENU in metres, textures grouped
+   into sheets) in `public/scenes/<slug>/`. See
+   [Technical details](#technical-details-of-the-preprocessing) for what this
+   step actually does and why it is necessary.
+3. **Registration** — the map is added to `public/scenes.json`, so it
+   appears in the menu at the next `npm run dev` (no need to restart the
+   server if it is already running, a page reload is enough).
 
-## Musique
+## Music
 
-L'arc musical (issue #122) : une bibliothèque de morceaux générés localement,
-un par session, dont l'intensité suit le vol. Chaque famille de drone a son
-genre — cf. Bible §34.
+The musical arc (issue #122): a library of locally generated tracks, one per
+session, whose intensity follows the flight. Each drone family has its own
+genre — see Bible §34.
 
-Les morceaux sont **commités** dans `public/music/` (Opus 96 kbps, ~1,1 Mo pour
-90 s) et décrits par `public/music.json`. Le jeu se lance et se joue sans eux :
-manifeste absent ou fichier manquant, il reste silencieux.
+The tracks are **committed** into `public/music/` (Opus 96 kbps, ~1.1 MB for
+90 s) and described by `public/music.json`. The game launches and plays without
+them: manifest missing or file missing, it simply stays silent.
 
-Le pipeline, dans l'ordre. Il demande une installation locale de
-[Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (~10 Go avec
-les poids), hors du dépôt, désignée par `FPVTP_STABLE_AUDIO` :
-
-```bash
-export FPVTP_STABLE_AUDIO=/chemin/vers/stableaudio3.0
-
-npm run add-music -- --pool all --count 10 --seed-base v6   # → .music-staging/ (gitignoré)
-npm run music-gate                                          # rejet automatique mesuré
-npm run music-loop                                          # boucle + normalisation + Opus
-npm run music-review                                        # écoute : o accepter, k refuser
-```
-
-**`--seed-base` est obligatoire en pratique, et c'est le piège du pipeline.**
-La graine détermine les prompts *et* les identifiants : la réutiliser ne produit
-pas d'autres morceaux, elle rend exactement les mêmes, que le générateur saute
-ensuite comme déjà présents. On croit avoir agrandi la bibliothèque et il ne
-s'est rien passé. `add-music` refuse désormais une graine déjà représentée au
-manifeste et propose la suivante — prends celle qu'il donne.
-
-`--pool` accepte `all`, une liste séparée par des virgules, ou l'une des sept
-clés : `menu`, `freestyle5`, `race5`, `cinewhoop`, `longrange`, `heavy5`,
-`toothpick` (les six dernières sont les familles de `src/drone-profiles.js`).
-Une liste vaut mieux que plusieurs commandes : le modèle met plus longtemps à
-charger qu'à générer, et un lot ne le charge qu'une fois.
-
-Compter environ **8 s par morceau** plus 20 s de chargement. Ne pas toucher au
-nombre de pas de diffusion : 8 est le régime nominal du modèle, pas un
-raccourci de vitesse — le monter dégrade la sortie de plusieurs dB et la fait
-partir hors-style (cf. le commentaire de `DEFAULTS` dans `tools/music-gen.mjs`).
-
-Pour retirer des morceaux — du manifeste **et** du disque, la règle write-once
-disant qu'un fichier n'est jamais réécrit, pas qu'il est éternel :
+The pipeline, in order. It requires a local installation of
+[Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (~10 GB with
+the weights), outside the repository, pointed at by `FPVTP_STABLE_AUDIO`:
 
 ```bash
-node tools/music-retire.mjs --before v6          # coup à blanc : ne garde que v6
-node tools/music-retire.mjs --id <id> --apply    # ou un par un
+export FPVTP_STABLE_AUDIO=/path/to/stableaudio3.0
+
+npm run add-music -- --pool all --count 10 --seed-base v6   # → .music-staging/ (gitignored)
+npm run music-gate                                          # measured automatic rejection
+npm run music-loop                                          # loop + normalisation + Opus
+npm run music-review                                        # listen: o to accept, k to reject
 ```
 
-Il refuse de vider un pool : un pool sans musique rendrait le jeu muet pour
-toute une famille de drone.
+**`--seed-base` is mandatory in practice, and it is the pipeline's trap.**
+The seed determines the prompts *and* the identifiers: reusing it does not
+produce other tracks, it produces exactly the same ones, which the generator
+then skips as already present. You believe you have grown the library and
+nothing has happened. `add-music` now refuses a seed already represented in the
+manifest and offers the next one — take the one it gives you.
 
-Trois choses à savoir :
+`--pool` accepts `all`, a comma-separated list, or one of the seven
+keys: `menu`, `freestyle5`, `race5`, `cinewhoop`, `longrange`, `heavy5`,
+`toothpick` (the last six being the families of `src/drone-profiles.js`).
+A list is better than several commands: the model takes longer to load than to
+generate, and a batch loads it only once.
 
-- **Stable Audio ne produit pas de boucles.** `music-loop.mjs` crossfade les
-  3 dernières secondes par-dessus les 3 premières, ce qui rend les deux
-  jonctions continues. La touche `l` de la revue fait entendre exactement cette
-  couture.
-- **Tout est normalisé à -14 LUFS**, en deux passes. C'est ce qui permet de
-  calibrer le mix une seule fois pour toute la bibliothèque.
-- **Write-once.** Un fichier commité n'est jamais réécrit : git ne
-  delta-compresse pas l'audio et n'oublie rien. Un morceau recalé après coup est
-  retiré du manifeste et supprimé, jamais régénéré sous le même nom.
+Count roughly **8 s per track** plus 20 s of loading. Do not touch the number of
+diffusion steps: 8 is the model's nominal regime, not a speed
+shortcut — raising it degrades the output by several dB and sends it
+out of style (see the `DEFAULTS` comment in `tools/music-gen.mjs`).
 
-Les prompts et les six axes de variation sont dans `tools/music-prompts.mjs` —
-c'est la source de vérité créative, pas un détail d'implémentation.
+To retire tracks — from the manifest **and** from disk, the write-once rule
+saying that a file is never rewritten, not that it is eternal:
 
-## Supprimer une carte
+```bash
+node tools/music-retire.mjs --before v6          # dry run: keeps only v6
+node tools/music-retire.mjs --id <id> --apply    # or one at a time
+```
+
+It refuses to empty a pool: a pool with no music would make the game mute for a
+whole drone family.
+
+Three things to know:
+
+- **Stable Audio does not produce loops.** `music-loop.mjs` crossfades the
+  last 3 seconds over the first 3, which makes both junctions continuous.
+  The `l` key in the review plays exactly that seam.
+- **Everything is normalised to -14 LUFS**, in two passes. That is what makes it
+  possible to calibrate the mix once for the whole library.
+- **Write-once.** A committed file is never rewritten: git does not
+  delta-compress audio and forgets nothing. A track rejected after the fact is
+  removed from the manifest and deleted, never regenerated under the same name.
+
+The prompts and the six axes of variation are in `tools/music-prompts.mjs` —
+that is the creative source of truth, not an implementation detail.
+
+## Removing a map
 
 ```bash
 npm run remove-map -- <slug>
 ```
 
-Le `slug` est celui dans `public/scenes.json` (ex. `sacre-coeur`). Ça retire
-l'entrée de `scenes.json` (donc la carte disparaît du menu au prochain
-`npm run dev`/rechargement) et supprime `public/scenes/<slug>/`.
+The `slug` is the one in `public/scenes.json` (e.g. `sacre-coeur`). This removes
+the entry from `scenes.json` (so the map disappears from the menu at the next
+`npm run dev`/reload) and deletes `public/scenes/<slug>/`.
 
-La tuile brute téléchargée sous `sim/.cache/google-earth/` n'est **pas**
-supprimée par défaut — c'est la partie lente à retélécharger, donc `add-map`
-peut la réutiliser telle quelle si la carte est rajoutée plus tard. Ajouter
-`--raw` pour la supprimer aussi :
+The raw downloaded tile under `sim/.cache/google-earth/` is **not**
+deleted by default — it is the slow part to download again, so `add-map`
+can reuse it as is if the map is added back later. Add
+`--raw` to delete it as well:
 
 ```bash
 npm run remove-map -- <slug> --raw
 ```
 
-### Quand une zone ne renvoie rien
+### When an area returns nothing
 
-Google Earth ne propose de la photogrammétrie 3D partout, mais pas à toutes
-les résolutions : au niveau de zoom demandé, la traversée `rocktree` peut ne
-trouver aucun nœud utilisable. `add-map` s'arrête alors avec un message
-explicite (« Google Earth ne couvre pas cet endroit à ce niveau ; essaie un
-zoom plus bas ») plutôt que d'écrire une carte vide.
+Google Earth offers 3D photogrammetry widely, but not at every
+resolution: at the requested zoom level, the `rocktree` traversal may find
+no usable node. `add-map` then stops with an explicit message rather than
+writing an empty map — that message is still emitted in French by
+`tools/lib/providers/google-earth.mjs`: "Google Earth ne couvre pas cet endroit
+à ce niveau ; essaie un zoom plus bas." ("Google Earth does not cover this place
+at this level; try a lower zoom.")
 
-`PROBE AREA` dans le scanner (voir plus haut) télécharge un petit échantillon
-réel au centre de la zone avant de lancer l'acquisition complète — c'est la
-façon de tester rapidement si un endroit est couvert.
+`PROBE AREA` in the scanner (see above) downloads a small real sample
+at the centre of the area before launching the full acquisition — that is the
+way to test quickly whether a place is covered.
 
-### Prérequis
+### Prerequisites
 
-**Aucun.** Le protocole `rocktree` de `kh.google.com` ne demande ni clé ni
-jeton — vérifié live sur plusieurs endpoints.
+**None.** The `rocktree` protocol of `kh.google.com` asks for neither key nor
+token — verified live on several endpoints.
 
 ### Options
 
 ```bash
-npm run add-map -- "Nom" <lat> <lon> [--zoom 20] [--radius 25] [--altitude 20]
+npm run add-map -- "Name" <lat> <lon> [--zoom 20] [--radius 25] [--altitude 20]
                                       [--cell 256] [--quality 85]
-                                      [--slug identifiant] [--force]
+                                      [--slug identifier] [--force]
                                       [--provider google-earth]
                                       [--bbox s,w,n,e]
                                       [--poly "lat,lon lat,lon ..."]
 ```
 
-| Option | Défaut | Effet |
+| Option | Default | Effect |
 |---|---|---|
-| `--provider` | `google-earth` | Fournisseur des octets (voir [Fournisseurs et décodeurs](#fournisseurs-et-décodeurs)) — un seul inscrit aujourd'hui, mais un id invalide échoue tout de suite plutôt que de deviner. |
-| `--zoom` | 20 | Niveau de zoom (~13-20), converti en niveau d'octree (`niveau = zoom + 1`, cap 22 — voir plus bas). |
-| `--radius` | 25 | Rayon du scan en tuiles autour du centre. Voir plus bas pour dimensionner. |
-| `--altitude` | 20 | Sans effet avec `google-earth` (hérité d'un fournisseur retiré) ; accepté pour compatibilité avec les scènes déjà enregistrées. |
-| `--cell` | 256 | Taille en pixels de chaque cellule de texture. Coûte cher : chaque doublement **quadruple** la VRAM. `128` = qualité réduite mais VRAM divisée par 4 (utile sur machine modeste). |
-| `--quality` | 85 | Qualité JPEG des planches de texture générées. |
-| `--slug` | dérivé du nom | Identifiant de dossier (`public/scenes/<slug>/`). Auto-généré depuis le nom (accents et espaces retirés) si omis. |
-| `--bbox` | — | Extrait un rectangle lat/lon explicite au lieu du carré centré. `--radius` est alors ignoré. |
-| `--poly` | — | Extrait un polygone libre : seules les tuiles que le tracé touche sont balayées. Au moins 3 sommets, l'anneau se referme tout seul, les paires se séparent par un espace ou une virgule. Exclusif avec `--bbox`. |
-| `--force` | off | Retélécharge même si la tuile existe déjà en local. Sans cette option, un second `add-map` sur les mêmes coordonnées/zoom/radius/altitude saute le téléchargement et ne fait que reconvertir. |
+| `--provider` | `google-earth` | Provider of the bytes (see [Providers and decoders](#providers-and-decoders)) — only one registered today, but an invalid id fails immediately rather than guessing. |
+| `--zoom` | 20 | Zoom level (~13-20), converted to an octree level (`level = zoom + 1`, capped at 22 — see below). |
+| `--radius` | 25 | Scan radius in tiles around the centre. See below for sizing. |
+| `--altitude` | 20 | No effect with `google-earth` (inherited from a withdrawn provider); accepted for compatibility with scenes already registered. |
+| `--cell` | 256 | Size in pixels of each texture cell. Expensive: each doubling **quadruples** the VRAM. `128` = reduced quality but a quarter of the VRAM (useful on a modest machine). |
+| `--quality` | 85 | JPEG quality of the generated texture sheets. |
+| `--slug` | derived from the name | Folder identifier (`public/scenes/<slug>/`). Auto-generated from the name (accents and spaces removed) if omitted. |
+| `--bbox` | — | Extracts an explicit lat/lon rectangle instead of the centred square. `--radius` is then ignored. |
+| `--poly` | — | Extracts a free polygon: only the tiles the outline touches are swept. At least 3 vertices, the ring closes by itself, pairs are separated by a space or a comma. Mutually exclusive with `--bbox`. |
+| `--force` | off | Downloads again even if the tile already exists locally. Without this option, a second `add-map` on the same coordinates/zoom/radius/altitude skips the download and only re-converts. |
 
-### Dimensionner `--radius`
+### Sizing `--radius`
 
-À zoom 20, une tuile fait environ **25 m de côté** au sol (à la latitude de
-Paris). Le scan couvre un carré de `(2×radius + 1)` tuiles centré sur le point
-donné, donc `radius × 2 × 25 m` ≈ le côté du carré couvert :
+At zoom 20, a tile is about **25 m across** on the ground (at the latitude of
+Paris). The scan covers a square of `(2×radius + 1)` tiles centred on the given
+point, so `radius × 2 × 25 m` ≈ the side of the square covered:
 
-| radius | côté couvert (approx.) | usage typique |
+| radius | side covered (approx.) | typical use |
 |---|---|---|
-| 25 | ~1,25 km | un monument + ses abords (Tour Eiffel) |
-| 35 | ~1,75 km | zone allongée (les deux îles de la Seine) |
+| 25 | ~1.25 km | a monument and its surroundings (Eiffel Tower) |
+| 35 | ~1.75 km | an elongated area (the two islands of the Seine) |
 
-Un `radius` trop petit laisse des trous sur les bords de la zone survolable ;
-trop grand ne coûte que du temps de téléchargement (les tuiles vides — Seine,
-ciel — répondent vite et ne pèsent rien), donc dans le doute, voir large.
+Too small a `radius` leaves holes at the edges of the flyable area;
+too large only costs download time (empty tiles — the Seine,
+the sky — answer fast and weigh nothing), so when in doubt, aim wide.
 
-### Retoucher une carte déjà téléchargée
+### Reworking an already downloaded map
 
-Si la tuile brute est déjà là et que seul `--cell`/`--quality` doit changer
-(par exemple pour alléger la VRAM), pas besoin de retélécharger : appelle
-`prep.mjs` directement sur le dossier existant :
+If the raw tile is already there and only `--cell`/`--quality` needs to change
+(to lighten the VRAM, for example), there is no need to download again: call
+`prep.mjs` directly on the existing folder:
 
 ```bash
-node tools/prep.mjs .cache/google-earth/<dossier-tuile> \
+node tools/prep.mjs .cache/google-earth/<tile-folder> \
   --out public/scenes/<slug> --cell 128
 ```
 
-(`npm run add-map` fait exactement ça en interne, avec le téléchargement en plus.)
+(`npm run add-map` does exactly that internally, with the download on top.)
 
-## Le terminal opérateur
+## The operator terminal
 
-`npm run dev` ouvre l'Operator Terminal (PHASE 02). `LOCAL TERRAIN` liste tout
-ce qu'il y a dans `public/scenes.json` avec sa taille réelle sur disque ;
-`OPEN` lance le vol. `GLOBAL SCANNER` ouvre le scanner mondial (PHASE 03, voir
-« Ajouter une carte »). `SESSION LOG` et `TARGET LOG` restent des souches
-jusqu'à leurs phases respectives.
+`npm run dev` opens the Operator Terminal (PHASE 02). `LOCAL TERRAIN` lists
+everything in `public/scenes.json` with its real size on disk;
+`OPEN` launches the flight. `GLOBAL SCANNER` opens the worldwide scanner
+(PHASE 03, see "Adding a map"). `SESSION LOG` and `TARGET LOG` are still stubs
+until their respective phases.
 
-Pour sauter le terminal (lien direct, dev rapide) :
+To skip the terminal (direct link, quick dev):
 
 ```
 http://localhost:5173/?scene=<slug>
-http://localhost:5173/?scene=<slug>&family=freestyle5            # profil nominal, gris
-http://localhost:5173/?scene=<slug>&family=freestyle5&build=g1::0 # un exemplaire tiré (#285)
+http://localhost:5173/?scene=<slug>&family=freestyle5            # nominal profile, grey
+http://localhost:5173/?scene=<slug>&family=freestyle5&build=g1::0 # one drawn specimen
 ```
 
-Le `slug` est celui visible dans `public/scenes.json` ou dans le nom du
-dossier `public/scenes/<slug>/`. `?family=` seul vole le profil NOMINAL de la
-famille (celui du banc et de `tools/tune-pid.mjs`) ; `?build=<graine>` tire
-l'exemplaire — livrée, châssis, portrait — comme le ferait un TARGET SCAN.
+The `slug` is the one visible in `public/scenes.json` or in the name of the
+`public/scenes/<slug>/` folder. `?family=` alone flies the NOMINAL profile of the
+family (the one used by the bench and by `tools/tune-pid.mjs`); `?build=<seed>`
+draws the specimen — livery, chassis, portrait — as a TARGET SCAN would.
 
-Vérification headless derrière un proxy qui refuse le CONNECT de Chromium :
-`VITE_ROCKTREE_BASE=http://127.0.0.1:8124/rt/earth/ npx vite` fait lire le
-terrain Google à un relais local (voir `tools/lib/rocktree/url.mjs`).
+Headless verification behind a proxy that refuses Chromium's CONNECT:
+`VITE_ROCKTREE_BASE=http://127.0.0.1:8124/rt/earth/ npx vite` makes the Google
+terrain read from a local relay (see `tools/lib/rocktree/url.mjs`).
 
-### Le briefing
+### The briefing
 
-Un opérateur qui vient d'être créé passe par un briefing de quatre écrans
-(`INPUT`, `THE TERMINAL`, `A SESSION`, `BRIEFING COMPLETE`), juste après
-l'enregistrement de l'opérateur (bootstrap : hardware, `OPERATOR NAME`, puis le
-briefing — deux écrans avant lui depuis le retrait du CONTROL VECTOR, issue
-#33). Il énonce ce qu'une chose est et ce qu'une
-touche fait — jamais quoi faire — et Échap le saute d'un coup. L'écran `INPUT`
-lit le mappage EN DIRECT (`src/key-map.js`) et offre `[ CALIBRATE ]` ou
-`[ MAP KEYS ]`, qui ouvrent l'onglet correspondant de `SETTINGS` et reviennent.
+A freshly created operator goes through a four-screen briefing
+(`INPUT`, `THE TERMINAL`, `A SESSION`, `BRIEFING COMPLETE`), right after the
+operator is registered (bootstrap: hardware, `OPERATOR NAME`, then the
+briefing — two screens before it since the CONTROL VECTOR was withdrawn). It
+states what a thing is and what a key does — never what to do — and Escape
+skips it in one go. The `INPUT` screen
+reads the mapping LIVE (`src/key-map.js`) and offers `[ CALIBRATE ]` or
+`[ MAP KEYS ]`, which open the corresponding tab of `SETTINGS` and come back.
 
-Il se rejoue par `SETTINGS` › `SYSTEM` › `[ REPLAY BRIEFING ]`.
+It can be replayed from `SETTINGS` › `SYSTEM` › `[ REPLAY BRIEFING ]`.
 
-Deux clés `localStorage` le pilotent : `fpvtp.briefingSeen` (posée dès que le
-briefing a été montré, lu ou sauté) et `fpvtp.firstFlightDone` (posée à la fin
-du premier vol hors banc). Entre les deux, le premier vol affiche trois lignes
-brèves — `THROTTLE UP`, `[TAB] SETTINGS`, `[HOLD K] CUT LINK` —, décidées par
-`tools/briefing-model.mjs` et peintes par l'OSD. `[ RESET SETTINGS ]` efface
-les clés `fpvtp.*` : le briefing rejoue, ce qui est bien ce qu'une remise à
-zéro veut dire.
+Two `localStorage` keys drive it: `fpvtp.briefingSeen` (set as soon as the
+briefing has been shown, read or skipped) and `fpvtp.firstFlightDone` (set at
+the end of the first flight outside the bench). Between the two, the first
+flight displays three brief lines — `THROTTLE UP`, `[TAB] SETTINGS`,
+`[HOLD K] CUT LINK` — decided by `tools/briefing-model.mjs` and painted by the
+OSD. `[ RESET SETTINGS ]` erases the `fpvtp.*` keys: the briefing replays, which
+is exactly what a reset is supposed to mean.
 
-## Faire tourner le jeu sans Vite — le serveur autonome
+## Running the game without Vite — the standalone server
 
-`npm run dev` reste la façon de développer. Mais un `npm run build` seul ne
-démarrait pas : `/__operator` et `/__map-api` n'existaient qu'en plugin Vite, et
-le terminal mourait au boot sur la première requête (issue #259). `sim/server/`
-est ce même serveur, sans Vite :
+`npm run dev` remains the way to develop. But a `npm run build` alone would not
+start: `/__operator` and `/__map-api` only existed as a Vite plugin, and the
+terminal died at boot on the first request (issue #259). `sim/server/`
+is that same server, without Vite:
 
 ```bash
 npm run build
 node server/index.mjs --data ~/.local/share/fpvtp --dist dist --open
 ```
 
-| option | défaut | env |
+| option | default | env |
 |---|---|---|
-| `--data <dir>` | les chemins du dépôt (`public/scenes`, `operator-state/`, `.cache/`) | `FPVTP_DATA_DIR` |
-| `--port <n>` | `8080` (`0` = un port libre) | `FPVTP_PORT` |
+| `--data <dir>` | the repository paths (`public/scenes`, `operator-state/`, `.cache/`) | `FPVTP_DATA_DIR` |
+| `--port <n>` | `8080` (`0` = a free port) | `FPVTP_PORT` |
 | `--host <addr>` | `127.0.0.1` | `FPVTP_HOST` |
 | `--mode local\|shared` | `local` | `FPVTP_MODE` |
 | `--dist <dir>` | `sim/dist` | — |
-| `--open` | non | — |
+| `--open` | no | — |
 
-L'option de ligne de commande gagne sur la variable d'environnement.
+The command-line option wins over the environment variable.
 
-Le répertoire de données regroupe tout ce qui appartient à l'installation et
-non au programme — c'est ce qui permettra à une mise à jour de ne rien écraser :
+The data directory groups everything that belongs to the installation and not
+to the program — which is what will let an update overwrite nothing:
 
 ```text
 <data>/
-  scenes/<slug>/        les terrains acquis
-  scenes.json           le catalogue, propre à cette installation
-  operator-state/       les opérateurs et leurs sessions
-  cache/google-earth/   les nœuds rocktree déjà téléchargés
+  scenes/<slug>/        the acquired terrains
+  scenes.json           the catalogue, specific to this installation
+  operator-state/       the operators and their sessions
+  cache/google-earth/   the rocktree nodes already downloaded
 ```
 
-`tools/lib/paths.mjs` est le seul endroit qui résout ces chemins, et **sans
-`FPVTP_DATA_DIR` il rend exactement ceux d'aujourd'hui** : `npm run dev` ne
-change pas de comportement. La variable est lue à l'import du module, donc elle
-doit être posée avant tout — c'est ce que fait `server/index.mjs`.
+`tools/lib/paths.mjs` is the only place that resolves these paths, and **without
+`FPVTP_DATA_DIR` it returns exactly today's**: `npm run dev` does not change
+behaviour. The variable is read when the module is imported, so it must be set
+before anything else — which is what `server/index.mjs` does.
 
-Deux choses à savoir :
+Two things to know:
 
-- **En `local`, le serveur refuse un `--host` hors de `127.0.0.1`/`::1`.** La
-  frontière de sécurité est le socket local, la même qu'avec le serveur de dev.
-  `--mode shared` lève le garde-fou, mais l'authentification qui va avec (clé
-  d'opérateur) n'existe pas encore : voir la tranche T3 du design
-  (`docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md`).
-- **Aucun repli SPA.** Un fichier absent rend un vrai 404 JSON, jamais
-  `index.html` : le chargeur (`src/loader.js`) distingue une scène présente
-  d'une scène absente par le type de contenu, et un hébergeur qui rabat tout sur
-  la page lui ment (issue #275).
+- **In `local`, the server refuses a `--host` outside `127.0.0.1`/`::1`.** The
+  security boundary is the local socket, the same one as with the dev server.
+  `--mode shared` lifts that guard, and the authentication that goes with it is
+  implemented (`sim/server/auth.mjs`): in `shared`, every `/__operator/:id/*`
+  and `/__map-api/*` request must carry an operator key as
+  `Authorization: Bearer`. A key is 128 bits in Crockford base32, shown once and
+  stored only as a SHA-256 hash; `node server/index.mjs key <operatorId>` issues
+  a new one, which is the sole recovery path. Self-service sign-up is capped at
+  five per hour per address, an operator's files are capped at 16 MB, and
+  acquisition is closed in `shared` whatever `FPVTP_ACQUIRE` says — a scene must
+  never be born on a server that receives strangers. Design:
+  [`sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md`](../sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md).
+- **No SPA fallback.** A missing file returns a real JSON 404, never
+  `index.html`: the loader (`src/loader.js`) tells a present scene from an
+  absent one by the content type, and a host that falls back to the page for
+  everything lies to it (issue #275).
 
-`tools/map-api-plugin.mjs` n'est plus qu'un adaptateur : il monte le même
-`createApi()` sur les middlewares de Vite. `tools/vite-adapter-selftest.mjs`
-vérifie qu'il ne dérive pas du serveur.
+`tools/map-api-plugin.mjs` is now nothing more than an adapter: it mounts the
+same `createApi()` on Vite's middlewares. `tools/vite-adapter-selftest.mjs`
+checks that it does not drift from the server.
 
-## Le pipeline de dialogue (RTC du crew)
+## The dialogue pipeline (crew RTC)
 
-`public/dialogue/*.json` (un shard par événement, plus `manifest.json`) est du
-**contenu versionné, pas un artefact de build** : il se commite comme le
-reste, ne se régénère pas au lancement, et un joueur qui ignore entièrement
-les RTC du crew (`root`, `jensen`, `mikhail`, le processus `cron`) ne rate
-aucune information de jeu — c'est le critère d'acceptation de PHASE 21.
+`public/dialogue/*.json` (one shard per event, plus `manifest.json`) is
+**versioned content, not a build artefact**: it is committed like the
+rest, is not regenerated at launch, and a player who ignores the crew RTC
+entirely (`root`, `jensen`, `mikhail`, the `cron` process) misses no game
+information — that is PHASE 21's acceptance criterion.
 
-Trois commandes, toutes des outils de développement (rien sous `src/` ne les
-importe, vérifié par `tools/dialogue-selftest.mjs`) :
+Three commands, all development tools (nothing under `src/` imports them,
+checked by `tools/dialogue-selftest.mjs`):
 
 ```bash
 npm run dialogue:gen -- --event ACQUIRE_AREA --count 200 [--batch 20] \
@@ -434,594 +449,606 @@ npm run dialogue:inspect -- --event ACQUIRE_AREA [--count 30] [--rarity RARE]
 npm run dialogue:check     # = node tools/dialogue-selftest.mjs
 ```
 
-`dialogue:gen` pilote un LLM par lot (`tools/dialogue/generate.mjs`,
-`tools/dialogue/prompts/`) avec deux dos :
+`dialogue:gen` drives an LLM in batches (`tools/dialogue/generate.mjs`,
+`tools/dialogue/prompts/`) with two backends:
 
-- `--backend claude` (par défaut) : `claude -p --output-format json`, sans
-  configuration préalable ;
-- `--backend ollama` : un modèle local via `http://127.0.0.1:11434` (modèle
-  par défaut `batiai/qwen3.6-27b:q3`, configurable par `--ollama-host` ou
-  `OLLAMA_HOST`). C'est le **chemin retenu pour la génération en lot** :
-  mesuré à 4,9 s par entrée, environ 9 h pour tout le corpus, à coût nul —
-  contre une estimation de 100 à 200 USD via une API hébergée pour le même
+- `--backend claude` (the default): `claude -p --output-format json`, with no
+  prior configuration;
+- `--backend ollama`: a local model over `http://127.0.0.1:11434` (default
+  model `batiai/qwen3.6-27b:q3`, configurable with `--ollama-host` or
+  `OLLAMA_HOST`). This is the **route chosen for bulk generation**:
+  measured at 4.9 s per entry, roughly 9 h for the whole corpus, at zero cost —
+  against an estimate of 100 to 200 USD through a hosted API for the same
   volume.
 
-`dialogue:inspect` rend N tirages avec des contextes factices pour la
-relecture humaine. Politique de relecture : **100 % des entrées `RARE` et
-`VERY_RARE`, 100 % des lignes de `jensen`**, un échantillon de **10 %** pour
-le reste. Un lot qui dépasse 5 % de rejet au premier passage (style, slots,
-doublons) se **régénère en entier** plutôt que de se corriger réplique par
-réplique — la dérive de ton d'un lot se corrige mieux en le rejouant qu'en le
-rustinant.
+`dialogue:inspect` returns N draws with dummy contexts for human
+review. Review policy: **100% of `RARE` and `VERY_RARE` entries, 100% of
+`jensen`'s lines**, and a **10%** sample of the rest. A batch that exceeds 5%
+rejection on the first pass (style, slots, duplicates) is **regenerated
+whole** rather than corrected line by line — a batch's drift in tone is better
+fixed by replaying it than by patching it.
 
-`dialogue:check` fait tourner `validate.mjs` (forme, `speaker` connu, slots
-vs `requires`, liste noire de style — adresse au joueur, quatrième mur,
-vocabulaire IA moderne, promesse de suite) et `dedupe.mjs` (quasi-doublons
-par trigrammes) sur tout corpus livré.
+`dialogue:check` runs `validate.mjs` (shape, known `speaker`, slots
+vs `requires`, style blacklist — addressing the player, fourth wall,
+modern AI vocabulary, promising a sequel) and `dedupe.mjs` (near-duplicates
+by trigrams) over any delivered corpus.
 
-## Cartes disponibles
+## Available maps
 
-| Nom | Slug | Coordonnées | Taille préparée |
+The repository ships an **empty** `public/scenes.json`: no terrain travels with
+the code — maps are acquired locally, and `public/scenes/` is gitignored.
+The catalogue is therefore whatever this installation has acquired, and
+`scenes.json` is the authority on it.
+
+Two zones recur as references throughout this manual and in the selftests,
+because they are the ones the figures were measured on:
+
+| Name | Slug | Coordinates | Prepared size |
 |---|---|---|---|
-| Tour Eiffel | `tour-eiffel` | 48.8582, 2.2970 | ~290 Mo |
-| Île de la Cité et Île Saint-Louis | `ile-de-la-cite-et-ile-saint-louis` | 48.8534, 2.3510 | ~600 Mo |
+| Eiffel Tower | `tour-eiffel` | 48.8582, 2.2970 | ~290 MB |
+| Île de la Cité and Île Saint-Louis | `ile-de-la-cite-et-ile-saint-louis` | 48.8534, 2.3510 | ~600 MB |
 
-(Cette table peut se désynchroniser de `public/scenes.json` au fil des ajouts —
-ce dernier fait foi.)
+## Exporting a scene to `.glb` (to share it)
 
-## Exporter une scène en `.glb` (pour la partager)
-
-Les binaires de `public/scenes/<slug>/` ne servent qu'au moteur d'ici. Pour
-donner une scène à quelqu'un d'autre — ou l'utiliser dans Blender, Godot,
-Unity (via glTFast), Unreal, three.js — il y a un exporteur vers un `.glb`
-unique et autonome (géométrie + textures embarquées, aucun fichier à côté) :
+The binaries in `public/scenes/<slug>/` are only useful to the engine here. To
+give a scene to somebody else — or to use it in Blender, Godot,
+Unity (through glTFast), Unreal, three.js — there is an exporter to a single,
+self-contained `.glb` (geometry + embedded textures, no companion file):
 
 ```bash
 npm run export-glb -- public/scenes/tour-eiffel
-npm run export-glb -- public/scenes/tour-eiffel --max-tex 2048   # textures réduites
+npm run export-glb -- public/scenes/tour-eiffel --max-tex 2048   # reduced textures
 npm run export-glb -- public/scenes/tour-eiffel --unlit          # KHR_materials_unlit
 ```
 
-Le `.glb` atterrit dans le dossier de la scène (donc gitignoré) sauf `--out`.
+The `.glb` lands in the scene's folder (so, gitignored) unless `--out`.
 
-| Scène | `.glb` | Triangles | Primitives |
+| Scene | `.glb` | Triangles | Primitives |
 |---|---|---|---|
-| Tour Eiffel | 203 Mo (148 Mo en `--max-tex 2048`) | 3,74 M | 19 |
-| Île de la Cité | 408 Mo | 7,58 M | 38 |
+| Eiffel Tower | 203 MB (148 MB with `--max-tex 2048`) | 3.74 M | 19 |
+| Île de la Cité | 408 MB | 7.58 M | 38 |
 
-`--max-tex` ne gagne que ~55 Mo parce que la géométrie domine (~120 Mo sur la
-Tour Eiffel) : descendre nettement plus bas demanderait de la compression
-Draco/meshopt ou de la décimation, ce que l'exporteur ne fait pas.
+`--max-tex` only saves ~55 MB because geometry dominates (~120 MB on the
+Eiffel Tower): going markedly lower would require Draco/meshopt compression
+or decimation, which the exporter does not do.
 
-Ce qu'il traduit, et le seul point non trivial : `prep.mjs` empile 1024
-textures de patch par chunk dans des sheets de `DataArrayTexture` et range
-`(uv, layer)` par sommet. glTF n'a pas de texture-array — chaque sheet devient
-donc une texture 2D ordinaire et l'index de layer est replié dans l'UV
-(cellule `(col,row)` d'une grille `cellsPerRow`). C'est sans perte uniquement
-parce que tous les UV sources tiennent dans `[0,1]` — aucun patch ne déborde
-de sa cellule (vérifié : 0 coordonnée hors bornes sur 1,4 M).
+What it translates, and the only non-trivial point: `prep.mjs` stacks 1024
+patch textures per chunk into `DataArrayTexture` sheets and stores
+`(uv, layer)` per vertex. glTF has no texture array — each sheet therefore
+becomes an ordinary 2D texture and the layer index is folded into the UV
+(cell `(col,row)` of a `cellsPerRow` grid). This is lossless only
+because every source UV fits within `[0,1]` — no patch overflows
+its cell (verified: 0 out-of-bounds coordinates out of 1.4 M).
 
-Les coordonnées, elles, passent telles quelles : `prep.mjs` sort déjà des
-mètres ENU en X=est, Y=haut, Z=sud, soit exactement le repère de glTF
-(main droite, Y up). Pas de conversion d'axes, donc pas d'échelle ni de
-rotation à corriger à l'import — 1 unité = 1 mètre.
+The coordinates pass through unchanged: `prep.mjs` already outputs
+ENU metres in X=east, Y=up, Z=south, which is exactly glTF's frame
+(right-handed, Y up). No axis conversion, therefore no scale and no
+rotation to fix on import — 1 unit = 1 metre.
 
-## Versionner et publier
+## Versioning and publishing
 
-Le numéro vit dans `sim/package.json` (SemVer), les changements dans
-[`CHANGELOG.md`](../CHANGELOG.md) à la racine, et chaque version publiée porte
-un tag git `vX.Y.Z` et une GitHub Release.
+The number lives in `sim/package.json` (SemVer), the changes in
+[`CHANGELOG.md`](../CHANGELOG.md) at the root, and each published version carries
+a `vX.Y.Z` git tag and a GitHub Release.
 
-Au fil du travail, les entrées s'ajoutent sous la section `## [Non publié]` du
-CHANGELOG — rubriques `Ajouté`, `Modifié`, `Corrigé`, `Retiré`, `Déprécié`,
-`Sécurité`.
+As work goes on, entries are added under the `## [Non publié]` section of the
+CHANGELOG — headings `Ajouté`, `Modifié`, `Corrigé`, `Retiré`, `Déprécié`,
+`Sécurité`. (The CHANGELOG is written in French: it is release notes, not code.)
 
-### L'intégration continue
+### Continuous integration
 
-`.github/workflows/ci.yml` tourne sur chaque push vers `main` et chaque pull
-request, en deux jobs :
+`.github/workflows/ci.yml` runs on every push to `main` and every pull
+request, in a single job:
 
-- **sim** — `npm run selftest:ci` puis `npm run build`.
+- **sim** — `npm run selftest:ci` then `npm run build`, on Ubuntu and on
+  Windows. Windows is in the matrix because this repository never ran there
+  before the desktop app existed: paths, separators and locales are flushed out
+  on a runner rather than by a player.
 
 ```bash
-npm run selftest:ci   # ~1 430 vérifications, ~2 min — à lancer avant de pousser
+npm run selftest:ci   # ~1,430 checks, ~2 min — to be run before pushing
 ```
 
-`selftest:ci` est la chaîne qui ne demande **ni scène installée, ni réseau, ni
-navigateur** : c'est ce qui la rend jouable sur un runner, où `public/scenes/`
-(gitignoré, ~900 Mo) n'existe pas. Un selftest qui a besoin de données de scène
-se retire en disant `SKIP` au lieu d'échouer — `tools/entry-state-selftest.mjs`
-est le modèle à suivre.
+`selftest:ci` is the chain that needs **no installed scene, no network and no
+browser**: that is what makes it playable on a runner, where `public/scenes/`
+(gitignored, ~900 MB) does not exist. A selftest that needs scene data
+bows out by saying `SKIP` instead of failing — `tools/entry-state-selftest.mjs`
+is the model to follow.
 
-Restent locaux, par nature : `npm run selftest` (rejoue la scène `tour-eiffel`)
-et `npm run selftest:scenes` (compare `scenes.json` aux scènes installées sur
-*cette* machine).
+Local by nature, and staying so: `npm run selftest` (which replays the
+`tour-eiffel` scene) and `npm run selftest:scenes` (which compares `scenes.json`
+against the scenes installed on *this* machine).
 
-`selftest:ci` finit par `npm run fuzz`, la passe de fuzzing — graine fixe, donc
-déterministe comme le reste de la chaîne :
+`selftest:ci` ends with `npm run fuzz`, the fuzzing pass — fixed seed, hence
+deterministic like the rest of the chain:
 
 ```bash
-npm run fuzz                    # tools/fuzz.mjs puis tools/fuzz-api.mjs
-node tools/fuzz.mjs --list      # les cibles et leur modèle de menace
+npm run fuzz                    # tools/fuzz.mjs then tools/fuzz-api.mjs
+node tools/fuzz.mjs --list      # the targets and their threat model
 node tools/fuzz.mjs --only flight --cases 20000 --seed 7
-node tools/fuzz-api.mjs --cases 2000     # vrai serveur, requêtes malformées
+node tools/fuzz-api.mjs --cases 2000     # real server, malformed requests
 ```
 
-Elle vise ce que les selftests ne visent pas : l'entrée que personne n'a écrite
-— une clé `localStorage` éditée à la main, un fichier opérateur à moitié écrit,
-un axe de manette en butée, un état physique parti en NaN, un corps HTTP qui
-n'est pas du JSON. Chaque cible déclare un invariant que le code promet vraiment
-et le modèle de menace de son entrée ; une trouvaille se rejoue avec
-`--seed <n> --cases <n>`. Le détail, et ce que la première passe a trouvé :
+It aims at what the selftests do not: the input nobody wrote
+— a `localStorage` key edited by hand, a half-written operator file,
+a gamepad axis jammed at its stop, a physical state gone to NaN, an HTTP body
+that is not JSON. Each target declares an invariant the code really promises
+and the threat model of its input; a finding is replayed with
+`--seed <n> --cases <n>`. The detail, and what the first pass found:
 [`sim/docs/handoff-archive/fuzzing.md`](../sim/docs/handoff-archive/fuzzing.md).
 
-Il n'y a **pas de déploiement continu** : le build statique ne sait pas démarrer
-seul, il lui faut l'API opérateur `/__operator` que seul le serveur de dev
-fournit. Voir `HANDOFF.md`, section « Versionnage du dépôt ».
+There is **no continuous deployment**. Pushing a tag builds and publishes the
+artefacts; installing them on a machine is a deliberate, manual act —
+`deploy/deploy.sh <tag>` run as root on the VPS, described in
+[`deploy/README.md`](../deploy/README.md). See also `HANDOFF.md`, section
+"Versionnage du dépôt".
 
-### Couper une version
+### Cutting a version
 
 ```bash
-npm run release -- patch             # 0.1.0 → 0.1.1  (correctifs)
-npm run release -- minor             # 0.1.0 → 0.2.0  (ajouts compatibles)
+npm run release -- patch             # 0.1.0 → 0.1.1  (fixes)
+npm run release -- minor             # 0.1.0 → 0.2.0  (compatible additions)
 npm run release -- major             # 0.9.0 → 1.0.0
-npm run release -- 1.2.0             # un numéro explicite
-npm run release -- minor --dry-run   # dit ce qu'il ferait, n'écrit rien
+npm run release -- 1.2.0             # an explicit number
+npm run release -- minor --dry-run   # says what it would do, writes nothing
 ```
 
-Le script bump `package.json` et le lockfile, date la section « Non publié » et
-en rouvre une vide, régénère les liens de comparaison, commit
-`chore(release): vX.Y.Z` et pose un tag annoté. Il refuse un arbre de travail
-sale, une section « Non publié » vide, un numéro qui ne monte pas, un tag déjà
-posé.
+The script bumps `package.json` and the lockfile, dates the "Non publié"
+section and reopens an empty one, regenerates the comparison links, commits
+`chore(release): vX.Y.Z` and lays down an annotated tag. It refuses a dirty
+working tree, an empty "Non publié" section, a number that does not go up, a tag
+already laid down.
 
-Il ne pousse rien — le push du tag est ce qui publie :
+It pushes nothing — pushing the tag is what publishes:
 
 ```bash
-git push -u origin <branche>
+git push -u origin <branch>
 git push origin v0.1.0
 ```
 
-`.github/workflows/release.yml` prend le relais : il vérifie que le tag et
-`sim/package.json` disent le même numéro, rejoue `npm run selftest:ci`, build le
-sim, puis crée la GitHub Release avec le corps repris du CHANGELOG
-(`node tools/release-notes.mjs v0.1.0`) et `dist` en archive zip.
+`.github/workflows/release.yml` takes over: it checks that the tag and
+`sim/package.json` state the same number, replays `npm run selftest:ci`, builds
+the sim, then creates the GitHub Release with the body taken from the CHANGELOG
+(`node tools/release-notes.mjs v0.1.0`). Attached to it: the self-hosting
+archive (`fpvtp-server-<tag>-linux-x64.tar.gz` — server, built game, a Node
+runtime and `deploy/`, with no `npm install` to run) and, from a second job, the
+desktop installers built by electron-builder on their own runners.
 
-La version est injectée dans le build par Vite (`__APP_VERSION__`), exposée sur
-`window.FPVTP_VERSION` et écrite une fois dans la console : un rapport de bug
-peut nommer une version au lieu d'un SHA.
+The version is injected into the build by Vite (`__APP_VERSION__`), exposed on
+`window.FPVTP_VERSION` and written once to the console: a bug report can name a
+version instead of a SHA.
 
-La première version n'est pas encore coupée : `package.json` est à `0.0.0`,
-tout est sous « Non publié », et `npm run release -- minor` sortira `v0.1.0`.
-
-Les numéros de build de l'écran `BUILD NOTES` (`tools/buildnotes-model.mjs`,
-`0.1.0` → `0.9.0`) sont du lore diégétique : aucun rapport avec ces versions-ci.
+The build numbers on the `BUILD NOTES` screen (`tools/buildnotes-model.mjs`,
+`0.1.0` → `0.9.0`) are diegetic lore: no relation to these versions.
 
 ## Architecture
 
 ```
-tools/add-map.mjs     téléchargement + pré-traitement + enregistrement, en une commande
-tools/prep.mjs         OBJ+MTL+JPEG -> binaires (hors ligne, par carte)
-tools/selftest.mjs     vérifications géodésie / vol / collision, sans navigateur
-tools/fuzz.mjs         fuzzing des modules purs (vol, état stocké, écrans)
-tools/fuzz-api.mjs     fuzzing des routes HTTP contre un vrai serveur
-tools/lib/fuzz.mjs     le harnais : générateurs, invariants, réduction, graines
-src/loader.js          fetch + workers -> BufferGeometry & DataArrayTexture, sélection de la scène active
-src/worker.js           parse le binaire, découpe la planche en layers
-src/TileMaterial.js     shader GLSL3 sampler2DArray + brouillard
-src/physics.js          monde Rapier, trimesh statique, corps du drone
-src/flightController.js rates acro -> couple
-src/input.js            Gamepad + clavier/souris
-src/fog.js              modèle de visibilité : densité, respiration, voile, couleur de l'air
-src/lens.js             passe plein écran : optique FPV (barillet, vignettage, flou, voile)
-src/hud.js              OSD de vol + écran de chargement
-src/settings.js         panneau de réglages (Tab) : manette, caméra, objectif, lien, son
-src/terminal.js         Operator Terminal (Home) : LOCAL TERRAIN, FORECAST, souches
-src/scanner.js          GLOBAL SCANNER : Leaflet + Geoman, recherche, zone, sonde, acquisition
-src/weather.js          la météo du monde côté client : lit le snapshot, écrit vent/pluie/brouillard
-tools/terminal-model.mjs logique pure du terminal (formatBytes, footer) — testée par selftest:operator
-tools/scanner-model.mjs logique pure du scanner (analyse de zone, densité de signal, couverture)
-tools/lib/tiles.mjs     géométrie de tuiles slippy, partagée navigateur/Node
-tools/lib/weather.mjs   modèle météo pur (zones, jours, régimes, garde-fous) — navigateur ET Node
-tools/weather-source.mjs acquisition Open-Meteo + cache par zone/jour dans le world state (serveur)
+tools/add-map.mjs     download + preprocessing + registration, in one command
+tools/prep.mjs         OBJ+MTL+JPEG -> binaries (offline, per map)
+tools/selftest.mjs     geodesy / flight / collision checks, without a browser
+tools/fuzz.mjs         fuzzing of the pure modules (flight, stored state, screens)
+tools/fuzz-api.mjs     fuzzing of the HTTP routes against a real server
+tools/lib/fuzz.mjs     the harness: generators, invariants, shrinking, seeds
+src/loader.js          fetch + workers -> BufferGeometry & DataArrayTexture, active scene selection
+src/worker.js           parses the binary, cuts the sheet into layers
+src/TileMaterial.js     GLSL3 sampler2DArray shader + fog
+src/physics.js          Rapier world, static trimesh, drone body
+src/flightController.js acro rates -> torque
+src/input.js            Gamepad + keyboard/mouse
+src/fog.js              visibility model: density, breathing, veil, colour of the air
+src/lens.js             fullscreen pass: FPV optics (barrel, vignetting, blur, veil)
+src/hud.js              flight OSD + loading screen
+src/settings.js         settings panel (Tab): gamepad, camera, lens, link, sound
+src/terminal.js         Operator Terminal (Home): LOCAL TERRAIN, FORECAST, stubs
+src/scanner.js          GLOBAL SCANNER: Leaflet + Geoman, search, area, probe, acquisition
+src/weather.js          the world weather, client side: reads the snapshot, writes wind/rain/fog
+tools/terminal-model.mjs pure terminal logic (formatBytes, footer) — tested by selftest:operator
+tools/scanner-model.mjs pure scanner logic (area analysis, signal density, coverage)
+tools/lib/tiles.mjs     slippy tile geometry, shared browser/Node
+tools/lib/weather.mjs   pure weather model (zones, days, regimes, guardrails) — browser AND Node
+tools/weather-source.mjs Open-Meteo acquisition + per zone/day cache in the world state (server)
 ```
 
-**Physique : Rapier** (Rust/WASM). Corps rigide, collision trimesh **en pleine
-résolution** sur la carte chargée, et CCD activée — à 60 m/s le drone
-traverserait sinon une structure fine (ex. le treillis de la Tour Eiffel).
+**Physics: Rapier** (Rust/WASM). Rigid body, trimesh collision at **full
+resolution** on the loaded map, and CCD enabled — at 60 m/s the drone would
+otherwise pass straight through a thin structure (the Eiffel Tower's lattice,
+for instance).
 
-**Contrôleur de forme Betaflight**, interface volontairement étroite
-(`update(sticks, state, dt) -> {motors[4], throttle, axes}`) pour rester
-substituable par un pont vers Betaflight SITL, qui rend lui aussi quatre
-sorties moteur et non une poussée et un couple. Actual rates, PID complet,
-TPA, feedforward, i-term relax, lissage RC et mixeur airmode : le détail est
-dans « Le modèle de vol » plus bas, qui fait foi.
+**Betaflight-shaped controller**, with a deliberately narrow interface
+(`update(sticks, state, dt) -> {motors[4], throttle, axes}`) so that it stays
+replaceable by a bridge to Betaflight SITL, which likewise returns four motor
+outputs rather than a thrust and a torque. Actual rates, full PID,
+TPA, feedforward, i-term relax, RC smoothing and airmode mixer: the detail is
+in "The flight model" below, which is the authority.
 
-## Limite connue : `selftest` est encore spécifique à la Tour Eiffel
+## Known limitation: `selftest` is still Eiffel-Tower specific
 
-`npm run selftest` accepte un chemin de scène en argument
-(`node tools/selftest.mjs public/scenes/<slug>`, défaut `tour-eiffel`), et la
-plupart des checks (vol, sol, collision/CCD, convention UV) sont génériques et
-passent sur n'importe quelle carte. **Cinq** vérifications, en revanche, sont
-codées en dur pour la Tour Eiffel et échouent ailleurs par construction (relevé
-du 2026-08-27 sur une carte de 328 x 276 m) :
+`npm run selftest` accepts a scene path as an argument
+(`node tools/selftest.mjs public/scenes/<slug>`, default `tour-eiffel`), and
+most of the checks (flight, ground, collision/CCD, UV convention) are generic
+and pass on any map. **Five** checks, however, are hard-coded
+for the Eiffel Tower and fail elsewhere by construction (recorded
+2026-08-27 on a 328 x 276 m map):
 
-- « tile is roughly 1.2km square »
-- « Eiffel Tower is ~300m tall »
-- « ray finds the tower structure »
-- « ground coverage across the tile » (grille de sondage dimensionnée pour 1,2 km)
-- « high-speed impact registers as a crash » (le point d'impact vise la tour)
+- "tile is roughly 1.2km square"
+- "Eiffel Tower is ~300m tall"
+- "ray finds the tower structure"
+- "ground coverage across the tile" (probe grid sized for 1.2 km)
+- "high-speed impact registers as a crash" (the impact point aims at the tower)
 
-À généraliser (bornes déduites de la zone réellement extraite, sans dépendance à
-un monument précis) si `selftest` doit devenir un vrai gate multi-cartes — voir
-l'issue #4. En attendant, sur une carte autre que la Tour Eiffel, seuls ces cinq
-échecs sont attendus : tout autre échec est un vrai problème.
+To be generalised (bounds derived from the area actually extracted, with no
+dependency on a particular monument) if `selftest` is to become a real
+multi-map gate. Until then, on a map other than the Eiffel Tower, only those
+five failures are expected: any other failure is a real problem.
 
-## Détails techniques du pré-traitement
+## Technical details of the preprocessing
 
-La tuile source d'une carte typique fait plusieurs centaines de Mo d'OBJ ASCII
-en coordonnées ECEF, avec **un JPEG 512×512 par matériau** (des milliers) — donc
-autant de draw calls et plusieurs Go de VRAM en l'état. `tools/prep.mjs`
-convertit ça une fois pour toutes, par carte :
+The source tile of a typical map is several hundred MB of ASCII OBJ
+in ECEF coordinates, with **one 512×512 JPEG per material** (thousands of them)
+— hence as many draw calls and several GB of VRAM as they stand.
+`tools/prep.mjs` converts that once and for all, per map:
 
-| | source | après `prep` (Tour Eiffel, `--cell 256`) |
+| | source | after `prep` (Eiffel Tower, `--cell 256`) |
 |---|---|---|
-| Géométrie | ASCII, ECEF | binaire, ENU **en mètres** |
-| Textures | 1 JPEG 512² par matériau | planches 4096², cellules 256² |
-| Draw calls | 1 par matériau (milliers) | **5** |
-| Résolution | 12,6 texels/m (8 cm) au plafond de la source | 6,3 texels/m (16 cm) à `--cell 256` |
+| Geometry | ASCII, ECEF | binary, ENU **in metres** |
+| Textures | 1 JPEG 512² per material | 4096² sheets, 256² cells |
+| Draw calls | 1 per material (thousands) | **5** |
+| Resolution | 12.6 texels/m (8 cm) at the source ceiling | 6.3 texels/m (16 cm) at `--cell 256` |
 
-Chaque paquet de 1024 textures devient un `sampler2DArray` : un seul draw call
-par paquet, et chaque layer garde sa propre chaîne de mipmaps (ce qu'un atlas
-classique ne permettrait pas sans bavures entre tuiles voisines). Les planches
-sont plafonnées à 4096², donc un paquet en occupe plusieurs — c'est ce qui
-garde le pic mémoire d'un worker constant quand on augmente `--cell`.
+Each pack of 1024 textures becomes a `sampler2DArray`: a single draw call
+per pack, and each layer keeps its own mipmap chain (which a classic
+atlas could not allow without bleeding between neighbouring tiles). The sheets
+are capped at 4096², so a pack occupies several of them — that is what
+keeps a worker's peak memory constant as `--cell` grows.
 
-La résolution est l'arbitrage réel de ce pipeline : la source plafonne autour
-de 12,6 texels/m (mesuré : 853 m² de surface par matériau pour ~50 % d'une
-texture 512²), et chaque doublement de `--cell` quadruple la VRAM. `--cell 128`
-redescend à 3,2 texels/m pour environ un quart de la VRAM.
+Resolution is this pipeline's real trade-off: the source tops out around
+12.6 texels/m (measured: 853 m² of surface per material for ~50% of a
+512² texture), and each doubling of `--cell` quadruples the VRAM. `--cell 128`
+comes back down to 3.2 texels/m for about a quarter of the VRAM.
 
-Les coordonnées passent d'ECEF à un repère local ENU en mètres (X = est,
-Y = haut, Z = sud, donc −Z = nord = « devant »), ce qui rend la physique
-directement crédible. Le script `center_scale_obj.js` du dépôt amont normalise
-à 10 unités arbitraires et ne convient pas pour ça.
+The coordinates go from ECEF to a local ENU frame in metres (X = east,
+Y = up, Z = south, so −Z = north = "ahead"), which makes the physics
+directly credible. The upstream repository's `center_scale_obj.js` script
+normalises to 10 arbitrary units and is not suitable for this.
 
-### Fournisseurs et décodeurs
+### Providers and decoders
 
-Le pipeline a deux seams distincts, et les confondre est l'erreur à éviter :
-« d'où viennent les octets » et « comment on les décode » sont deux questions
-séparées.
+The pipeline has two distinct seams, and confusing them is the mistake to avoid:
+"where do the bytes come from" and "how are they decoded" are two separate
+questions.
 
-**`tools/lib/providers/`** — d'où viennent les octets. Chaque fournisseur expose
-`plan` (estimer sans télécharger), `probe` (y a-t-il vraiment de la donnée ici),
-`fetch` (télécharger et rendre un dossier de tuiles), plus `tileDirPath` et son
-attribution. `lib/add-map-core.mjs` ne fait plus qu'orchestrer ; `/plan`,
-`/probe`, `fetch` et `DELETE /scenes/:slug?raw=1` dispatchent tous par
-fournisseur, `add-map.mjs` et la GUI (`add-map.html`) savent tous deux
-positionner `opts.provider`.
+**`tools/lib/providers/`** — where the bytes come from. Each provider exposes
+`plan` (estimate without downloading), `probe` (is there really data here),
+`fetch` (download and return a folder of tiles), plus `tileDirPath` and its
+attribution. `lib/add-map-core.mjs` now does nothing but orchestrate; `/plan`,
+`/probe`, `fetch` and `DELETE /scenes/:slug?raw=1` all dispatch by
+provider, and both `add-map.mjs` and the GUI (`add-map.html`) know how to
+set `opts.provider`.
 
-Un seul fournisseur inscrit aujourd'hui, `google-earth` : Apple Flyover, le
-repli d'origine, a été retiré le 2026-09-07 (jeton et outil Go supprimés du
-dépôt) :
+A single provider is registered today, `google-earth`: Apple Flyover, the
+original fallback, was withdrawn on 2026-09-07 (token and Go tool removed from
+the repository):
 
-| id | label | défaut | clé/jeton | cache brut |
+| id | label | default | key/token | raw cache |
 |---|---|---|---|---|
-| `google-earth` | Google Earth | **oui** (`DEFAULT_PROVIDER_ID`) | aucun | `sim/.cache/google-earth/<zone>/` |
+| `google-earth` | Google Earth | **yes** (`DEFAULT_PROVIDER_ID`) | none | `sim/.cache/google-earth/<zone>/` |
 
-`google-earth` parle le protocole interne **rocktree** de `kh.google.com` —
-celui que Google Earth web lui-même utilise, pas la Photorealistic 3D Tiles
-API (clé, glTF) initialement envisagée pour ce fournisseur : un HAR du trafic
-réel a montré que `kh.google.com` ne demande ni clé ni paramètre de session.
-Client Node natif dans `google-earth.mjs` + `decoders/rocktree.mjs`, écrits à
-partir de la documentation de protocole d'`earth-reverse-engineering`
-(non maintenu, sans licence — code réécrit, pas copié). Détail dans
+`google-earth` speaks the internal **rocktree** protocol of `kh.google.com` —
+the one Google Earth web itself uses, not the Photorealistic 3D Tiles
+API (key, glTF) originally considered for this provider: a HAR of the real
+traffic showed that `kh.google.com` asks for neither key nor session parameter.
+A native Node client in `google-earth.mjs` + `decoders/rocktree.mjs`, written
+from the protocol documentation of `earth-reverse-engineering`
+(unmaintained, unlicensed — code rewritten, not copied). Detail in
 `docs/superpowers/specs/2026-08-29-second-3d-provider-design.md`
-(« Amendement 2026-08-31 ») et l'entrée HANDOFF « Second fournisseur 3D ».
+("Amendement 2026-08-31") and the HANDOFF entry "Second fournisseur 3D".
 
-`--provider` (voir [Ajouter une carte](#ajouter-une-carte)) choisit
-explicitement en CLI. Le contrat par fournisseur (`plan`/`probe`/`fetch`/
-`tileDirPath`/attribution, `tools/lib/providers/index.mjs`) reste dispatché par
-`opts.provider` pour un futur fournisseur, même si `google-earth` est seul
-inscrit aujourd'hui.
+`--provider` (see [Adding a map](#adding-a-map)) chooses
+explicitly on the CLI. The per-provider contract (`plan`/`probe`/`fetch`/
+`tileDirPath`/attribution, `tools/lib/providers/index.mjs`) stays dispatched by
+`opts.provider` for a future provider, even though `google-earth` is the only
+one registered today.
 
-**`tools/lib/decoders/`** — comment les lire. Chaque décodeur expose `sniff`
-(sais-tu lire ce dossier ?) et `decode` (rends matériaux, positions ECEF, UV et
-triangles). `prep.mjs` choisit par reniflage : **aucun drapeau ne sélectionne le
-décodeur**, si bien qu'un fournisseur servant de l'OBJ réutilise le décodeur OBJ
-sans rien déclarer. Tout ce qui suit le decode — rebase ENU, chunks, texture
-arrays, mesh de collision — ignore le format d'entrée. Le décodeur `rocktree`
-(sommets delta-packés, ECEF direct via `matrix_globe_from_mesh`) suit ce même
-contrat ; une correction lui est propre : le globe rocktree est une **sphère**
-de rayon moyen terrestre (6 371 010 m), pas l'ellipsoïde WGS84 que `prep.mjs`
-attend, donc `sphereToWgs84Ecef()` reconvertit chaque sommet avant de le
-pousser dans le contrat partagé (sans elle, l'origine d'une scène tombe à
-~21 km du point demandé). L'inversion `1 - v` de l'axe UV (voir encart
-ci-dessous) reste correcte pour `rocktree` aussi — vérifié en navigateur, pas
-d'inversion supplémentaire nécessaire.
+**`tools/lib/decoders/`** — how to read them. Each decoder exposes `sniff`
+(can you read this folder?) and `decode` (return materials, ECEF positions, UVs
+and triangles). `prep.mjs` chooses by sniffing: **no flag selects the
+decoder**, so that a provider serving OBJ reuses the OBJ decoder
+without declaring anything. Everything after the decode — ENU rebase, chunks,
+texture arrays, collision mesh — ignores the input format. The `rocktree`
+decoder (delta-packed vertices, direct ECEF via `matrix_globe_from_mesh`)
+follows that same contract; one correction is specific to it: the rocktree globe
+is a **sphere** of mean Earth radius (6,371,010 m), not the WGS84 ellipsoid that
+`prep.mjs` expects, so `sphereToWgs84Ecef()` converts every vertex back before
+pushing it into the shared contract (without it, a scene's origin lands
+~21 km from the requested point). The `1 - v` flip of the UV axis (see the box
+below) stays correct for `rocktree` too — verified in the browser, no
+extra flip needed.
 
-> **Attention.** L'inversion de l'axe V vit **dans le décodeur OBJ**, pas dans le
-> contrat partagé : OBJ met l'origine UV en bas à gauche, glTF en haut à gauche.
-> Un décodeur qui hérite de cette inversion sans la mériter produit les fameuses
-> « textures grises » — 21 % de la surface visible échantillonne le remplissage
-> gris hors patch. Chaque décodeur tranche pour son compte.
+> **Careful.** The V-axis flip lives **in the OBJ decoder**, not in the
+> shared contract: OBJ puts the UV origin at the bottom left, glTF at the top
+> left. A decoder that inherits that flip without deserving it produces the
+> famous "grey textures" — 21% of the visible surface samples the grey
+> padding outside the patch. Each decoder decides for itself.
 
-### Fixtures rocktree et leur régénération
+### Rocktree fixtures and regenerating them
 
-`tools/testdata/rocktree/` fige un petit échantillon du protocole
-(`.pb` bulks/nodes + `index.json`) depuis un HAR réel de earth.google.com
-(2026-08-31, epoch racine 1014, capturé sur Paris) : `tools/rocktree-selftest.mjs`
-tourne dessus hors ligne, sans réseau. Le HAR source (114 Mo) n'est **pas**
-commité (gitignoré, `docs/*.har`) ; seuls les octets figés le sont. Deux
-particularités à connaître avant de régénérer :
+`tools/testdata/rocktree/` freezes a small sample of the protocol
+(`.pb` bulks/nodes + `index.json`) from a real HAR of earth.google.com
+(2026-08-31, root epoch 1014, captured over Paris): `tools/rocktree-selftest.mjs`
+runs on it offline, without network. The source HAR (114 MB) is **not**
+committed (gitignored, `docs/*.har`); only the frozen bytes are. Two
+peculiarities to know before regenerating:
 
-- les nœuds sont re-capturés en `!2e1` (JPEG) même si le HAR original les
-  avait en `!2e6` (CRN/DXT1) — le fournisseur demande toujours du JPEG, c'est
-  ce que les fixtures doivent refléter ;
-- quelques bulks intermédiaires absents du HAR (cache navigateur au moment de
-  la capture) ont été refetchés en live, à l'epoch de la chaîne (1014).
+- the nodes are re-captured as `!2e1` (JPEG) even if the original HAR
+  had them as `!2e6` (CRN/DXT1) — the provider always asks for JPEG, and that
+  is what the fixtures must reflect;
+- a few intermediate bulks missing from the HAR (browser cache at the time of
+  the capture) were re-fetched live, at the epoch of the chain (1014).
 
-Pour régénérer avec un nouveau HAR :
+To regenerate with a new HAR:
 
 ```bash
-node tools/gen-rocktree-fixture.mjs "<chemin du .har>"
+node tools/gen-rocktree-fixture.mjs "<path to the .har>"
 ```
 
-`node tools/rocktree-calibrate.mjs [--live]` recalcule la table
-`zoom ↔ niveau d'octree` (`meters_per_texel` contre la référence Flyover) ;
-`--live` interroge le vrai service au lieu des fixtures — utile si la
-calibration mono-latitude actuelle (mesurée sur Paris) doit être vérifiée
-ailleurs sur le globe.
+`node tools/rocktree-calibrate.mjs [--live]` recomputes the
+`zoom ↔ octree level` table (`meters_per_texel` against the Flyover reference);
+`--live` queries the real service instead of the fixtures — useful if the
+current single-latitude calibration (measured over Paris) has to be checked
+elsewhere on the globe.
 
-### Trois réglages qui comptent
+### Three settings that matter
 
-- **UV en V retourné dans `prep.mjs`** — l'OBJ place l'origine UV en bas à
-  gauche, `DataArrayTexture` impose `flipY = false` et met donc la ligne 0 des
-  données en haut. Sans la conversion, une bonne partie de la surface visible
-  échantillonne le remplissage gris hors de la zone utile de chaque imagette
-  (constaté à l'origine sur les tuiles Apple Flyover, retiré depuis, mais le
-  décodeur OBJ garde la correction pour tout fournisseur qui en servirait). Le
-  selftest verrouille les deux symptômes (motifs retournés et plaques grises).
-- **`camera.near = 0.15`** — la photogrammétrie empile des surfaces quasi
-  coplanaires. À `near = 0.05` le depth buffer quantifie à ~40 cm à l'autre bout
-  de la tuile et la ville part en éclats de z-fighting. 0,15 corrige ça et vaut
-  exactement le rayon du collider, donc rien ne peut être plus près de la caméra
-  sans être déjà entré en collision.
-- **`resetForces()` à chaque pas** — Rapier conserve les forces utilisateur
-  jusqu'à effacement explicite. Sans ça la poussée s'accumule et le drone part
-  en accélération quadratique.
+- **V-flipped UVs in `prep.mjs`** — OBJ places the UV origin at the bottom
+  left, `DataArrayTexture` forces `flipY = false` and therefore puts row 0 of the
+  data at the top. Without the conversion, a good part of the visible surface
+  samples the grey padding outside the useful zone of each thumbnail
+  (originally observed on Apple Flyover tiles, withdrawn since, but the
+  OBJ decoder keeps the correction for any provider that would serve some). The
+  selftest locks down both symptoms (flipped patterns and grey patches).
+- **`camera.near = 0.15`** — photogrammetry stacks nearly coplanar
+  surfaces. At `near = 0.05` the depth buffer quantises to ~40 cm at the far end
+  of the tile and the city shatters into z-fighting. 0.15 fixes that and is
+  exactly the collider radius, so nothing can be closer to the camera
+  without having already collided.
+- **`resetForces()` on every step** — Rapier keeps user forces
+  until they are explicitly cleared. Without this, thrust accumulates and the
+  drone leaves in quadratic acceleration.
 
-### Sur le gris : ce n'était pas les données
+### About the grey: it was not the data
 
-Une version précédente de ce README affirmait que Flyover laissait les façades
-verticales en gris et qu'il fallait arbitrer entre cette esthétique et un autre
-jeu de données. **C'était faux.** Le remplissage gris (luminance exactement 128)
-occupe la marge *non utilisée* de chaque imagette ; c'est le V non retourné qui y
-projetait les échantillons. Mesuré sur 125 600 m² de surface réelle (tuile Tour
-Eiffel) :
+An earlier version of this README claimed that Flyover left vertical
+façades grey and that one had to choose between that aesthetic and another
+dataset. **That was wrong.** The grey padding (luminance exactly 128)
+occupies the *unused* margin of each thumbnail; it was the un-flipped V that
+projected samples onto it. Measured over 125,600 m² of real surface (Eiffel
+Tower tile):
 
-| convention | gris visible | faces verticales | faces horizontales |
+| convention | visible grey | vertical faces | horizontal faces |
 |---|---|---|---|
-| V non retourné | 20,9 % | — | — |
-| V retourné | **0,9 %** | 0,9 % | 1,0 % |
+| V not flipped | 20.9% | — | — |
+| V flipped | **0.9%** | 0.9% | 1.0% |
 
-Les façades ne sont pas moins bien texturées que les toits.
+The façades are no less well textured than the roofs.
 
-## Le modèle de vol
+## The flight model
 
-Le drone n'est pas une sphère avec une poussée : c'est un multirotor modélisé
-moteur par moteur. `src/quad.js` tient la cellule et l'air (retard moteur,
-poussée ∝ ω², couple de traînée d'hélice, traînée de rotor, effet de sol,
-propwash, batterie qui s'affaisse sous charge et se vide) ;
-`src/flightController.js` tient la partie Betaflight (actual rates, PID avec
-i-term relax, TPA, feedforward, lissage RC, mixeur airmode) et ne sort que
-quatre commandes moteur.
+The drone is not a sphere with a thrust: it is a multirotor modelled
+motor by motor. `src/quad.js` holds the airframe and the air (motor lag,
+thrust ∝ ω², prop drag torque, rotor drag, ground effect,
+propwash, a battery that sags under load and drains);
+`src/flightController.js` holds the Betaflight part (actual rates, PID with
+i-term relax, TPA, feedforward, RC smoothing, airmode mixer) and outputs only
+four motor commands.
 
-### Le vol en translation (#91)
+### Translational flight (#91)
 
-Trois mécanismes distinguent l'appareil lancé de l'appareil en stationnaire.
+Three mechanisms separate the moving aircraft from the hovering one.
 
-**La portance de translation.** En avançant, le rotor s'échappe du flux qu'il
-vient lui-même de brasser : l'inflow chute, le rendement monte. Ce n'est pas un
-coefficient de plus — `kInflow` EST déjà la pente d'inflow de la théorie du
-disque actuateur, linéarisée dans l'axe, et le calcul la généralise au vol
-d'avancement en forme fermée (Glauert), donc sans itération à 250 Hz. Le facteur
-2 du code est ce qui en fait une généralisation et non une addition : en vol
-axial pur, la solution exacte place le flux à vh + Vc/2, si bien que le terme
-historique vaut exactement deux fois l'excès sur le stationnaire. L'air calme et
-la montée verticale restent identiques au bit près. **La descente est laissée
-intacte, délibérément** : entre −2·vh et 0 la théorie de la quantité de
-mouvement n'a aucune solution — c'est le régime d'anneau tourbillonnaire — et ce
-régime-là est déjà modélisé empiriquement, sous le nom de `propwash`.
+**Translational lift.** Moving forward, the rotor escapes the flow it has just
+stirred itself: inflow drops, efficiency rises. This is not one more
+coefficient — `kInflow` IS already the inflow slope of actuator disc theory,
+linearised on the axis, and the computation generalises it to forward
+flight in closed form (Glauert), hence without iterating at 250 Hz. The factor
+2 in the code is what makes it a generalisation and not an addition: in pure
+axial flight, the exact solution places the flow at vh + Vc/2, so that the
+historical term is exactly twice the excess over hover. Still air and vertical
+climb stay identical to the bit. **Descent is deliberately left
+untouched**: between −2·vh and 0, momentum theory has no solution at all — that
+is the vortex ring state — and that regime is already modelled empirically,
+under the name `propwash`.
 
-**Le flapback, retiré (#103).** Le disque bascule en arrière et incline la
-poussée avec lui ; la FORCE correspondante est déjà présente, confondue dans la
-traînée de rotor (`kLateral`, fittée au comportement observé). #91 avait ajouté
-le MOMENT, de deux endroits : le moment de moyeu d'une hélice rigide, et le bras
-que les forces en plan n'avaient jamais eu, les hélices étant 2 cm au-dessus du
-centre de masse.
+**Flapback, withdrawn (#103).** The disc tilts backwards and tilts the
+thrust with it; the corresponding FORCE is already present, folded into
+rotor drag (`kLateral`, fitted to observed behaviour). #91 had added
+the MOMENT, from two places: the hub moment of a rigid propeller, and the arm
+that in-plane forces had never had, the propellers being 2 cm above the
+centre of mass.
 
-Les deux ont été retirés après essai en vol : l'appareil devenait impilotable.
-Tout ce qu'ils ajoutent croît avec la vitesse air et agit à la fois en tangage et
-en roulis, si bien qu'un lacet plein manche tenu au double de la vitesse de
-croisière faisait rouler l'appareil jusqu'à 79 % du taux de lacet commandé. La
-porte qui manquait mesure exactement cela : section 4 de
-`tools/aero-selftest.mjs`, désormais tenue **en vol** et plus seulement en air
-calme — là où tout #91 vaut identiquement zéro, ce qui explique qu'elle soit
-restée verte.
+Both were withdrawn after a flight test: the aircraft became unflyable.
+Everything they add grows with airspeed and acts in both pitch and
+roll, so that full-stick yaw held at twice cruise speed
+rolled the aircraft up to 79% of the commanded yaw rate. The gate that was
+missing measures exactly that: section 4 of
+`tools/aero-selftest.mjs`, now held **in flight** and no longer only in still
+air — where all of #91 is identically zero, which explains why it had
+stayed green.
 
-Une question de modèle reste à trancher avant tout retour : une hélice rigide ne
-bascule pas son disque, et une hélice qui bat ne rend pas de moment de moyeu.
-Prendre l'image battante pour la force et l'image rigide pour le moment revient
-probablement à compter la même dissymétrie deux fois. C'est l'objet de l'issue
-#91, rouverte.
+One question of modelling remains to be settled before any return: a rigid
+propeller does not tilt its disc, and a flapping propeller does not return a hub
+moment. Taking the flapping picture for the force and the rigid picture for the
+moment probably amounts to counting the same asymmetry twice. That is the
+subject of the issue, now reopened.
 
-**La précession des rotors.** Les quatre hélices portent un moment cinétique, et
-le faire pivoter coûte un couple. À ne pas confondre avec le terme d'inertie
-d'hélice déjà présent en lacet : celui-là est la réaction à l'accélération du
-rotor, celui-ci la précession. L'un a besoin que le régime CHANGE, l'autre
-seulement qu'il ne soit pas nul. Sur un X symétrique, la somme des sens × régimes
-est exactement nulle pour un roulis pur comme pour un tangage pur, quelle que
-soit la courbe rpm — donc ce que ça ajoute est précisément ce qu'un pilote
-rapporte : **du lacet pendant un roulis, et le nez bouge**.
+**Rotor precession.** The four propellers carry angular momentum, and
+pivoting it costs a torque. Not to be confused with the propeller inertia term
+already present in yaw: that one is the reaction to the rotor's
+acceleration, this one is precession. One needs the rpm to CHANGE, the other
+only needs it not to be zero. On a symmetric X, the sum of directions × rpm is
+exactly zero for a pure roll as for a pure pitch, whatever the rpm curve — so
+what this adds is precisely what a pilot reports: **yaw during a roll, and the
+nose moves**.
 
-Aucun réglage nouveau par famille : tout se dérive de la géométrie et des
-coefficients déjà là.
+No new per-family setting: everything derives from the geometry and the
+coefficients already there.
 
-`node tools/aero-selftest.mjs` prouve les trois en moins d'une seconde, sans
-Rapier, sans scène et sans navigateur. Il porte aussi une version headless de la
-porte anti-divergence sous roulis tenu, qui réclamait Rapier et une scène.
+`node tools/aero-selftest.mjs` proves all three in under a second, without
+Rapier, without a scene and without a browser. It also carries a headless
+version of the anti-divergence gate under sustained roll, which used to demand
+Rapier and a scene.
 
-### Les six familles (PHASE 07)
+### The six families (PHASE 07)
 
-`src/drone-profiles.js` décrit six familles d'appareils — masse, inertie, bras,
-hélice, poussée, courbe rpm, retard moteur, coefficients aéro, pack — chacune
-documentée par un commentaire « setup réel » :
+`src/drone-profiles.js` describes six families of aircraft — mass, inertia, arm,
+propeller, thrust, rpm curve, motor lag, aero coefficients, pack — each
+documented by a "real setup" comment:
 
-`5" FREESTYLE` (référence) · `5" RACE` · `CINEWHOOP` · `LONG RANGE` ·
-`HEAVY 5"` · `MICRO` (toothpick 2.5").
+`5" FREESTYLE` (reference) · `5" RACE` · `CINEWHOOP` · `LONG RANGE` ·
+`HEAVY 5"` · `MICRO` (2.5" toothpick).
 
-Le **PID est mesuré par famille**, jamais écrit à la main :
-`node tools/tune-pid.mjs --write <famille|all>` balaie P/D contre l'inertie et le
-retard moteur de la famille, mesure `torquePerMix`, et réécrit son bloc `pid`.
-`npm run tune` en fait le rapport pour les six. `npm run selftest` passe la
-boucle enveloppe de vol / propulsion sur chaque famille.
+The **PID is measured per family**, never written by hand:
+`node tools/tune-pid.mjs --write <family|all>` sweeps P/D against the family's
+inertia and motor lag, measures `torquePerMix`, and rewrites its `pid` block.
+`npm run tune` reports on all six. `npm run selftest` runs the flight
+envelope / propulsion loop on every family.
 
-Le banc tient le quad dans de l'air immobile, ce qui est le bon plant pour une
-boucle de taux et ce qui rend ses chiffres comparables à ceux du premier jour.
-C'est aussi pourquoi il ne voit rien du vol en translation, et pourquoi les PID
-livrés n'ont pas eu à bouger quand celui-ci est arrivé. `--cruise` le fait voler
-en avant, à la vitesse d'équilibre propre à chaque famille, et juge un candidat
-sur le PIRE des deux régimes — jamais sur la croisière seule, ce qui ne ferait
-que déplacer l'angle mort à l'autre bout de l'enveloppe. Hors défaut : l'activer
-change ce que « mesuré » veut dire.
+The bench holds the quad in still air, which is the right test rig for a rate
+loop and what makes its numbers comparable to those of day one.
+It is also why it sees nothing of translational flight, and why the shipped
+PIDs did not have to move when that arrived. `--cruise` makes it fly
+forward, at the equilibrium speed of each family, and judges a candidate
+on the WORSE of the two regimes — never on cruise alone, which would only
+move the blind spot to the other end of the envelope. Off by default: turning
+it on changes what "measured" means.
 
-Un airframe bien plus rapide qu'un 5" (le toothpick) porte un `filterScale` qui
-ouvre les filtres roll/pitch, comme un vrai build micro. `QUAD` reste le profil
-par défaut (5" freestyle, valeurs d'origine inchangées).
+An airframe far faster than a 5" (the toothpick) carries a `filterScale` that
+opens the roll/pitch filters, like a real micro build. `QUAD` remains the
+default profile (5" freestyle, original values unchanged).
 
-Presets de rates, touche `P` : **cinematic** (380 °/s), **freestyle** (820 °/s),
-**race** (1100 °/s), **long range** (360 °/s), **micro** (420 °/s). Chaque
-famille démarre sur le sien.
+Rate presets, key `P`: **cinematic** (380 °/s), **freestyle** (820 °/s),
+**race** (1100 °/s), **long range** (360 °/s), **micro** (420 °/s). Each
+family starts on its own.
 
-Le HUD affiche la tension pack, l'état de charge et le courant : la couleur
-suit la tension *par cellule sous charge*, pas l'état de charge, parce que
-c'est le chiffre au ratio duquel on pilote. Sous 3,6 V/cellule elle passe à
-l'orange, sous 3,4 V au rouge.
+The HUD shows pack voltage, state of charge and current: the colour
+follows the voltage *per cell under load*, not the state of charge, because
+that is the number you fly by. Below 3.6 V/cell it turns
+orange, below 3.4 V red.
 
-### Le scan de cibles et les familles de hack (PHASE 08–09)
+### Target scan and hack families (PHASE 08–09)
 
-Une session fraîche passe par le **TARGET SCAN** (PHASE 08) avant le vol :
-`tools/target-model.mjs` tire, de façon déterministe sur la graine de session,
-une liste de signaux (famille, RSSI, mode vidéo), le joueur en choisit un, et la
-cible résolue est persistée sur la session.
+A fresh session goes through the **TARGET SCAN** (PHASE 08) before the flight:
+`tools/target-model.mjs` draws, deterministically from the session seed,
+a list of signals (family, RSSI, video mode), the player picks one, and the
+resolved target is persisted on the session.
 
-Chaque candidat porte aussi un **`hackType`**, tiré à la génération dans
-`tools/target-model.mjs` (tirage dédié, seedé, **indépendant** de la famille, du
-signal et de la difficulté du vol). Six familles, concepts crédibles mais
-interaction purement abstraite (`HACK_TYPES`) :
+Each candidate also carries a **`hackType`**, drawn at generation time in
+`tools/target-model.mjs` (a dedicated, seeded draw, **independent** of the
+family, of the signal and of the flight difficulty). Six families, credible
+concepts but purely abstract interaction (`HACK_TYPES`):
 
 `COMMAND INJECTION` · `LINK HIJACK` · `TELEMETRY SPOOF` · `GNSS SPOOF` ·
 `NETWORK TAKEOVER` · `FIRMWARE OVERRIDE`.
 
-`sanitizeTarget` (`tools/session-model.mjs`) valide et persiste `hackType` sur la
-cible. Juste après le TARGET SCAN, `src/hack.js` joue l'écran **AUTOMATED
-ANALYSIS** : un log automatique fixe de quatre lignes et un motif ASCII animé
-propre à la famille de hack (`src/hack-grammars.js`, purement décoratif).
-L'écran s'arrête sur `MANUAL OVERRIDE REQUIRED` et un bouton `[ JACK IN ]`,
-avec `[ESC] ABORT` monté dès l'affichage de l'écran — utilisable pendant tout
-le chargement en arrière-plan, pas seulement une fois l'écran armé.
-Activer `[ JACK IN ]` ouvre la **culmination** (`src/culmination.js`) : une à
-quatre secondes plein écran de primitives demo scene pondérées par la famille
-de hack (`FAMILY_PRIMITIVES`), dans les quatre couleurs réservées aux
-événements, avec la signature sonore de la famille
-(`uiAudio.playCulmination()`) pendant que la musique se retire. La variante
-V1–V4 est tirée sur la graine de la cible, donc rejouable. Rien n'y est à
-presser : elle démarre seule et rend la main seule, Échap saute le battement.
-Vient ensuite l'écran `CONTROL ACQUIRED` et son empreinte, puis le vol.
+`sanitizeTarget` (`tools/session-model.mjs`) validates and persists `hackType` on
+the target. Right after the TARGET SCAN, `src/hack.js` plays the **AUTOMATED
+ANALYSIS** screen: a fixed four-line automatic log and an animated ASCII pattern
+specific to the hack family (`src/hack-grammars.js`, purely decorative).
+The screen stops on `MANUAL OVERRIDE REQUIRED` and a `[ JACK IN ]` button,
+with `[ESC] ABORT` mounted as soon as the screen appears — usable throughout
+the background loading, not only once the screen is armed.
+Activating `[ JACK IN ]` opens the **culmination** (`src/culmination.js`): one to
+four fullscreen seconds of demo-scene primitives weighted by the hack
+family (`FAMILY_PRIMITIVES`), in the four colours reserved for
+events, with the family's sound signature
+(`uiAudio.playCulmination()`) while the music withdraws. The V1–V4 variant
+is drawn from the target's seed, and is therefore replayable. Nothing there is
+to be pressed: it starts by itself and hands back by itself, Escape skips the
+beat. Then comes the `CONTROL ACQUIRED` screen and its fingerprint, then the
+flight.
 
-Abandonner (Échap ou `[ESC] ABORT`), tant que le geste n'est pas passé, résout
-`runHack()` en `{ aborted: true }` plutôt que de rejeter, et recharge la page
-de zone comme le ferait l'annulation d'un TARGET SCAN. Il n'y a en revanche
-plus de vecteur à retenir ni à retaper : le CONTROL VECTOR, qui occupait cet
-écran jusqu'à l'issue #33, a été retiré entièrement — son retrait avait emporté
-la culmination avec lui, rétablie par l'issue #101 (voir la note de révision de
-la Bible §15/§19 et le bloc PHASE 10 de la roadmap).
+Aborting (Escape or `[ESC] ABORT`), as long as the gesture has not gone
+through, resolves `runHack()` to `{ aborted: true }` rather than rejecting, and
+reloads the zone page the way cancelling a TARGET SCAN would. There is, on the
+other hand, no longer a vector to memorise or retype: the CONTROL VECTOR, which
+occupied that screen until issue #33, was withdrawn entirely — its removal had
+carried the culmination away with it, restored by issue #101 (see the revision
+note of Bible §15/§19 and the PHASE 10 block of the roadmap).
 
-Hook de dev : `?hack=<type>` (ex. `?hack=gnss-spoof`) prévisualise un motif sur
-les chemins qui court-circuitent le TARGET SCAN (`?scene=`, `?family=`).
+Dev hook: `?hack=<type>` (e.g. `?hack=gnss-spoof`) previews a pattern on
+the paths that bypass the TARGET SCAN (`?scene=`, `?family=`).
 
-### La météo du monde
+### The world weather
 
-Depuis PHASE 04 (issue #41), le temps qu'il fait n'est **pas un réglage**. Il n'y
-a plus de curseur vent / pluie / brouillard dans le panneau `Tab` : la météo
-appartient au monde et à la session, et chaque zone a sa propre évolution sur
-sept jours glissants.
+Since PHASE 04 (issue #41), the weather is **not a setting**. There is
+no longer a wind / rain / fog slider in the `Tab` panel: the weather
+belongs to the world and to the session, and each zone has its own evolution
+over seven rolling days.
 
 ```
-tools/lib/weather.mjs    le modèle pur — zones, jours, régimes, garde-fous,
-                         traduction vers wind.js / rain.js / fog.js / sun.js
-tools/weather-source.mjs Open-Meteo + cache par (zone, jour) dans le world state
-src/weather.js           le client : demande le snapshot, écrit les paramètres
+tools/lib/weather.mjs    the pure model — zones, days, regimes, guardrails,
+                         translation to wind.js / rain.js / fog.js / sun.js
+tools/weather-source.mjs Open-Meteo + per (zone, day) cache in the world state
+src/weather.js           the client: asks for the snapshot, writes the parameters
 ```
 
-Le soleil (issue #23, `src/sun.js`) suit la même logique : ni panneau ni
-curseur. Sa position vient de la lat/lon de la scène et de **l'heure UTC
-réelle** au moment où la page tourne — il n'y a **aucun réglage d'heure**
-nulle part dans l'UI, et c'est délibéré : forcer un lever ou un coucher de
-soleil casserait la promesse « ce que vous voyez, c'est ce qu'il y a
-maintenant » qui porte déjà la météo.
+The sun (issue #23, `src/sun.js`) follows the same logic: no panel, no
+slider. Its position comes from the scene's lat/lon and from the **real UTC
+time** at the moment the page is running — there is **no time setting**
+anywhere in the UI, and that is deliberate: forcing a sunrise or a sunset
+would break the promise "what you see is what is there
+now" that already carries the weather.
 
-**Une zone, un jour, un bulletin.** La clé de zone est la lat/lon arrondie à
-0,01° (~1,1 km) : deux emprises dessinées sur le même quartier partagent leur
-météo, deux villes jamais. Le bulletin du jour est écrit dans
-`worldState.weather[zone]` de l'opérateur, sur disque. **Relancer une
-acquisition ne rejoue donc aucun tirage** : le serveur relit le fichier, sans
-même toucher au réseau.
+**One zone, one day, one bulletin.** The zone key is the lat/lon rounded to
+0.01° (~1.1 km): two bounding boxes drawn over the same neighbourhood share
+their weather, two cities never. The day's bulletin is written into the
+operator's `worldState.weather[zone]`, on disk. **Relaunching an
+acquisition therefore replays no draw**: the server re-reads the file, without
+even touching the network.
 
-**La source est une vraie API.** Open-Meteo, gratuite, sans clé — l'URL ne
-contient que la latitude et la longitude, il n'y a aucun secret à committer. On
-lui demande `weather_code`, `precipitation_sum`, `precipitation_hours`, les
-vents max et les rafales en daily, plus `visibility` et `cloud_cover` en hourly,
-qu'on moyenne par jour. Le cumul quotidien divisé par le nombre d'heures de
-pluie donne le **débit** en mm/h, qui est ce que `rain.js` attend — un cumul de
-24 mm sur la journée n'est pas 24 mm/h.
+**The source is a real API.** Open-Meteo, free, keyless — the URL contains
+only the latitude and the longitude, there is no secret to commit. We
+ask it for `weather_code`, `precipitation_sum`, `precipitation_hours`, the
+max winds and the gusts as daily, plus `visibility` and `cloud_cover` as hourly,
+which we average per day. The daily total divided by the number of hours of
+rain gives the **rate** in mm/h, which is what `rain.js` expects — a total of
+24 mm over the day is not 24 mm/h.
 
-**Trois replis, dans cet ordre**, tous testés par `tools/weather-selftest.mjs` :
+**Three fallbacks, in this order**, all tested by `tools/weather-selftest.mjs`:
 
-1. le snapshot du jour déjà en world state — relu, jamais retiré au sort ;
-2. Open-Meteo ;
-3. le dernier snapshot connu, re-daté, annoncé `stale` et avec une confiance
-   abaissée ;
-4. une génération procédurale déterministe sur `(zone, jour)`.
+1. the day's snapshot already in the world state — re-read, never re-drawn;
+2. Open-Meteo;
+3. the last known snapshot, re-dated, announced `stale` and with lowered
+   confidence;
+4. a deterministic procedural generation on `(zone, day)`.
 
-Le procédural n'est pas du bruit lissé au hasard. Trois uniformes voisines dans
-le temps donnent une quasi-normale ; on repasse par sa fonction de répartition
-pour retrouver une **vraie** uniforme, faute de quoi 7 % des jours se collent
-sur la borne et Tokyo prend une tempête par semaine. Les lois sont ensuite
-calées sur leurs fréquences réelles :
+The procedural side is not randomly smoothed noise. Three uniforms adjacent in
+time give a near-normal; we pass back through its cumulative distribution
+function to recover a **real** uniform, without which 7% of days stick
+to the bound and Tokyo gets a storm a week. The distributions are then
+calibrated on their real frequencies:
 
-| grandeur | loi | résultat mesuré sur 14 400 jours-zones |
+| quantity | distribution | result measured over 14,400 zone-days |
 | --- | --- | --- |
-| vent quotidien max | Weibull de forme 2 (Rayleigh), échelle 3,5 à 9 selon la zone | médiane 5,7 m/s, p90 10,9, p99 15,0 |
-| pluie | seuil + cumul exponentiel, étalé sur un nombre d'heures tiré à part | ~30 % de jours pluvieux |
-| brouillard | seuil rare, 2 à 18 % des jours selon la zone | FOG 2,5 %, MIST 2,9 % |
-| coups de vent | conséquence des deux premiers | GALE + STORM 0,7 % |
+| daily max wind | Weibull of shape 2 (Rayleigh), scale 3.5 to 9 depending on the zone | median 5.7 m/s, p90 10.9, p99 15.0 |
+| rain | threshold + exponential total, spread over a separately drawn number of hours | ~30% of rainy days |
+| fog | rare threshold, 2 to 18% of days depending on the zone | FOG 2.5%, MIST 2.9% |
+| gales | a consequence of the first two | GALE + STORM 0.7% |
 
-La continuité temporelle vient de l'indexation sur le **jour absolu** : chaque
-jour dépend de ses deux voisins, donc le « +1 » d'aujourd'hui est exactement le
-« TODAY » de demain, et la prévision ne se dément jamais le lendemain.
+Temporal continuity comes from indexing on the **absolute day**: each
+day depends on its two neighbours, so today's "+1" is exactly
+tomorrow's "TODAY", and the forecast never contradicts itself the next day.
 
-**Les garde-fous** (`sanitize()`) tournent avant toute classification, sur les
-données de l'API comme sur celles du générateur, parce que les deux produisent
-des combinaisons que l'atmosphère ne produit pas : une rafale plus faible que le
-vent moyen, ou trois fois plus forte ; de la purée de pois sous une tempête (au
-delà de 8 m/s le brassage mécanique décolle le brouillard en stratus) ; de la
-pluie sous un ciel bleu ; une visibilité de 30 km sous 25 mm/h, alors que
-`rain.js` n'en laisse que 1,7. La visibilité annoncée ne peut jamais contredire
-le moteur qui va la rendre.
+**The guardrails** (`sanitize()`) run before any classification, on the
+data from the API as on the generator's, because both produce
+combinations the atmosphere does not: a gust weaker than the
+mean wind, or three times stronger; pea soup under a storm (beyond
+8 m/s the mechanical stirring lifts fog into stratus); rain
+under a blue sky; a visibility of 30 km under 25 mm/h, when
+`rain.js` leaves only 1.7. The announced visibility can never contradict
+the engine that is going to render it.
 
-**La prévision** s'affiche depuis `LOCAL TERRAIN` → `FORECAST` :
+**The forecast** is displayed from `LOCAL TERRAIN` → `FORECAST`:
 
 ```
 FORECAST // TOUR EIFFEL
@@ -1041,468 +1068,470 @@ FOG    NONE
 CONFIDENCE ███████████░
 ```
 
-L'ordre des conditions n'est pas fixe et diffère d'une zone à l'autre. La
-confiance décroît avec l'échéance et part de plus bas quand la source est un
-repli : une prévision inventée ne s'annonce pas aussi sûre qu'un relevé, et la
-barre n'est jamais pleine.
+The order of the conditions is not fixed and differs from one zone to another.
+Confidence decreases with the horizon and starts lower when the source is a
+fallback: an invented forecast does not announce itself as sure as a
+reading, and the bar is never full.
 
-**Pour le debug**, `window.__sim.setWeather / setRain / setFog` restent
-ouverts et sont désormais le seul moyen de forcer le temps qu'il fait ;
-`window.__sim.weather()` rend le snapshot en cours. `tools/selftest.mjs` suppose
-un monde neutre et n'a pas changé.
+**For debugging**, `window.__sim.setWeather / setRain / setFog` remain
+open and are now the only way to force the weather;
+`window.__sim.weather()` returns the current snapshot. `tools/selftest.mjs`
+assumes a neutral world and has not changed.
 
-### Le vent
+### Wind
 
-`src/wind.js` — un champ de vent, pas un vecteur. Quatre entrées, écrites par
-le monde et non par un curseur (voir « La météo du monde ») :
+`src/wind.js` — a wind field, not a vector. Four inputs, written by
+the world and not by a slider (see "The world weather"):
 
-| entrée | unité | ce que c'est |
+| input | unit | what it is |
 | --- | --- | --- |
-| `speed` | m/s | vitesse **à 10 m**, la hauteur à laquelle une station météo mesure — pas la vitesse au drone |
-| `direction` | ° | secteur d'**où vient** le vent, convention météo |
-| `gust` | 0..1 | un nombre pour trois propriétés — intensité, durée, fréquence — voir plus bas |
-| `turbulence` | 0..2 | multiplicateur sur l'intensité que le profil implique déjà, pas l'intensité elle-même |
+| `speed` | m/s | speed **at 10 m**, the height at which a weather station measures — not the speed at the drone |
+| `direction` | ° | the sector the wind **comes from**, meteorological convention |
+| `gust` | 0..1 | one number for three properties — intensity, duration, frequency — see below |
+| `turbulence` | 0..2 | a multiplier on the intensity the profile already implies, not the intensity itself |
 
-Ces quatre valeurs se règlent encore à la main depuis la console
-(`window.__sim.setWeather({...})`), ce qui est l'accès de debug et le banc de
-mesure — pas un panneau caché. `tools/selftest.mjs` s'en sert pour tenir ses
-trois vérifications en air calme (tenue d'altitude au stationnaire, vitesse
-terminale à plat, immobilité au sol), qui n'ont de sens qu'à vent nul.
+These four values can still be set by hand from the console
+(`window.__sim.setWeather({...})`), which is the debug access and the
+measurement bench — not a hidden panel. `tools/selftest.mjs` uses it to hold its
+three still-air checks (altitude hold in hover, terminal speed in level flight,
+stillness on the ground), which only make sense at zero wind.
 
-**Quatre couches**, chacune dans sa bande de fréquence, parce qu'elles ont des
-causes différentes : le **moyen** (le gradient de pression), la **dérive** lente
-sur des dizaines de secondes, les **rafales** discrètes de quelques secondes, et
-la **turbulence** au dixième de seconde. La version précédente repliait les
-trois dernières sur un seul passe-bas, ce qui ne sait exprimer que « à quel
-point » et jamais « à quelle fréquence » ni « pendant combien de temps ».
+**Four layers**, each in its own frequency band, because they have
+different causes: the **mean** (the pressure gradient), the slow **drift**
+over tens of seconds, the discrete **gusts** of a few seconds, and the
+**turbulence** at a tenth of a second. The previous version folded the last
+three into a single low-pass, which can only express "how much" and never "at
+what frequency" nor "for how long".
 
-**Le profil de couche limite** est la loi logarithmique, avec une longueur de
-rugosité de 1 m (classe Davenport « centre-ville »). Conséquence directe en
-vol : à 2 m du sol il ne reste que 30 % du vent annoncé, à 100 m il y en a le
-double. Monter change la donne. La loi log est préférée à la loi puissance
-parce qu'elle donne **gratuitement** l'intensité turbulente — σu/U = 1/ln(z/z0),
-soit 0,43 à 10 m et 0,22 à 100 m — au lieu de la faire choisir.
+**The boundary-layer profile** is the logarithmic law, with a roughness
+length of 1 m (Davenport class "city centre"). Direct consequence in
+flight: at 2 m from the ground only 30% of the announced wind is left, at 100 m
+there is twice as much. Climbing changes things. The log law is preferred to
+the power law because it gives **for free** the turbulence intensity —
+σu/U = 1/ln(z/z0), i.e. 0.43 at 10 m and 0.22 at 100 m — instead of making you
+choose it.
 
-**La turbulence** est un modèle de Dryden : trois axes générés dans un repère
-lié au vent puis tournés dans le monde, avec les rapports mesurés en couche de
-surface σu:σv:σw = 1:0,78:0,52. La constante de temps est L/V où V est la
-vitesse d'advection — l'hypothèse de turbulence gelée de Taylor, sans laquelle
-le champ se figerait dès qu'on s'arrête en stationnaire. Elle donne aussi, sans
-qu'on l'ait demandé, « l'air est plus sale quand on va vite » : les mêmes
-tourbillons arrivent plus tôt.
+**Turbulence** is a Dryden model: three axes generated in a frame
+tied to the wind then rotated into the world, with the ratios measured in the
+surface layer σu:σv:σw = 1:0.78:0.52. The time constant is L/V where V is the
+advection speed — Taylor's frozen turbulence hypothesis, without which
+the field would freeze as soon as you stop in a hover. It also gives, without
+being asked, "the air is dirtier when you go fast": the same
+eddies arrive sooner.
 
-**Les rafales** sont des arrivées de Poisson avec l'enveloppe en 1−cosinus de
-la MIL-F-8785C. Intensité, durée et fréquence sont trois paramètres réellement
-indépendants ; le curseur unique parcourt une ligne à travers les trois, parce
-que c'est ainsi que le temps se dégrade — de l'air plus agité veut dire des
-rafales plus fortes, plus sèches **et** plus fréquentes. Le triplet complet reste
-accessible via `window.__sim.setWeather({gustPeak, gustDuration, gustRate})`.
+**Gusts** are Poisson arrivals with the 1−cosine envelope of
+MIL-F-8785C. Intensity, duration and frequency are three genuinely
+independent parameters; the single slider traces a line through all three,
+because that is how weather deteriorates — more agitated air means
+gusts that are stronger, sharper **and** more frequent. The full triplet stays
+accessible through `window.__sim.setWeather({gustPeak, gustDuration, gustRate})`.
 
-**L'interaction avec le relief** est une rosette de dix rayons lancée à 20,8 Hz
-depuis `physics.js` — l'ordre de grandeur que le lien vidéo dépense déjà contre
-le même maillage. Le rayon 0 pointe toujours au vent, ce qui fait que « est-ce
-que quelque chose m'abrite » est toujours la même question sur le même rayon.
-En sortent quatre grandeurs : l'**abri** derrière un obstacle (jusqu'à −70 %,
-jamais 100 % — le sillage d'un bâtiment n'est pas de l'air immobile), la
-**canalisation** dans une rue alignée avec le vent (+45 %), l'**ascendance** le
-long d'une façade au vent (soaring dynamique compris), et la **rugosité** qui
-monte l'intensité turbulente près de la géométrie. Rien n'est un drapeau :
-chaque rayon donne une rampe `1 − d/R` et le tout est lissé sur 0,8 s, pour la
-même raison que dans `link.js` — la photogrammétrie est une soupe de surfaces,
-les rayons scintillent, et un drapeau transformerait ce scintillement en
-interrupteur.
+**Interaction with the terrain** is a rosette of ten rays cast at 20.8 Hz
+from `physics.js` — the same order of magnitude the video link already spends
+against the same mesh. Ray 0 always points into the wind, so that "is
+something sheltering me" is always the same question on the same ray.
+Out of it come four quantities: the **shelter** behind an obstacle (down to
+−70%, never 100% — a building's wake is not still air), the
+**channelling** in a street aligned with the wind (+45%), the **updraught**
+along a windward façade (dynamic soaring included), and the **roughness** that
+raises the turbulence intensity near the geometry. Nothing is a flag:
+each ray gives a `1 − d/R` ramp and the whole is smoothed over 0.8 s, for the
+same reason as in `link.js` — photogrammetry is a soup of surfaces,
+the rays scintillate, and a flag would turn that scintillation into a
+switch.
 
-Le vent agit **par les hélices**, pas comme une force unique sur le châssis :
-chaque rotor voit sa propre vitesse air, `v + ω × r`. Rouler vers la droite
-fait monter les moteurs de gauche, qui voient donc plus d'air et perdent de la
-poussée — un amortissement aérodynamique que le modèle n'avait pas, et qui
-sort de la géométrie sans qu'aucun coefficient ait été inventé. Le HUD affiche
-le vent **relatif au nez** : ce qu'on veut savoir en ligne, ce n'est pas un cap
-absolu, c'est de quel côté ça pousse.
+The wind acts **through the propellers**, not as a single force on the
+airframe: each rotor sees its own airspeed, `v + ω × r`. Rolling to the right
+raises the left-hand motors, which therefore see more air and lose
+thrust — an aerodynamic damping the model did not have, and which
+comes out of the geometry without any coefficient being invented. The HUD shows
+the wind **relative to the nose**: what you want to know in flight is not an
+absolute heading, it is which side is pushing.
 
-### La pluie
+### Rain
 
-`src/rain.js` est le modèle, `src/rainfall.js` le rendu — même découpe que le
-vent, et pour la même raison : la moitié modèle n'importe ni THREE ni le DOM, ce
-qui la rend vérifiable dans `tools/selftest.mjs`. Trois choses en sortent : les
-stries dans l'air, la baisse de visibilité, et les gouttes sur la lentille.
+`src/rain.js` is the model, `src/rainfall.js` the rendering — the same split as
+the wind, and for the same reason: the model half imports neither THREE nor the
+DOM, which makes it verifiable in `tools/selftest.mjs`. Three things come out of
+it: the streaks in the air, the loss of visibility, and the drops on the lens.
 
-L'intensité va de 0 à 25 mm/h (`MAX_RATE`), parce que toutes les relations
-utilisées sont publiées dans cette unité. Le diamètre médian suit Laws & Parsons
-(`D = 0,89 R^0,21` mm), la vitesse de chute Atlas & Ulbrich
-(`v = 3,78 D^0,67` m/s) et la concentration se déduit du contenu en eau liquide
-de Marshall-Palmer. À 5 mm/h cela donne 1,25 mm tombant à 4,4 m/s, 340 gouttes
-par mètre cube — ce qui est la bonne réponse, et ce qui rend l'intensité lisible
-en mm/h dans la prévision plutôt qu'en pourcents.
+The intensity runs from 0 to 25 mm/h (`MAX_RATE`), because every relation
+used is published in that unit. The median diameter follows Laws & Parsons
+(`D = 0.89 R^0.21` mm), the fall speed Atlas & Ulbrich
+(`v = 3.78 D^0.67` m/s) and the concentration is derived from the liquid water
+content of Marshall-Palmer. At 5 mm/h that gives 1.25 mm falling at 4.4 m/s, 340
+drops per cubic metre — which is the right answer, and what makes the intensity
+readable in mm/h in the forecast rather than in percent.
 
-L'intensité **respire** : le taux de pluie est lognormal, avec la correction
-`exp(-k²/2)` qui garantit que monter la variabilité fait aller et venir l'averse
-sans la rendre plus forte en moyenne. Deux bandes, une de 70 s et une de 14 s :
-un grain à l'intérieur d'une averse.
+The intensity **breathes**: the rain rate is lognormal, with the
+`exp(-k²/2)` correction that guarantees that raising the variability makes the
+shower come and go without making it stronger on average. Two bands, one of 70 s
+and one of 14 s: a squall inside a shower.
 
-La **visibilité** vient du coefficient d'extinction `σ = 0,21 R^0,74` par km et
-de Koschmieder — 5,6 km à 5 mm/h, 1,7 km à 25. Les extinctions s'ajoutent, donc
-la portée finale est celle-là en parallèle avec le brouillard de l'air, décrit
-plus bas : `loader.setFog()` bouge densité et couleur à chaud, et le brouillard
-a repris ce même point d'entrée plutôt que d'en créer un second.
+**Visibility** comes from the extinction coefficient `σ = 0.21 R^0.74` per km
+and from Koschmieder — 5.6 km at 5 mm/h, 1.7 km at 25. Extinctions add up, so
+the final range is that one in parallel with the fog of the air, described
+below: `loader.setFog()` moves density and colour live, and the fog
+took up that same entry point rather than creating a second one.
 
-Les **stries** sont de la géométrie dans la scène, pas un calque : une
-`InstancedBufferGeometry` de quads dans une boîte de 4 m qui suit la caméra,
-donc dessinée par le `RenderPass` et donc soumise au barillet, au vignettage, au
-flou et à la dégradation du lien comme le reste — et occultée par la ville. Les
-positions sont enroulées modulo la boîte dans le vertex shader : rien n'est
-jamais réengendré, le CPU écrit un `vec3` par frame. La strie s'oriente sur la
-vitesse de la goutte **relative au drone** et sa longueur est cette vitesse fois
-le temps d'exposition, le même curseur d'obturation que le HUD règle déjà : le
-flou de translation est précisément celui que la passe lens ne reconstruit pas,
-et une strie de pluie est ce flou-là.
+The **streaks** are geometry in the scene, not an overlay: an
+`InstancedBufferGeometry` of quads in a 4 m box that follows the camera,
+therefore drawn by the `RenderPass` and therefore subject to the barrel, the
+vignetting, the blur and the link degradation like everything else — and
+occluded by the city. The positions are wrapped modulo the box in the vertex
+shader: nothing is ever regenerated, the CPU writes one `vec3` per frame. The
+streak orients itself on the drop's velocity **relative to the drone** and its
+length is that velocity times the exposure time, the same shutter slider the HUD
+already sets: translational blur is precisely what the lens pass does not
+reconstruct, and a rain streak is that blur.
 
-Quatre mètres et pas plus, parce qu'au-delà une goutte est plus fine qu'un pixel
-et cesse d'être une strie : ce qui lui arrive est de l'extinction, et
-l'extinction c'est le brouillard ci-dessus. Le près en géométrie, le loin en
-brouillard, et aucun des deux ne fait le travail de l'autre.
+Four metres and no more, because beyond that a drop is thinner than a pixel
+and stops being a streak: what happens to it is extinction, and
+extinction is the fog above. The near in geometry, the far in
+fog, and neither does the other's job.
 
-Un point est **assumé et non physique**, `STREAK_WIDTH_GAIN` : à taille réelle,
-la profondeur optique du champ proche est sous le pourcent et une strie fait un
-tiers de pixel de large — la réponse est juste et inutilisable. La largeur
-dessinée est donc exagérée, l'opacité **jamais** (elle se calcule toujours sur le
-vrai diamètre), et le nombre de stries est divisé par le même facteur pour que
-la surface d'écran couverte reste celle que la concentration demande.
+One point is **assumed and not physical**, `STREAK_WIDTH_GAIN`: at real size,
+the optical depth of the near field is below one percent and a streak is a
+third of a pixel wide — the answer is right and unusable. The drawn width is
+therefore exaggerated, the opacity **never** (it is always computed on the
+real diameter), and the number of streaks is divided by the same factor so that
+the screen area covered stays the one the concentration calls for.
 
-Les gouttes **sur** la lentille ne sont pas là : voir issue #28. Le modèle l'est
-déjà (`RainField.wetness`, `dropDrift`), c'est le rendu qui reste à trouver.
+#### Drops on the lens
 
+An FPV camera has a flat window a few millimetres in front of the objective, and
+that is where the water settles. Two numbers of the **camera** — not of the
+weather — then decide nearly everything: the entrance pupil (≈ 1 mm) and that
+setback (≈ 8 mm).
 
-#### Les gouttes sur la lentille
+What matters is not the focus but **which rays the bead touches**.
+Every point of the window is crossed by the whole cone the pupil accepts, so
+a bead of diameter `D` at a setback `s` acts on the convolution of the
+bead by the pupil: an angular disc of `(D + A)/s`, with a flat core over
+`(D − A)/s`. It follows, with nothing tuned, that the footprint is **large and
+almost independent of the drop's size** (six times the drop, 2.8 times the
+footprint), that a drop **smaller than the pupil is never opaque**
+since it can only clip part of the cone, and that the edge is soft over
+the width of the pupil. It is also why refraction — a sharp image,
+merely displaced — could not have looked like anything at all.
 
-Une caméra FPV a un hublot plat quelques millimètres devant l'objectif, et c'est
-là que l'eau se pose. Deux nombres de la **caméra** — pas de la météo — décident
-alors presque tout : la pupille d'entrée (≈ 1 mm) et ce recul (≈ 8 mm).
+The count falls out of the same chain: `wetness` **is** the wetted fraction (the
+deposition in `RainField.update()` is proportional to the bare glass
+remaining), so the number of beads is that fraction of the window divided by the
+area of one bead. Ten millimetres of window over four of bead makes **a handful
+of drops**: a wet lens is five big blotches. That is the
+reason `LensDrops` is a list of uniforms and not a procedural
+field — and therefore why nothing reads as a grid.
 
-Ce qui compte n'est pas la mise au point mais **quels rayons la bille touche**.
-Chaque point du hublot est traversé par tout le cône que la pupille accepte, donc
-une bille de diamètre `D` à un recul `s` intervient sur la convolution de la
-bille par la pupille : un disque angulaire de `(D + A)/s`, à cœur plat sur
-`(D − A)/s`. Il en découle, sans rien ajuster, que l'empreinte est **grande et
-presque indépendante de la taille de la goutte** (six fois la goutte, 2,8 fois
-l'empreinte), qu'une goutte **plus petite que la pupille n'est jamais opaque**
-puisqu'elle ne peut que rogner une partie du cône, et que le bord est doux de la
-largeur de la pupille. C'est aussi pourquoi la réfraction — une image nette,
-seulement déplacée — ne pouvait pas ressembler à quoi que ce soit.
+What the drop **shows** is a different size from what it **covers**: the
+first comes from the entire cone in which the bead scatters, far wider than the
+disc, and biased towards the top of the frame because outside it is the sky that
+dominates that cone. Hence the intended behaviour: pale in front of a façade,
+invisible in front of the sky. That wide average is taken from the mip chain of
+the composer's target — it is the only change the drops impose on the rest of
+the pass, and it is there because a handful of taps over that much image gives
+grain and not water.
 
-Le compte tombe de la même chaîne : `wetness` **est** la fraction mouillée (le
-dépôt dans `RainField.update()` est proportionnel au verre nu restant), donc le
-nombre de billes est cette fraction du hublot divisée par l'aire d'une bille.
-Dix millimètres de hublot sur quatre de bille, cela fait **une poignée de
-gouttes** : une lentille mouillée, ce sont cinq grosses taches. C'est la
-raison pour laquelle `LensDrops` est une liste d'uniformes et pas un champ
-procédural — et donc pourquoi rien ne lit comme une grille.
+**Run-off** follows `dropDrift()`, which is not "downwards": it is
+apparent gravity (exactly `-force/mass`) plus the drag of the airflow,
+which wins from ~6 m/s — so the water climbs up the frame in fast flight. A bead
+only leaves when the force beats the contact line holding it, a threshold in
+`1/D²`: the big ones run, the small ones never move, without any
+"this one is mobile" flag. It catches on the next defect about one bead width
+further on, which gives the jerky motion. **Nothing draws a
+trail**: it was the trail that made the earlier attempt read as a scratch on
+the objective.
 
-Ce que la goutte **montre** est une autre taille que ce qu'elle **couvre** : la
-première vient du cône entier où la bille diffuse, bien plus large que le disque,
-et biaisée vers le haut du cadre parce que dehors c'est le ciel qui domine ce
-cône. D'où le comportement voulu : pâle devant une façade, invisible devant le
-ciel. Cette moyenne large est prise dans la chaîne de mips de la cible du
-composer — c'est le seul changement que les gouttes imposent au reste de la
-passe, et il est là parce qu'une poignée de taps sur autant d'image donne du
-grain et pas de l'eau.
+### Fog
 
-Le **ruissellement** suit `dropDrift()`, qui n'est pas « vers le bas » : c'est la
-pesanteur apparente (exactement `-force/masse`) plus la traînée du flux d'air,
-qui l'emporte dès ~6 m/s — l'eau remonte donc le cadre en vol rapide. Une bille
-ne part que quand la force bat la ligne de contact qui la retient, un seuil en
-`1/D²` : les grosses courent, les petites ne bougent jamais, sans aucun drapeau
-« celle-ci est mobile ». Elle se réaccroche au défaut suivant environ une largeur
-de bille plus loin, ce qui donne le mouvement saccadé. **Rien ne dessine de
-traînée** : c'est la traînée qui faisait lire l'ancienne tentative comme une
-rayure sur l'objectif.
+`src/fog.js` — the model, without THREE or DOM like the wind and the rain; the
+tile shader does the extinction, `loader.setFog()` applies it on the N chunk
+materials, `src/lens.js` draws the veil.
 
-### Le brouillard
-
-`src/fog.js` — le modèle, sans THREE ni DOM comme le vent et la pluie ; le
-shader de tuile fait l'extinction, `loader.setFog()` la pose sur les N matériaux
-de chunk, `src/lens.js` dessine le voile.
-
-L'unité est une **distance**, parce que c'est celle dans laquelle un pilote
-pense : la prévision affiche « 500 m », pas « 33 % ». La densité exp² que
-`TileMaterial.js` attend s'en déduit par `fogRange()` / `fogDensity()`
-(`src/rain.js`), jamais l'inverse. La correspondance est **géométrique** entre
-l'air clair de la scène et 30 m :
+The unit is a **distance**, because that is the one a pilot
+thinks in: the forecast displays "500 m", not "33%". The exp² density that
+`TileMaterial.js` expects is derived from it by `fogRange()` / `fogDensity()`
+(`src/rain.js`), never the other way round. The correspondence is
+**geometric** between the clear air of the scene and 30 m:
 
 ```
-R(i) = R0 · (30 / R0)^i          R0 = fogRange(0,00085) ≈ 2035 m
+R(i) = R0 · (30 / R0)^i          R0 = fogRange(0.00085) ≈ 2035 m
 ```
 
-C'est la seule échelle sur laquelle « un peu plus de brouillard » veut dire la
-même chose à 2 km et à 50 m, et elle rend `i = 0` **exactement** la densité que
-la scène chargeait déjà. `intensityForRange()` est l'inverse exact, et c'est par
-là que la météo du monde entre : elle parle en mètres de visibilité, `fog.js`
-prend une intensité. Les présets restent résolus à l'envers depuis les classes
-de visibilité de l'OMM — brume 1200 m, brouillard 500 m, purée de pois 50 m.
+It is the only scale on which "a bit more fog" means the same thing at 2 km and
+at 50 m, and it makes `i = 0` **exactly** the density the scene was already
+loading. `intensityForRange()` is the exact inverse, and that is where the world
+weather comes in: it speaks in metres of visibility, `fog.js` takes an
+intensity. The presets are still resolved backwards from the WMO visibility
+classes — mist 1200 m, fog 500 m, pea soup 50 m.
 
-Comme la pluie, le brouillard **respire** : deux bandes d'Ornstein-Uhlenbeck de
-120 s et 25 s (un banc de brouillard bouge en minutes, pas en secondes) et la
-même correction lognormale `exp(-k²/2)`, appliquée à **l'extinction ajoutée** et
-non à la portée — les extinctions sont ce qui s'additionne. Monter la
-variabilité fait donc aller et venir la visibilité sans épaissir l'air en
-moyenne, ce que `tools/selftest.mjs` vérifie sur six graines et dix heures
-cumulées : sur vingt minutes une seule graine se balade entre 0,8 et 1,2 de la
-moyenne alors que le modèle est non biaisé.
+Like the rain, the fog **breathes**: two Ornstein-Uhlenbeck bands of
+120 s and 25 s (a fog bank moves in minutes, not in seconds) and the
+same lognormal `exp(-k²/2)` correction, applied to **the added extinction** and
+not to the range — extinctions are what adds up. Raising the
+variability therefore makes visibility come and go without thickening the air on
+average, which `tools/selftest.mjs` checks over six seeds and ten cumulative
+hours: over twenty minutes a single seed wanders between 0.8 and 1.2 of the
+mean while the model is unbiased.
 
-Brouillard et pluie **s'additionnent en extinctions**, ce qui est une
-généralisation stricte de ce que #24 avait posé : `FOG_DENSITY × rain.fogScale`
-est par définition `FOG_DENSITY + l'extinction de la pluie`, donc curseur
-brouillard à zéro l'image est celle d'avant, au bit près.
+Fog and rain **add up as extinctions**, which is a strict
+generalisation of what #24 had established: `FOG_DENSITY × rain.fogScale`
+is by definition `FOG_DENSITY + the extinction of the rain`, so with the fog
+slider at zero the image is the one from before, to the bit.
 
-Le **ciel** suit, sinon le bord de tuile cesse de se dissoudre dans le fond. Il
-part du bleu-gris clair, s'assombrit sous la pluie (la lumière traverse de l'eau
-et du nuage) puis blanchit sous le brouillard (ce qu'on regarde *est* la lumière
-diffusée) — dans cet ordre, pour qu'à cinquante mètres de visibilité le ciel
-soit le brouillard et rien d'autre. Interpolé sur les octets bruts : voir le
-bug #10 du HANDOFF.
+The **sky** follows, otherwise the tile edge stops dissolving into the
+background. It starts from a light blue-grey, darkens under rain (the light
+crosses water and cloud) then whitens under fog (what you are looking at *is*
+the scattered light) — in that order, so that at fifty metres of visibility the
+sky is the fog and nothing else. Interpolated on the raw bytes: see
+bug #10 in HANDOFF.
 
-La **diffusion de la lumière** est rendue comme un **voile d'objectif** dans
-`src/lens.js` : six taps sur une spirale large, au niveau de mip correspondant,
-mélangés au ciel, ajoutés puis renormalisés par `1 + k`. Ajoutés et non fondus,
-parce que le voile est de la lumière qui arrive — c'est ce qui lève les noirs,
-et c'est pourquoi une photo prise dans le brouillard n'a pas de noir. La
-division est l'exposition que la caméra aurait reprise, et elle empêche le ciel
-d'écrêter. `uGlare` à zéro **compile l'effet hors du shader**, comme `LINK_OFF`.
+**Light scattering** is rendered as a **lens veil** in
+`src/lens.js`: six taps on a wide spiral, at the corresponding mip
+level, mixed with the sky, added and then renormalised by `1 + k`. Added and not
+blended, because the veil is light that arrives — that is what lifts the blacks,
+and that is why a photograph taken in fog has no black. The
+division is the exposure the camera would have taken back, and it stops the sky
+from clipping. `uGlare` at zero **compiles the effect out of the shader**, like
+`LINK_OFF`.
 
-Deux choses ne sont **pas** ici et sont des issues à part : la brume au sol et la
-variation avec l'altitude, qui demandent une position monde dans le fragment
-shader de `TileMaterial.js`, et le halo directionnel autour du soleil, qui
-demande un soleil (#23).
+Two things are **not** here and are separate issues: ground mist and the
+variation with altitude, which require a world position in the fragment
+shader of `TileMaterial.js`, and the directional halo around the sun, which
+requires a sun (#23).
 
-### Le son
+### Sound
 
-Rien n'est chargé : `src/audio.js` synthétise tout en Web Audio depuis les
-quatre régimes moteur. Chaque moteur a ses propres oscillateurs, accordés sur sa
-fréquence de passage de pale (≈ 530 Hz au stationnaire, ≈ 1420 Hz à fond), plus
-ses harmoniques et du bruit large bande ; les quatre sont panoramiqués selon
-leur position sur la cellule. Les régimes divergent dès qu'on met du manche, et
-c'est ce battement entre eux qui fait le son d'un quad en virage — les fusionner
-en un seul oscillateur perdrait exactement ce qui vaut le coup.
+Nothing is loaded: `src/audio.js` synthesises everything in Web Audio from the
+four motor speeds. Each motor has its own oscillators, tuned to its
+blade passing frequency (≈ 530 Hz in hover, ≈ 1420 Hz at full throttle), plus
+its harmonics and broadband noise; the four are panned according to
+their position on the airframe. The speeds diverge as soon as you put stick in,
+and it is that beating between them that makes the sound of a quad in a turn —
+merging them into a single oscillator would lose exactly what is worth having.
 
-S'y ajoutent le souffle aérodynamique (indexé sur la vitesse *air*, donc plus
-discret vent arrière), le propwash en descente, et un bruit d'impact dont le
-niveau suit la force de contact.
+Added to that: the aerodynamic rush (indexed on *air*speed, hence more discreet
+downwind), the propwash in descent, and an impact noise whose
+level follows the contact force.
 
-Le spectre est borné volontairement : sinus plutôt que dents de scie, passe-bas
-par moteur et passe-bas général, et un limiteur au-dessus de tout. Une synthèse
-qui laisse filer son énergie dans 2–8 kHz est épuisante au bout de dix minutes,
-et c'est précisément la bande où l'oreille est la plus sensible. Les quatre
-moteurs sont aussi légèrement désaccordés entre eux : à commande égale le modèle
-leur donne le même régime exact, et quatre oscillateurs rigoureusement cohérents
-sonnent comme un synthé, pas comme un quad.
+The spectrum is deliberately bounded: sines rather than sawtooths, a low-pass
+per motor and a general low-pass, and a limiter above everything. A synthesis
+that lets its energy run into 2–8 kHz is exhausting after ten minutes,
+and that is precisely the band where the ear is most sensitive. The four
+motors are also slightly detuned from one another: at equal command the model
+gives them the exact same speed, and four rigorously coherent oscillators
+sound like a synth, not like a quad.
 
-Volume et **timbre** dans le panneau `Tab`, retenus d'une session à l'autre ;
-le timbre déplace les deux coupures de ×0,5 à ×2 autour du réglage mesuré, à
-régler selon le casque. Son coupé en caméra libre. Le son démarre au clic sur `OPEN` dans le terminal
-(ou au premier geste quand `?scene=` saute le terminal) : les navigateurs
-refusent de faire du bruit avant un geste de l'utilisateur.
+Volume and **timbre** in the `Tab` panel, remembered from one session to the
+next; the timbre moves the two cutoffs from ×0.5 to ×2 around the measured
+setting, to be adjusted to your headphones. Sound is cut in free camera. Sound
+starts on the click on `OPEN` in the terminal
+(or on the first gesture when `?scene=` skips the terminal): browsers
+refuse to make noise before a user gesture.
 
-### Le rendu FPV
+### FPV rendering
 
-Une caméra rectilinéaire parfaite ne ressemble pas à un retour vidéo FPV, et
-c'est ce que corrige `src/lens.js` : une seule passe plein écran qui fait le
-barillet, l'aberration chromatique latérale, la mollesse des bords, le
-vignettage et le flou de mouvement.
+A perfect rectilinear camera does not look like an FPV video feed, and
+that is what `src/lens.js` corrects: a single fullscreen pass that does the
+barrel, the lateral chromatic aberration, the softness at the edges, the
+vignetting and the motion blur.
 
-Trois réglages dans le panneau `Tab`, section **Objectif**, retenus d'une
-session à l'autre :
+Three settings in the `Tab` panel, **Lens** section, remembered from one
+session to the next:
 
-| réglage | par défaut | ce qu'il fait |
+| setting | default | what it does |
 |---|---|---|
-| **Rendu FPV** | activé | l'interrupteur maître : décoché, l'image redevient celle d'avant, ce qui est la seule façon honnête de comparer |
-| **Objectif** | 60 % | barillet, aberration chromatique et mollesse des bords ensemble — c'est le même bout de verre, les séparer laisserait construire une optique qui n'existe pas |
-| **Vignettage** | 50 % | l'assombrissement des coins |
-| **Obturation** | 8 ms | le temps de pose, donc la longueur de la traînée ; 0 coupe le flou |
+| **FPV rendering** | on | the master switch: unchecked, the image goes back to what it was, which is the only honest way to compare |
+| **Lens** | 60% | barrel, chromatic aberration and edge softness together — it is the same piece of glass, separating them would let you build an optic that does not exist |
+| **Vignetting** | 50% | the darkening of the corners |
+| **Shutter** | 8 ms | the exposure time, hence the length of the trail; 0 turns the blur off |
 
-Le barillet est normalisé au coin : il ne mange pas de champ de vision, il
-grossit le centre (×1,26 par défaut). Le curseur FOV garde donc exactement le
-sens qu'il avait.
+The barrel is normalised at the corner: it does not eat field of view, it
+magnifies the centre (×1.26 by default). The FOV slider therefore keeps exactly
+the meaning it had.
 
-Le flou de mouvement ne lit pas la profondeur. Le monde est statique et la
-caméra est la seule chose qui bouge, donc le flou de rotation se reconstruit en
-reprojetant les rayons de vue à travers la rotation faite pendant la pose — ce
-qui rend le flou juste sans toucher à `camera.near`. La parallaxe de translation
-est la part qui manque.
+The motion blur does not read depth. The world is static and the
+camera is the only thing that moves, so rotational blur is reconstructed by
+reprojecting the view rays through the rotation performed during the exposure —
+which makes the blur correct without touching `camera.near`. Translational
+parallax is the part that is missing.
 
-Coût mesuré sur la Tour Eiffel en 2560×1265 : **1,14 ms/frame** sur un budget de
-10 ms. Contrairement à ce qu'on pourrait croire, baisser l'obturation ne
-récupère que 0,47 ms de ce total ; si les images chutent, c'est la case
-**Rendu FPV** qu'il faut décocher, pas le flou.
+Cost measured on the Eiffel Tower at 2560×1265: **1.14 ms/frame** on a budget of
+10 ms. Contrary to what one might think, lowering the shutter only
+recovers 0.47 ms of that total; if the frame rate drops, it is the
+**FPV rendering** box that should be unchecked, not the blur.
 
-### Le lien vidéo
+### The video link
 
-Le retour vidéo arrive par la radio, et la radio ne passe pas à travers les
-immeubles. `src/link.js` calcule un bilan de liaison en dB entre le drone et le
-pilote — qui se tient au point de décollage — et `src/lens.js` en fait une
-image dégradée, en fin de chaîne, après l'objectif.
+The video feed arrives by radio, and radio does not go through
+buildings. `src/link.js` computes a link budget in dB between the drone and the
+pilot — who stands at the take-off point — and `src/lens.js` turns it into a
+degraded image, at the end of the chain, after the lens.
 
-**L'analogique a un aspect même à plein signal.** C'est le point le plus
-important et le moins évident : un retour composite n'est pas une image propre
-qui casse ensuite, il est dès la première trame mou, lavé et bavé en couleur.
-La bande passante de chrominance vaut une fraction de celle de luminance, donc
-la couleur déborde latéralement pendant que les contours restent nets. C'est ça
-qui fait « retour FPV » plutôt que « moteur de rendu qui bugue » — la
-dégradation vient **par-dessus**. Le mode numérique, lui, est propre : à lien
-parfait il rend un pixel de ciel à `#9fb8cc` exact, comme sans l'effet.
+**Analogue has a look even at full signal.** This is the most
+important and least obvious point: a composite feed is not a clean image
+that then breaks, it is soft, washed out and colour-smeared from the first
+frame. Chrominance bandwidth is a fraction of luminance bandwidth, so
+colour bleeds laterally while contours stay sharp. That is what
+makes it "FPV feed" rather than "render engine bug" — the
+degradation comes **on top**. The digital mode, on the other hand, is clean: at
+a perfect link it renders a sky pixel at exactly `#9fb8cc`, as without the
+effect.
 
-Ce qui pilote la dégradation est **la distance et l'occlusion**, la seconde
-comptant plus que la première. La qualité glisse continûment avec la distance
-(1,00 à 50 m → 0,80 à 300 m → 0,64 à 900 m) : il y a donc toujours quelque
-chose à lire, plutôt qu'une image parfaite jusqu'à l'instant où elle disparaît.
-Un immeuble entre vous et le pilote descend à ~0,50 — nettement dégradé,
-parfaitement volable. Seul un vol bas et lointain à travers tout un quartier
-coupe vraiment le lien.
+What drives the degradation is **distance and occlusion**, the second
+counting more than the first. Quality slides continuously with distance
+(1.00 at 50 m → 0.80 at 300 m → 0.64 at 900 m): there is therefore always
+something to read, rather than a perfect image up to the instant it disappears.
+A building between you and the pilot brings it down to ~0.50 — clearly degraded,
+perfectly flyable. Only a low, distant flight across a whole neighbourhood
+really cuts the link.
 
-L'occlusion est mesurée par **deux raycasts**, un depuis chaque bout : le
-premier impact à l'aller dit où la matière commence, le premier impact au
-retour dit où elle finit, et l'écart est l'épaisseur à traverser. Un seul rayon
-ne dirait que « quelque chose bloque », et effleurer l'angle d'un toit (0,86)
-deviendrait aussi grave que passer derrière un pâté de maisons (0,50). Coût
-mesuré : 0,002 à 0,016 ms par frame selon ce que le rayon traverse.
+Occlusion is measured by **two raycasts**, one from each end: the
+first hit on the way out says where the matter starts, the first hit on the
+way back says where it ends, and the gap is the thickness to cross. A single ray
+would only say "something is blocking", and clipping the corner of a roof (0.86)
+would become as serious as passing behind a city block (0.50). Measured
+cost: 0.002 to 0.016 ms per frame depending on what the ray crosses.
 
-L'atténuation par la profondeur **sature** au lieu d'être linéaire, et les
-constantes de temps sont lentes (0,30 s à la chute, 0,70 s à la remontée). Les
-deux servent la même chose : la géométrie est une marche d'escalier — le mur
-est sur le trajet ou il n'y est pas — donc sans ça le lien est un interrupteur
-et pas un fondu. Passer un angle prend maintenant ~780 ms à l'écran.
+Attenuation by depth **saturates** instead of being linear, and
+the time constants are slow (0.30 s falling, 0.70 s recovering). Both
+serve the same thing: the geometry is a staircase — the wall
+is on the path or it is not — so without this the link is a switch
+and not a fade. Passing a corner now takes ~780 ms on screen.
 
-Deux réglages dans le panneau `Tab`, section **Lien vidéo** :
+Two settings in the `Tab` panel, **Video link** section:
 
-| réglage | par défaut | ce qu'il fait |
+| setting | default | what it does |
 |---|---|---|
-| **Rendu** | Analogique | *Analogique* : bave de chrominance et image lavée en permanence, puis grain, désaturation, décrochage de lignes, barre de synchro et enfin neige. On voit le lien s'affaiblir. *Numérique* (DJI/HDZero) : net jusqu'au seuil, puis macroblocs, quantification et gel d'image. Ça tient, puis ça tombe |
-| **Dégradation** | 100 % | à la fois l'agressivité de la chute et la force de l'aspect analogique de base ; à 0 % l'effet est compilé hors du shader |
+| **Rendering** | Analogue | *Analogue*: chrominance smear and a washed-out image permanently, then grain, desaturation, line tearing, a sync bar and finally snow. You watch the link weaken. *Digital* (DJI/HDZero): sharp up to the threshold, then macroblocks, quantisation and a frozen frame. It holds, then it falls |
+| **Degradation** | 100% | both the aggressiveness of the fall and the strength of the baseline analogue look; at 0% the effect is compiled out of the shader |
 
-Le RSSI est affiché en haut à droite, sinon une image qui se désagrège se lit
-comme un bug de rendu plutôt que comme une information.
+RSSI is displayed at the top right, otherwise an image falling apart reads
+as a rendering bug rather than as information.
 
-Coût mesuré : **1,0 ms/frame au pire** sur un budget de 10, dont 0,12 ms pour
-les quatre taps de chrominance de l'analogique. Une image gelée coûte 0,60 ms
-au lieu de 1,41 : elle n'est pas rendue du tout, seulement réaffichée.
+Measured cost: **1.0 ms/frame at worst** on a budget of 10, of which 0.12 ms for
+the four chrominance taps of the analogue mode. A frozen image costs 0.60 ms
+instead of 1.41: it is not rendered at all, only redisplayed.
 
-### Limites de zone
+### Zone limits
 
-La carte s'arrête. Ce qu'il y a au-delà n'a jamais été téléchargé — et la
-fiction ne fait pas semblant du contraire : **la zone, c'est le rectangle que
-le joueur a lui-même tracé dans le `GLOBAL SCANNER`**, et hors de lui il n'y a
-pas de données, donc pas de couverture, donc pas de lien. Ce n'est pas une
-portée radio : une portée radio serait un cercle centré sur le pilote, or le
-point de décollage n'est pas au centre de la carte (sur `tour-eiffel` il est à
-(−120, 140) dans une boîte de ±642 m). Le cercle inscrit jetterait la moitié de
-la carte, le circonscrit déborderait dans le vide.
+The map stops. What lies beyond was never downloaded — and the
+fiction does not pretend otherwise: **the zone is the rectangle the
+player drew themselves in the `GLOBAL SCANNER`**, and outside it there is
+no data, hence no coverage, hence no link. This is not a radio
+range: a radio range would be a circle centred on the pilot, and the
+take-off point is not at the centre of the map (on `tour-eiffel` it is at
+(−120, 140) in a box of ±642 m). The inscribed circle would throw away half
+the map, the circumscribed one would spill into the void.
 
-Le modèle vit dans `src/geofence.js` — ni THREE, ni Rapier, ni DOM, comme
-`wind.js`, `fog.js`, `link.js` et `flight-end.js`. `main.js` en pousse la force
-dans Rapier, l'avertissement dans l'OSD et la perte dans le bilan de liaison.
+The model lives in `src/geofence.js` — no THREE, no Rapier, no DOM, like
+`wind.js`, `fog.js`, `link.js` and `flight-end.js`. `main.js` pushes its force
+into Rapier, its warning into the OSD and its loss into the link budget.
 
-**Quatre anneaux**, décidés par la marge au bord (positive dedans, négative
-dehors) :
+**Four rings**, decided by the margin to the edge (positive inside, negative
+outside):
 
-| anneau | horizontal | vertical (sous `bbox.min.y`) | ce qui se passe |
+| ring | horizontal | vertical (below `bbox.min.y`) | what happens |
 |---|---|---|---|
-| `NOMINAL` | marge > 113 m | au-dessus de −2 m | rien |
-| `CAUTION` | 113 → 66 m | −2 → −5 m | `NO COVERAGE` clignote, l'image commence à se dégrader (8 dB) |
-| `HOLD` | 66 → 0 m | −5 → −8 m | le rappel monte de 0 à 5,89 m/s², l'image continue de mourir |
-| `LOST` | au-delà du bord | sous −8 m | le rappel est plein, la perte s'emballe ; à −66 m (horizontal) ou −10 m (vertical) la session se termine |
+| `NOMINAL` | margin > 113 m | above −2 m | nothing |
+| `CAUTION` | 113 → 66 m | −2 → −5 m | `NO COVERAGE` blinks, the image starts to degrade (8 dB) |
+| `HOLD` | 66 → 0 m | −5 → −8 m | the pull-back rises from 0 to 5.89 m/s², the image keeps dying |
+| `LOST` | beyond the edge | below −8 m | the pull-back is full, the loss runs away; at −66 m (horizontal) or −10 m (vertical) the session ends |
 
-Les frontières ont 15 % d'hystérésis (`HYST`) : sans elle, un stationnaire tenu
-pile sur le seuil fait strober l'avertissement — `link.js` a exactement le même
-problème et exactement la même réponse.
+The boundaries have 15% hysteresis (`HYST`): without it, a hover held
+right on the threshold makes the warning strobe — `link.js` has exactly the same
+problem and exactly the same answer.
 
-**D'où sortent 66 et 113.** Ils sont mesurés, pas choisis :
+**Where 66 and 113 come from.** They are measured, not chosen:
 
 ```bash
-node tools/geofence-measure.mjs                 # R_HOLD et R_CAUTION
-node tools/geofence-measure.mjs --guarantee     # le couloir sous lequel la garantie tombe
-node tools/geofence-selftest.mjs                # le modèle, sans navigateur
+node tools/geofence-measure.mjs                 # R_HOLD and R_CAUTION
+node tools/geofence-measure.mjs --guarantee     # the corridor below which the guarantee fails
+node tools/geofence-selftest.mjs                # the model, without a browser
 ```
 
-`R_HOLD = 66 m` est la distance d'arrêt du pilote qui **obéit** — un programme
-de manche explicite (plein gaz à 42° d'assiette à l'approche, gaz ramenés et
-tangage tiré à plat dès l'entrée en `HOLD`), balayé sur les six familles et
-sur la bande de gaz de freinage, pire cas retenu : `heavy5`, 65,83 m. C'est un
-point fixe, pas une soustraction — la rampe du rappel dépend elle-même de
-`R_HOLD`. `R_CAUTION = 113 m` ajoute le temps de **lire** l'avertissement à la
-vitesse maximale mesurée (30,87 m/s) : 1,5 s, soit trois clignotements à
-`BLINK_PERIOD_MS`.
+`R_HOLD = 66 m` is the stopping distance of the pilot who **obeys** — an
+explicit stick program (full throttle at 42° of attitude on the approach,
+throttle back and pitch pulled level as soon as `HOLD` is entered), swept over
+the six families and over the braking throttle band, worst case kept:
+`heavy5`, 65.83 m. It is a fixed point, not a subtraction — the pull-back ramp
+itself depends on `R_HOLD`. `R_CAUTION = 113 m` adds the time it takes to
+**read** the warning at the maximum measured speed (30.87 m/s): 1.5 s, i.e.
+three blinks at `BLINK_PERIOD_MS`.
 
-Le rappel plafonne à `A_MAX = 0,6 g`, soit 60 % de ce qu'un stationnaire
-consomme déjà. Choisi pour ce qu'il **ne** fait **pas** : il ne dépasse pas la
-poussée disponible. Lâchez les manches, vous êtes ramené ; insistez plein gaz,
-vous passez — et vous perdez la session. Ce n'est pas un mur, c'est le failsafe
-du drone qui se bat contre vous.
+The pull-back is capped at `A_MAX = 0.6 g`, i.e. 60% of what a hover
+already consumes. Chosen for what it does **not** do: it does not exceed the
+available thrust. Let go of the sticks and you are brought back; insist at full
+throttle and you get through — and you lose the session. It is not a wall, it is
+the drone's failsafe fighting you.
 
-**Le couloir est borné par carte.** 113 m sur `bastille` (demi-côté 164 m)
-avaleraient 89 % de la carte. `Geofence` met donc les deux seuils à l'échelle
-par le **même** facteur, pour que leur rapport — et donc le temps
-d'avertissement, seule raison d'être de `R_CAUTION` — survive à la réduction :
+**The corridor is bounded per map.** 113 m on `bastille` (half-side 164 m)
+would swallow 89% of the map. `Geofence` therefore scales both thresholds
+by the **same** factor, so that their ratio — and therefore the warning
+time, the sole reason `R_CAUTION` exists — survives the reduction:
 
 ```
 halfMin = min((max.x − min.x)/2, (max.z − min.z)/2)
 scale   = min(1, (halfMin / 3) / R_CAUTION)
 ```
 
-Le cœur volable ne descend jamais sous 67 % du plus petit côté, et les cartes
-assez grandes (`scale === 1`) gardent la valeur mesurée à l'identique : **12 des
-17 entrées de `public/scenes.json`**, le seul inventaire de cartes que le dépôt
-suive. Les manifestes eux-mêmes (`public/scenes/`) sont gitignorés, donc un
-comptage « sur les N manifestes locaux » n'est pas reproductible d'une machine
-à l'autre — sur celle où ces chiffres ont été mesurés (2026-08-31, 25 dossiers,
-dont 8 hors `scenes.json`), c'était 16 sur 25. Le couloir réellement
-appliqué se lit sur l'instance (`fence.effectiveCorridor`) et dans la console
-au chargement (`[fence] couloir …`) — c'est lui qu'il faut montrer, pas la
-constante. En dessous d'un couloir `HOLD` de 50 m (`HOLD_STOP_GUARANTEE_M`,
-soit un demi-côté sous ~252 m), le pilote qui obéit franchit quand même le bord
-sur les familles les plus lourdes ; `npm run add-map` le dit au moment où la
-carte est ajoutée. Le mode de défaillance reste doux : la pénétration
-n'atteint jamais `lost`, donc la session n'est pas perdue — on paie en image,
-pas en session.
+The flyable core never goes below 67% of the smallest side, and maps that are
+big enough (`scale === 1`) keep the measured value identically: on the
+catalogue the measurement was made against, **12 of the 17 entries of
+`public/scenes.json`**. That catalogue is per-installation — the repository now
+ships an empty `scenes.json`, and the manifests themselves (`public/scenes/`)
+are gitignored, so a count "over the N local manifests" is not reproducible from
+one machine to another — on the one where these figures were measured
+(2026-08-31, 25 folders, 8 of them outside `scenes.json`), it was 16 out of 25.
+The corridor actually applied is read off the instance
+(`fence.effectiveCorridor`) and in the console at load time
+(`[fence] couloir …`) — that is what should be shown, not the constant. Below a
+`HOLD` corridor of 50 m (`HOLD_STOP_GUARANTEE_M`, i.e. a half-side under
+~252 m), the pilot who obeys still crosses the edge on the heaviest families;
+`npm run add-map` says so at the moment the map is added. The failure mode stays
+gentle: penetration never reaches `lost`, so the session is not lost — you pay
+in image, not in session.
 
-**Pourquoi le couloir vertical est sous `bbox.min.y`.** Le signe est ce qui
-compte le plus. Posé au-dessus, il pousserait le drone vers le haut au point le
-plus bas de la carte — la surface de la Seine sur `ile-de-la-cite`, où voler à
-deux mètres de l'eau est un vol parfaitement normal. Ces quatre nombres (2 / 5
-/ 8 / 10 m) ne sont pas mesurés et n'ont pas à l'être : ils reposent sur un
-argument géométrique — deux mètres sous la surface la plus basse de la carte,
-on est forcément sous quelque chose — et ils ne sont pas mis à l'échelle, parce
-qu'une petite carte n'a pas un dessous plus mince qu'une grande.
+**Why the vertical corridor is below `bbox.min.y`.** The sign is what
+matters most. Placed above, it would push the drone upwards at the lowest point
+of the map — the surface of the Seine on `ile-de-la-cite`, where flying two
+metres above the water is a perfectly normal flight. These four numbers (2 / 5
+/ 8 / 10 m) are not measured and do not have to be: they rest on a
+geometric argument — two metres below the lowest surface of the map, you are
+necessarily under something — and they are not scaled, because
+a small map does not have a thinner underside than a big one.
 
-**Pourquoi la clôture a son propre canal dans `link.js`.** La perte de zone
-passe par `setTerminalLoss()` et **pas** par `_loss`. La borne de jouabilité de
-l'issue #79 écrête `_loss` et replaque la qualité à un plancher volable après
-deux secondes d'écran noir — elle existe pour qu'on ne reste jamais coincé
-aveugle **en vol**. Or sortir de la zone n'est pas voler, c'est la fin de la
-session : ce canal-là est appliqué en sortie, après la borne, et ne se relève
-jamais. Le budget dépensé est exactement `LOSS_DEAD − LOSS_CLEAN` = 58 dB —
-ce qui emmène n'importe quel lien, si propre soit-il, de parfait à mort —
-dont 8 dB avant le bord, pendant l'avertissement (`KNIFE_EDGE_DB` : « you are
-told you are running out of margin before you run out »).
+**Why the fence has its own channel in `link.js`.** The zone loss
+goes through `setTerminalLoss()` and **not** through `_loss`. The playability
+clamp of issue #79 caps `_loss` and puts quality back on a flyable floor after
+two seconds of black screen — it exists so that you are never stuck
+blind **in flight**. But leaving the zone is not flying, it is the end of the
+session: that channel is applied on the way out, after the clamp, and never
+lifts. The budget spent is exactly `LOSS_DEAD − LOSS_CLEAN` = 58 dB —
+which takes any link, however clean, from perfect to dead —
+of which 8 dB before the edge, during the warning (`KNIFE_EDGE_DB`: "you are
+told you are running out of margin before you run out").
 
-Au-delà du bord, `src/ground.js` pose un plan sous le maillage. Sans lui la
-falaise a du **ciel** dessous, et ce n'est pas un cas limite : en air clair la
-portée est d'environ 2 km pour une carte de ±642 m. Ce n'est pas une extension
-du monde, c'est une plaine sous la brume — même formule de brouillard que
-`TileMaterial.js`, terme à terme, sinon l'horizon se dédouble.
+Beyond the edge, `src/ground.js` lays a plane under the mesh. Without it the
+cliff has **sky** underneath, and that is not an edge case: in clear air the
+range is about 2 km for a map of ±642 m. It is not an extension
+of the world, it is a plain under the haze — the same fog formula as
+`TileMaterial.js`, term for term, otherwise the horizon doubles up.
 
-### Régler le PID
+### Tuning the PID
 
 ```bash
-npm run tune                          # rapport pour les six familles
-npm run tune -- toothpick              # une seule famille
-npm run tune -- --sweep roll race5     # balaye P/D sur un axe d'une famille
-npm run tune -- --write <famille|all>  # sweep + mesure, réécrit le bloc pid
+npm run tune                          # report for the six families
+npm run tune -- toothpick              # a single family
+npm run tune -- --sweep roll race5     # sweeps P/D on one axis of one family
+npm run tune -- --write <family|all>   # sweep + measurement, rewrites the pid block
 ```
 
-Le banc intègre les équations d'Euler avec le vrai tenseur d'inertie et le vrai
-retard moteur, sans Rapier ni navigateur : une passe complète prend une
-seconde. Ses seuils de réussite sont dérivés de l'accélération angulaire
-soutenue que la cellule peut réellement produire, pas de constantes écrites à
-la main — ni un preset rapide ni une famille lente ne peut donc « échouer »
-juste parce qu'on lui demande plus qu'à une autre. `--write` est **le seul**
-moyen de poser un bloc `pid` dans `drone-profiles.js` : on ne tape pas de gains
-à la main.
+The bench integrates the Euler equations with the real inertia tensor and the
+real motor lag, without Rapier and without a browser: a full pass takes one
+second. Its success thresholds are derived from the sustained angular
+acceleration the airframe can really produce, not from constants written
+by hand — so neither a fast preset nor a slow family can "fail"
+merely because more is asked of it than of another. `--write` is **the only**
+way to lay a `pid` block into `drone-profiles.js`: gains are not typed
+in by hand.

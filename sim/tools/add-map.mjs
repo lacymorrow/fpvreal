@@ -82,8 +82,9 @@ function parseBox(v) {
 	};
 }
 
-// Accepte "lat,lon lat,lon" comme "lat,lon,lat,lon" : à taper à la main les
-// paires espacées se relisent, et la forme plate est celle que le Go reçoit.
+// Accepts "lat,lon lat,lon" as well as "lat,lon,lat,lon": when typed by hand
+// the spaced pairs are the readable form, and the flat one is what the Go
+// side receives.
 function parseRing(v) {
 	const n = String(v ?? '').trim().split(/[\s,]+/).map(Number);
 	if (n.length < 6 || n.length % 2 !== 0 || !n.every(Number.isFinite)) {
@@ -105,6 +106,6 @@ addMap(opts, {
 		else console.log(line);
 	},
 }).catch((err) => {
-	console.error(err instanceof Cancelled ? '\nAnnulé.' : `\nÉchec : ${err.message}`);
+	console.error(err instanceof Cancelled ? '\nCancelled.' : `\nFailed: ${err.message}`);
 	process.exit(1);
 });

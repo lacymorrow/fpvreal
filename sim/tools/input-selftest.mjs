@@ -452,4 +452,108 @@ t('#33 : une touche relâchée pendant le gel est bien relâchée au dégel', ()
 	assert.equal(input.kbThrottle, 0, 'le gaz est monté sans touche tenue');
 });
 
+// --- keyboard stick ramp (B4) -----------------------------------------------
+//
+// A keyboard has no travel. Roll, pitch and yaw used to step straight to +/-1,
+// so the smallest command an arrow key could express was FULL deflection —
+// 820 deg/s of roll at the freestyle preset, arriving in one frame. That is not
+// a hard control scheme, it is an unflyable one, and it is what most people
+// arriving on launch day have in front of them.
+//
+// The ramp (KEY_RAMP_S = 0.15 s) gives back the middle of the range: a tap is
+// small, a hold still reaches the stop. Nothing about a gamepad changes — this
+// is readKeyboard(), and readGamepad() never comes through here.
+
+// Steps of `dt` seconds, like the frame loop but slower and exact.
+const stepFor = (input, key, seconds, dt = 0.01, opts) => {
+	input.keys.add(key);
+	for (let i = 0; i < Math.round(seconds / dt); i++) input.update(dt, opts);
+	input.keys.delete(key);
+	return input.sticks;
+};
+
+t('B4: a TAP on the roll key is a nudge, not a full-deflection command', () => {
+	const input = freshInput();
+	// 30 ms — about the shortest keypress a human makes by accident.
+	stepFor(input, 'arrowright', 0.03);
+	assert.ok(input.sticks.roll > 0 && input.sticks.roll < 0.35,
+		`roll ${input.sticks.roll} after a 30 ms tap — used to be 1`);
+});
+
+t('B4: a HELD key still reaches full deflection, and stays there', () => {
+	const input = freshInput();
+	stepFor(input, 'arrowright', 0.15);
+	assert.ok(input.sticks.roll > 0.99, `roll ${input.sticks.roll} after the ramp time`);
+	input.keys.add('arrowright');
+	for (let i = 0; i < 50; i++) input.update(0.01);
+	input.keys.delete('arrowright');
+	assert.equal(input.sticks.roll, 1, 'and it does not overshoot past it');
+});
+
+t('B4: the ramp is symmetric — releasing centres over the same time', () => {
+	const input = freshInput();
+	stepFor(input, 'arrowright', 0.2);
+	assert.equal(input.sticks.roll, 1);
+	for (let i = 0; i < 7; i++) input.update(0.01);
+	assert.ok(input.sticks.roll > 0 && input.sticks.roll < 1, 'on the way back, not snapped');
+	for (let i = 0; i < 20; i++) input.update(0.01);
+	assert.equal(input.sticks.roll, 0, 'lands exactly on centre');
+});
+
+t('B4: reversing does not jump through the middle', () => {
+	const input = freshInput();
+	stepFor(input, 'arrowright', 0.2);
+	input.keys.add('arrowleft');
+	input.update(0.01);
+	assert.ok(input.sticks.roll > 0.8, `still on the right side: ${input.sticks.roll}`);
+	for (let i = 0; i < 30; i++) input.update(0.01);
+	input.keys.delete('arrowleft');
+	assert.equal(input.sticks.roll, -1);
+});
+
+t('B4: pitch and yaw ramp too, and each axis is its own', () => {
+	const input = freshInput();
+	input.keys.add('arrowup');
+	input.keys.add('d');
+	for (let i = 0; i < 5; i++) input.update(0.01);
+	assert.ok(input.sticks.pitch < 0 && input.sticks.pitch > -1, `pitch ${input.sticks.pitch}`);
+	assert.ok(input.sticks.yaw > 0 && input.sticks.yaw < 1, `yaw ${input.sticks.yaw}`);
+	assert.equal(input.sticks.roll, 0, 'an axis nobody touched stays at rest');
+	input.keys.clear();
+});
+
+t('B4: frozen, the ramp does not creep either', () => {
+	// Same rule as the throttle integrator: a keystroke typed in the settings
+	// panel does not fly the machine.
+	const input = freshInput();
+	stepFor(input, 'arrowright', 1, 0.01, { frozen: true });
+	assert.equal(input.sticks.roll, 0, `roll ${input.sticks.roll} built up while frozen`);
+});
+
+t('B4: a respawn does not inherit the stick the last life died holding', () => {
+	const input = freshInput();
+	stepFor(input, 'arrowright', 0.2);
+	assert.equal(input.sticks.roll, 1);
+	input.resetKeyboardThrottle();
+	input.update(0.01);
+	assert.equal(input.sticks.roll, 0);
+});
+
+t('B4: the mouse takes over once the keys have finished releasing', () => {
+	const input = freshInput();
+	input.pointerLocked = true;
+	input.mouse.x = 0.5;
+	stepFor(input, 'arrowright', 0.2);
+	// Still ramping down: the keys own the axis, the mouse waits.
+	input.update(0.01);
+	assert.ok(input.sticks.roll > 0.5, 'the key value is still what flies');
+	for (let i = 0; i < 30; i++) input.update(0.01);
+	// The mouse now owns the axis: what flies is the aim as it stood at the top
+	// of the frame, and it self-centres on its own decay, not on the ramp.
+	const aim = input.mouse.x;
+	input.update(0.01);
+	assert.ok(Math.abs(input.sticks.roll - aim) < 1e-12, 'the stick IS the aim');
+	assert.ok(input.mouse.x < aim, 'and the aim keeps falling back to centre');
+});
+
 console.log(`input-selftest: ${n} tests ok`);

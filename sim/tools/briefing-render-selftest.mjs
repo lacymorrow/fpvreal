@@ -121,7 +121,7 @@ await ta('CONTINUE walks the four screens, then resolves and unmounts', async ()
 	assert.match(titles[2], /A SESSION/);
 	assert.match(titles[3], /BRIEFING COMPLETE/);
 	assert.match(titles[1], /BACK, EVERYWHERE/);
-	assert.match(titles[2], /CUT THE LINK/);
+	assert.match(titles[2], /CUT LINK/);
 	assert.equal(m.screens().length, 0, 'nothing is left mounted');
 	assert.equal(m.isDone(), true);
 });

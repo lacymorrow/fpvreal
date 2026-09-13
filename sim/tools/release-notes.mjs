@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Imprime les notes d'une version, telles qu'écrites dans CHANGELOG.md (#257).
+// Prints the notes for one version, exactly as written in CHANGELOG.md (#257).
 //
-//   node tools/release-notes.mjs 0.1.0   →  le corps de la section [0.1.0]
-//   node tools/release-notes.mjs v0.1.0  →  idem, le préfixe de tag est toléré
+//   node tools/release-notes.mjs 0.1.0   →  the body of section [0.1.0]
+//   node tools/release-notes.mjs v0.1.0  →  same, the tag prefix is tolerated
 //
-// C'est ce que .github/workflows/release.yml pousse dans le corps de la
-// GitHub Release : les notes sont écrites à la main, une seule fois, ici.
+// This is what .github/workflows/release.yml pushes into the body of the
+// GitHub Release: the notes are written by hand, once, here.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +16,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const arg = process.argv[2];
 
 if (!arg) {
-	console.error('usage : node tools/release-notes.mjs <version|tag>');
+	console.error('usage: node tools/release-notes.mjs <version|tag>');
 	process.exit(1);
 }
 

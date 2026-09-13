@@ -1,6 +1,6 @@
-// Bootstrapping de l'opérateur (PHASE 01, Bible §12–14).
-// Écrans plein cadre montés en APPEND dans #ui — jamais innerHTML, le HUD a
-// déjà rempli ce conteneur. Tout le texte visible est en anglais (D5).
+// Operator bootstrapping (PHASE 01, Bible §12-14).
+// Full-frame screens mounted by APPEND into #ui — never innerHTML, the HUD has
+// already filled that container. All visible text is English (D5).
 import * as operatorApi from './operator.js';
 import { menuNav, blockNav } from './menu-nav.js';
 import { uiAudio } from './ui-audio.js';
@@ -9,11 +9,11 @@ import { mountScreen, screenButton } from './screen.js';
 import { versionLine } from './version.js';
 
 
-// ---------- inventaire honnête (arch doc §4) ----------
+// ---------- honest inventory (arch doc §4) ----------
 
 async function measureRefreshHz() {
-	// requestAnimationFrame est gelé dans un onglet caché : on court la mesure
-	// contre un timeout qui résout null (la ligne affiche déjà UNKNOWN pour null).
+	// requestAnimationFrame is frozen in a hidden tab: the measurement races a
+	// timeout that resolves null (the row already prints UNKNOWN for null).
 	return new Promise((resolve) => {
 		const done = (v) => resolve(v);
 		setTimeout(() => done(null), 2000);
@@ -80,10 +80,10 @@ export async function probeHardware() {
 		{ label: 'BROWSER', value: String(brand).toUpperCase() },
 		{ label: 'LANGUAGE', value: (navigator.language || 'UNKNOWN').toUpperCase() },
 		{ label: 'TIMEZONE', value: (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UNKNOWN').toUpperCase() },
-		// window.screen explicite : `screen` est shadowé par la fonction screen() de ce module.
-		// Un écran à l'échelle produit un ratio comme 0.8999999761581421, qui
-		// passait à la ligne et cassait la colonne. Un relevé se lit, il ne se
-		// déverse pas : deux décimales, et pas de zéro inutile.
+		// Explicit window.screen: `screen` is shadowed by this module's screen().
+		// A scaled display produces a ratio like 0.8999999761581421, which wrapped
+		// and broke the column. A readout is read, not poured out: two decimals,
+		// and no trailing zero.
 		{ label: 'DISPLAY', value: `${window.screen.width} × ${window.screen.height} @ ${(+window.devicePixelRatio.toFixed(2))}x` },
 		{ label: 'REFRESH', value: hz ? `${hz} HZ` : 'UNKNOWN' },
 		{ label: 'RENDERER', value: renderer },
@@ -97,11 +97,11 @@ export async function probeHardware() {
 	];
 }
 
-// Commentaires de crew : câblés sur ce qui a été trouvé, 2 à 4 par run.
-// PHASE 21 : cet écran tourne avant le chargement de l'opérateur, donc avant
-// que la mémoire du moteur de dialogue existe — le monter ici la figerait
-// vide pour tout l'onglet. Lignes câblées en dur à dessein, ne pas relier au
-// moteur de dialogue.
+// Crew remarks: wired to what was found, 2 to 4 per run.
+// PHASE 21: this screen runs before the operator is loaded, hence before the
+// dialogue engine's memory exists — mounting it here would freeze that memory
+// empty for the whole tab. These lines are hardcoded on purpose; do not wire
+// them to the dialogue engine.
 function crewNotes(rows) {
 	const by = Object.fromEntries(rows.map((r) => [r.label, r.value]));
 	const out = [];
@@ -114,23 +114,23 @@ function crewNotes(rows) {
 	return out.slice(0, 4);
 }
 
-// ---------- montage d'écran ----------
+// ---------- screen mounting ----------
 
-// La chaîne de bootstrap monte le MÊME écran que le terminal (screen.js) : elle
-// en montait une copie qui n'avait jamais gagné `close()`, et restait le seul
-// endroit du jeu dont les écrans s'en allaient d'un coup sec.
+// The bootstrap chain mounts the SAME screen as the terminal (screen.js): it
+// used to mount a copy that had never gained `close()`, and stayed the only
+// place in the game whose screens left in one hard cut.
 function screen(root) {
 	return mountScreen(root);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Exported for src/briefing.js (D16) : le briefing s'imprime comme le
-// bootstrap parce que c'est la même machine qui parle, pas une aide en ligne.
-// Mouvement réduit : les lignes sont posées d'un bloc. Même règle que partout
-// (motion.js) — on saute à l'état final au lieu d'imprimer plus lentement. Sans
-// ça, le premier lancement ET le briefing restaient les deux seuls écrans à
-// s'animer quand le système demande le contraire.
+// Exported for src/briefing.js (D16): the briefing prints like the bootstrap
+// because it is the same machine speaking, not an online help page.
+// Reduced motion: the lines are laid down in one block. Same rule as everywhere
+// (motion.js) — jump to the final state rather than print more slowly. Without
+// it, the first launch AND the briefing stayed the only two screens that
+// animated when the system asks for the opposite.
 export async function revealLines(box, lines, { interval = STEP_MS } = {}) {
 	const pre = document.createElement('pre');
 	box.appendChild(pre);
@@ -155,7 +155,7 @@ export function dotted(label, value, width = 20) {
 	return `${label} ${'.'.repeat(Math.max(3, width - label.length))} ${value}`;
 }
 
-// ---------- écran 1 : HARDWARE DISCOVERY ----------
+// ---------- screen 1: HARDWARE DISCOVERY ----------
 
 async function hardwareScreen(root) {
 	const s = screen(root);
@@ -167,7 +167,9 @@ async function hardwareScreen(root) {
 		if (i === 5 && notes[0]) lines.push(notes[0], notes[1] ?? '');
 		if (i === 9 && notes[2]) lines.push(notes[2], notes[3] ?? '');
 	});
-	lines.push('', 'INITIALIZATION...');
+	// `…`, not three ASCII dots. Every other wait in the game is written with
+	// the ellipsis character, and this is the very first screen an operator sees.
+	lines.push('', 'INITIALIZATION…');
 	await revealLines(s.box, lines.filter((l) => l !== undefined));
 	await new Promise((resolve) => {
 		const close = () => { nav.detach(); s.remove(); resolve(); };
@@ -178,16 +180,24 @@ async function hardwareScreen(root) {
 
 const button = (label, onClick) => screenButton(label, onClick, 'bootstrap-btn');
 
-// ---------- écran 2 : OPERATOR NAME ----------
+// ---------- screen 2: OPERATOR NAME ----------
 
 async function nameScreen(root, api) {
 	const s = screen(root);
-	s.box.innerHTML = `
-		<pre>OPERATOR NAME</pre>
-		<input id="op-name" maxlength="24" autocomplete="off" spellcheck="false" placeholder="NEO">
-		<div class="bootstrap-err" id="op-name-err"></div>`;
-	const input = s.box.querySelector('#op-name');
-	const err = s.box.querySelector('#op-name-err');
+	// Built with createElement rather than innerHTML, like the rest of the
+	// house: same tree, no HTML parser, and mountable on the fake DOM.
+	const title = document.createElement('pre');
+	title.textContent = 'OPERATOR NAME';
+	const input = document.createElement('input');
+	input.id = 'op-name';
+	input.maxLength = 24;
+	input.autocomplete = 'off';
+	input.spellcheck = false;
+	input.placeholder = 'NEO';
+	const err = document.createElement('div');
+	err.className = 'bootstrap-err';
+	err.id = 'op-name-err';
+	s.box.append(title, input, err);
 	input.focus();
 	return new Promise((resolve) => {
 		const submit = async () => {
@@ -203,37 +213,37 @@ async function nameScreen(root, api) {
 		};
 		input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 		s.box.appendChild(button('REGISTER', submit));
-		// Le champ garde son focus et ses touches (menu-nav ignore la saisie de
-		// texte) ; la manette peut descendre sur REGISTER et valider avec A. Le
-		// nom lui-même se tape au clavier — seul moment du jeu où il en faut un.
+		// The field keeps its focus and its keys (menu-nav ignores text entry);
+		// the gamepad can move down to REGISTER and press A. The name itself is
+		// typed — the only moment in the game that needs a keyboard.
 		const nav = menuNav(s.el, { focusFirst: false });
 	});
 }
 
-// ---------- séquence complète ----------
+// ---------- the full sequence ----------
 
-// `briefing` (D16) : ce que main.js fait juste après l'enregistrement. Injecté
-// plutôt qu'importé — le bootstrap n'a besoin ni de la manette, ni du panneau
-// de réglages, ni du localStorage que le briefing marque, et n'a donc pas à
-// dépendre du module qui les connaît.
+// `briefing` (D16): what main.js does right after registration. Injected rather
+// than imported — the bootstrap needs neither the gamepad, nor the settings
+// panel, nor the localStorage the briefing marks, so it must not depend on the
+// module that knows them.
 export async function bootstrap(root, api = operatorApi, { briefing = null } = {}) {
 	await hardwareScreen(root);
 	await nameScreen(root, api);
-	// Le CONTROL VECTOR se définissait ici, sur deux écrans de plus (#33). Il
-	// demandait au joueur de mémoriser une suite de flèches hors du jeu et le
-	// punissait d'un blocage total, à chaque acquisition, s'il l'oubliait. Le
-	// bootstrap passe donc de quatre écrans à deux avant le briefing.
+	// The CONTROL VECTOR used to be set here, over two further screens (#33). It
+	// asked the player to memorise a sequence of arrows outside the game and
+	// punished forgetting it with a total lockout at every acquisition. The
+	// bootstrap therefore goes from four screens to two before the briefing.
 	await flushOrRetry(root, api);
-	// L'opérateur existe : c'est le seul moment où le briefing a un sens. Une
-	// erreur ici ne doit pas empêcher d'entrer dans le jeu.
+	// The operator exists: this is the only moment the briefing makes sense. An
+	// error here must not stop anyone from entering the game.
 	if (briefing) { try { await briefing(); } catch (e) { console.warn('[briefing]', e); } }
 	return api.getOperator();
 }
 
-// flush() jette si rien n'a pu être écrit : on montre l'erreur sur l'écran
-// courant avec un bouton RETRY plutôt que d'entrer dans le jeu sur un profil
-// que le serveur n'a pas. Depuis #33 c'est le NOM qu'il protège, seul reste
-// du bootstrap à devoir survivre au rechargement.
+// flush() throws if nothing could be written: show the error on the current
+// screen with a RETRY button rather than enter the game on a profile the server
+// does not have. Since #33 it is the NAME it protects, the only part of the
+// bootstrap that has to survive a reload.
 async function flushOrRetry(root, api) {
 	while (true) {
 		try { await api.flush(); return; }
@@ -242,7 +252,9 @@ async function flushOrRetry(root, api) {
 			const s = screen(root);
 			const ok = await new Promise((resolve) => {
 				const retry = () => { nav.detach(); s.remove(); resolve(true); };
-				s.box.innerHTML = '<pre>PROFILE NOT SAVED — RETRY</pre>';
+				const line = document.createElement('pre');
+				line.textContent = 'PROFILE NOT SAVED — RETRY';
+				s.box.appendChild(line);
 				s.box.appendChild(button('RETRY', retry));
 				const nav = menuNav(s.el, {});
 			});

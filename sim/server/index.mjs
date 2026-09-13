@@ -1,21 +1,21 @@
-// Le serveur autonome : le jeu sans Vite (issue #259).
+// The standalone server: the game without Vite (issue #259).
 //
 //   node server/index.mjs [--data <dir>] [--port 8080] [--host 127.0.0.1]
 //                         [--mode local|shared] [--open] [--dist <dir>]
 //   node server/index.mjs key <operatorId> [--data <dir>]
 //
-// Variables d'environnement équivalentes : FPVTP_DATA_DIR, FPVTP_PORT,
-// FPVTP_HOST, FPVTP_MODE. L'option de ligne de commande gagne. FPVTP_ACQUIRE
-// (issue #60) n'a pas d'équivalent en ligne de commande à dessein : ce n'est pas
-// un réglage de lancement, c'est un interrupteur d'environnement que la CI et
-// electron-builder ne posent jamais — voir server/auth.mjs.
+// Equivalent environment variables: FPVTP_DATA_DIR, FPVTP_PORT, FPVTP_HOST,
+// FPVTP_MODE. The command-line option wins. FPVTP_ACQUIRE (issue #60) has no
+// command-line equivalent on purpose: it is not a launch setting, it is an
+// environment switch that CI and electron-builder never set — see
+// server/auth.mjs.
 //
-// L'API (server/api.mjs) est montée en premier, le serveur de fichiers
-// (server/static.mjs) derrière : ce qui ne commence pas par /__operator ou
-// /__map-api est un fichier.
+// The API (server/api.mjs) is mounted first, the file server
+// (server/static.mjs) behind it: anything that does not start with /__operator
+// or /__map-api is a file.
 //
-// startServer() est exporté parce que le process principal d'Electron (T2) le
-// démarrera dans son propre contexte Node, sans passer par cette CLI.
+// startServer() is exported because the Electron main process (T2) will start
+// it in its own Node context, without going through this CLI.
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -27,8 +27,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SIM_ROOT = path.dirname(HERE);
 
 const MODES = new Set(['local', 'shared']);
-// `localhost` n'est qu'un alias des deux autres : il ne résout que sur la boucle
-// locale.
+// `localhost` is only an alias of the other two: it resolves nowhere but the
+// loopback.
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 
 const USAGE = `usage: node server/index.mjs [--data <dir>] [--port <n>] [--host <addr>]
@@ -42,17 +42,17 @@ export function parseArgs(argv) {
 		if (a === '--open') { out.open = true; continue; }
 		if (a === '--help' || a === '-h') { out.help = true; continue; }
 		const key = { '--data': 'dataDir', '--port': 'port', '--host': 'host', '--mode': 'mode', '--dist': 'distDir' }[a];
-		if (!key) throw new Error(`option inconnue : ${a}\n${USAGE}`);
+		if (!key) throw new Error(`unknown option: ${a}\n${USAGE}`);
 		const v = argv[++i];
-		if (v === undefined) throw new Error(`${a} attend une valeur\n${USAGE}`);
+		if (v === undefined) throw new Error(`${a} expects a value\n${USAGE}`);
 		out[key] = v;
 	}
 	return out;
 }
 
-// Fusionne CLI, environnement et défauts. Le répertoire de données par défaut
-// est celui du dépôt (tools/lib/paths.mjs) : c'est l'app installée qui posera
-// le répertoire de plateforme, via --data, quand T2 l'apportera.
+// Merges CLI, environment and defaults. The default data directory is the
+// repository's one (tools/lib/paths.mjs): it is the installed app that will
+// set the platform directory, through --data, once T2 brings it.
 export function resolveOptions(cli = {}) {
 	const port = cli.port ?? process.env.FPVTP_PORT ?? 8080;
 	const opts = {
@@ -63,24 +63,24 @@ export function resolveOptions(cli = {}) {
 		distDir: cli.distDir ?? path.join(SIM_ROOT, 'dist'),
 		open: cli.open === true,
 	};
-	if (!MODES.has(opts.mode)) throw new Error(`mode inconnu : ${opts.mode} (local ou shared)`);
+	if (!MODES.has(opts.mode)) throw new Error(`unknown mode: ${opts.mode} (local or shared)`);
 	if (!Number.isInteger(opts.port) || opts.port < 0 || opts.port > 65535) {
-		throw new Error(`port invalide : ${port}`);
+		throw new Error(`invalid port: ${port}`);
 	}
-	// LE garde-fou de la tranche T1 : en `local` la frontière de sécurité est le
-	// socket local, la même qu'avec le serveur de dev depuis deux mois. Ouvrir
-	// l'écoute demande de le dire explicitement — `shared` amènera sa propre
-	// authentification (T3), et rien ne doit pouvoir s'exposer par accident
-	// avant qu'elle existe.
+	// THE guard rail of slice T1: in `local` the security boundary is the
+	// loopback socket, the same one the dev server has had for two months.
+	// Opening the listener has to be said explicitly — `shared` will bring its
+	// own authentication (T3), and nothing must be able to expose itself by
+	// accident before that exists.
 	if (opts.mode === 'local' && !LOOPBACK.has(opts.host)) {
-		throw new Error(`--host ${opts.host} refusé en mode local : hors de 127.0.0.1/::1, passez --mode shared`);
+		throw new Error(`--host ${opts.host} refused in local mode: outside 127.0.0.1/::1, pass --mode shared`);
 	}
 	return opts;
 }
 
-// Résout le répertoire de données comme startServer(), et pour la même raison :
-// tools/lib/paths.mjs lit FPVTP_DATA_DIR à SON import, il faut donc la poser
-// avant. D'où l'import dynamique.
+// Resolves the data directory like startServer(), and for the same reason:
+// tools/lib/paths.mjs reads FPVTP_DATA_DIR at ITS import, so it has to be set
+// beforehand. Hence the dynamic import.
 async function resolvePaths(cli = {}) {
 	const dataDir = cli.dataDir ?? process.env.FPVTP_DATA_DIR ?? null;
 	if (dataDir) process.env.FPVTP_DATA_DIR = path.resolve(dataDir);
@@ -91,17 +91,17 @@ async function resolvePaths(cli = {}) {
 export async function startServer(cli = {}) {
 	const opts = resolveOptions(cli);
 
-	// tools/lib/paths.mjs lit FPVTP_DATA_DIR à SON import, et add-map-core comme
-	// providers/google-earth en dérivent leurs constantes au leur : la variable
-	// doit être posée avant le premier import de l'un d'eux. D'où l'import
-	// dynamique ci-dessous — et le contrôle qui suit, pour qu'un second
-	// startServer() sur un autre répertoire échoue franchement au lieu de servir
-	// silencieusement les données du premier.
+	// tools/lib/paths.mjs reads FPVTP_DATA_DIR at ITS import, and add-map-core
+	// as well as providers/google-earth derive their constants from it at
+	// theirs: the variable must be set before the first import of any of them.
+	// Hence the dynamic import below — and the check that follows, so that a
+	// second startServer() on another directory fails outright instead of
+	// silently serving the first one's data.
 	if (opts.dataDir) process.env.FPVTP_DATA_DIR = path.resolve(opts.dataDir);
 	const { paths } = await import('../tools/lib/paths.mjs');
 	const wanted = opts.dataDir ? path.resolve(opts.dataDir) : paths.DATA_DIR;
 	if (paths.DATA_DIR !== wanted) {
-		throw new Error(`répertoire de données déjà figé sur ${paths.DATA_DIR} : ${wanted} arrive trop tard`);
+		throw new Error(`data directory already frozen on ${paths.DATA_DIR}: ${wanted} comes too late`);
 	}
 
 	const { createApi } = await import('./api.mjs');
@@ -120,7 +120,7 @@ export async function startServer(cli = {}) {
 	});
 
 	const addr = server.address();
-	// Une adresse IPv6 s'écrit entre crochets dans une URL.
+	// An IPv6 address is written between brackets in a URL.
 	const host = addr.family === 'IPv6' ? `[${addr.address}]` : addr.address;
 	const url = `http://${host}:${addr.port}/`;
 
@@ -130,8 +130,8 @@ export async function startServer(cli = {}) {
 	};
 }
 
-// Pas de dépendance npm pour ça : un spawn détaché de l'ouvreur de la
-// plateforme suffit, et son échec ne doit pas emporter le serveur.
+// No npm dependency for this: a detached spawn of the platform opener is
+// enough, and its failure must not take the server down with it.
 function openBrowser(url) {
 	const [cmd, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '', url]]
 		: process.platform === 'darwin' ? ['open', [url]]
@@ -140,16 +140,16 @@ function openBrowser(url) {
 		const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
 		child.on('error', () => {});
 		child.unref();
-	} catch { /* pas de navigateur : ce n'est pas une raison d'arrêter le serveur */ }
+	} catch { /* no browser: not a reason to stop the server */ }
 }
 
-// `key <operatorId>` : donne une clé neuve à un opérateur existant. Le seul
-// chemin de récupération — une clé perdue ne se relit pas, elle se remplace — et
-// la migration des fichiers d'avant #60, qui n'en ont aucune. Imprimée UNE fois
-// sur stdout : le serveur n'en garde que l'empreinte.
+// `key <operatorId>`: hands a fresh key to an existing operator. The only
+// recovery path — a lost key is not read back, it is replaced — and the
+// migration of the files from before #60, which have none. Printed ONCE on
+// stdout: the server only keeps its digest.
 async function keyCommand(argv) {
 	const id = argv[0];
-	if (!id || id.startsWith('-')) { console.error(`key attend un id d'opérateur\n${USAGE}`); process.exit(2); }
+	if (!id || id.startsWith('-')) { console.error(`key expects an operator id\n${USAGE}`); process.exit(2); }
 	let cli;
 	try { cli = parseArgs(argv.slice(1)); }
 	catch (e) { console.error(e.message); process.exit(2); }
@@ -159,7 +159,7 @@ async function keyCommand(argv) {
 	try { key = issueKey(paths.OPERATOR_DIR, id); }
 	catch (e) { console.error(`fpvtp: ${e.message}`); process.exit(1); }
 	console.log(key);
-	console.error(`fpvtp: nouvelle clé pour « ${id} » — notez-la, elle ne sera plus jamais affichée.`);
+	console.error(`fpvtp: new key for "${id}" — write it down, it will never be shown again.`);
 }
 
 async function main() {
@@ -178,10 +178,10 @@ async function main() {
 
 	const { version } = JSON.parse(fs.readFileSync(path.join(SIM_ROOT, 'package.json'), 'utf8'));
 	const { acquireEnabled } = await import('./auth.mjs');
-	const acquire = acquireEnabled(started.mode) ? 'acquisition ouverte' : 'acquisition fermée';
-	console.log(`FPVTP! v${version} — mode ${started.mode} — ${acquire} — données ${started.paths.DATA_DIR} — ${started.url}`);
+	const acquire = acquireEnabled(started.mode) ? 'acquisition open' : 'acquisition closed';
+	console.log(`FPVTP! v${version} — mode ${started.mode} — ${acquire} — data ${started.paths.DATA_DIR} — ${started.url}`);
 	if (!fs.existsSync(started.distDir)) {
-		console.warn(`fpvtp: ${started.distDir} n'existe pas — lancez « npm run build », ou passez --dist`);
+		console.warn(`fpvtp: ${started.distDir} does not exist — run "npm run build", or pass --dist`);
 	}
 	if (cli.open) openBrowser(started.url);
 }

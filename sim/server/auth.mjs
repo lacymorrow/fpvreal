@@ -1,26 +1,26 @@
-// Authentification par clé d'opérateur — le mode `shared` (VPS), issue #60.
+// Operator-key authentication — the `shared` mode (VPS), issue #60.
 //
-// DEUX mécanismes vivent ici, et ils ne se touchent pas :
+// TWO mechanisms live here, and they do not touch each other:
 //
-//   1. la clé d'opérateur — QUI parle au serveur. Secret de 128 bits rendu une
-//      seule fois à la création, stocké haché, envoyé en `Authorization:
-//      Bearer`. En mode `local` elle n'est jamais regardée : la frontière de
-//      sécurité y reste le socket local, la même qu'avec le serveur de dev.
-//   2. FPVTP_ACQUIRE — QUI a le droit de faire naître une scène sur disque.
-//      Indépendant du premier, et fermé par défaut.
+//   1. the operator key — WHO speaks to the server. A 128-bit secret handed
+//      out only once at creation, stored hashed, sent in `Authorization:
+//      Bearer`. In `local` mode it is never looked at: the security boundary
+//      there stays the loopback socket, the same one the dev server has.
+//   2. FPVTP_ACQUIRE — WHO may bring a scene into existence on disk.
+//      Independent of the first, and closed by default.
 //
-// Les confondre serait l'erreur de conception que la spec nomme explicitement
+// Conflating them would be the design mistake the spec names explicitly
 // (docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md, D2).
 //
-// Aucune dépendance : node:crypto et node:fs.
+// No dependency: node:crypto and node:fs.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 
-// Base32 de Crockford : ni I, ni L, ni O, ni U. Une clé se relit à voix haute
-// et se retape sans confondre 0/O ni 1/I/L — c'est la seule voie de
-// récupération d'un opérateur, elle passera par un carnet.
+// Crockford base32: no I, no L, no O, no U. A key can be read out loud and
+// typed back without confusing 0/O or 1/I/L — it is the only recovery path for
+// an operator, and it will go through a notebook.
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const KEY_BYTES = 16;
 const GROUP = 4;
@@ -28,14 +28,14 @@ const GROUP = 4;
 export function generateKey() {
 	const bits = [...randomBytes(KEY_BYTES)].map((b) => b.toString(2).padStart(8, '0')).join('');
 	let out = '';
-	// 128 bits ne se divisent pas par 5 : le dernier symbole porte 3 bits de
-	// bourrage. On ne tronque pas — les 128 bits sont tous là.
+	// 128 bits do not divide by 5: the last symbol carries 3 bits of padding.
+	// Nothing is truncated — all 128 bits are there.
 	for (let i = 0; i < bits.length; i += 5) out += ALPHABET[parseInt(bits.slice(i, i + 5).padEnd(5, '0'), 2)];
 	return out.match(new RegExp(`.{1,${GROUP}}`, 'g')).join('-');
 }
 
-// Tolérante à la frappe : casse, tirets, espaces, et les confusions que
-// l'alphabet a justement retirées (O→0, I/L→1).
+// Tolerant to typing: case, dashes, spaces, and the confusions the alphabet
+// precisely left out (O→0, I/L→1).
 export function normalizeKey(raw) {
 	return String(raw ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '')
 		.replace(/O/g, '0').replace(/[IL]/g, '1');
@@ -53,29 +53,29 @@ export function bearerOf(req) {
 	return m ? m[1].trim() : null;
 }
 
-// --- l'index des clés -------------------------------------------------------
+// --- the key index ----------------------------------------------------------
 //
-// `/__map-api/*` n'a pas d'id d'opérateur dans son chemin : la clé est ce qui
-// dit qui parle, il faut donc pouvoir remonter d'une empreinte à un opérateur.
-// Relire les 142 fichiers de l'utilisateur (~170 Ko pièce) à chaque requête
-// coûterait des dizaines de mégaoctets d'E/S ; on garde l'index en mémoire et
-// on le refait quand le répertoire bouge. La mtime du RÉPERTOIRE suffit comme
-// signal parce que _writeOperator() (api.mjs) et issueKey() ci-dessous écrivent
-// tous deux par rename() — ce qui touche l'entrée de répertoire, y compris pour
-// un fichier qui existait déjà.
+// `/__map-api/*` has no operator id in its path: the key is what says who
+// speaks, so it must be possible to go back from a digest to an operator.
+// Re-reading the user's 142 files (~170 kB each) on every request would cost
+// tens of megabytes of I/O; the index is kept in memory and rebuilt when the
+// directory moves. The mtime of the DIRECTORY is signal enough because
+// _writeOperator() (api.mjs) and issueKey() below both write through rename()
+// — which touches the directory entry, including for a file that already
+// existed.
 let index = null;
 let indexStamp = null;
 let indexDir = null;
 
 export function invalidateKeyIndex() { index = null; }
 
-// Le hash est un champ de PREMIER niveau écrit par JSON.stringify(…, '\t') : une
-// ligne à une seule tabulation. On le lit dans le texte brut plutôt que de
-// parser des mégaoctets de sessions — et l'ancrage sur l'indentation met hors
-// d'atteinte une chaîne homonyme qu'un opérateur aurait tapée dans une note (un
-// guillemet y serait échappé, et l'indentation y est plus profonde). Le repli
-// par JSON.parse ne coûte que sur un fichier qui contient VRAIMENT le mot :
-// aucun fichier d'avant #60 n'en a.
+// The hash is a TOP-level field written by JSON.stringify(…, '\t'): a line
+// with a single tab. It is read from the raw text rather than parsing
+// megabytes of sessions — and anchoring on the indentation puts a homonym
+// string an operator might have typed in a note out of reach (a quote would be
+// escaped there, and the indentation is deeper). The JSON.parse fallback only
+// costs on a file that REALLY contains the word: no file from before #60 has
+// it.
 const KEY_HASH_LINE = /^\t"keyHash": "([0-9a-f]{64})",?$/m;
 
 function keyHashOf(text) {
@@ -118,32 +118,32 @@ export function operatorIdForKey(dir, key) {
 	return keyIndex(dir).get(hashKey(key)) ?? null;
 }
 
-// --- la garde ---------------------------------------------------------------
+// --- the guard --------------------------------------------------------------
 //
-// Rend `null` quand la requête passe, sinon { status, error }. `id` est
-// l'opérateur que le chemin nomme (/__operator/:id/*) ; pour /__map-api/*, qui
-// n'en nomme aucun, c'est la clé seule qui identifie. Un fichier d'avant #60 n'a
-// pas de clé : aucune clé ne mène à lui, donc 403 — jusqu'à la commande `key`.
+// Returns `null` when the request passes, otherwise { status, error }. `id` is
+// the operator the path names (/__operator/:id/*); for /__map-api/*, which
+// names none, the key alone identifies. A file from before #60 has no key: no
+// key leads to it, hence 403 — until the `key` command.
 export function checkKey({ mode, dir, req, id = null }) {
 	if (mode !== 'shared') return null;
 	const key = bearerOf(req);
-	if (!key) return { status: 401, error: 'clé d\'opérateur requise' };
+	if (!key) return { status: 401, error: 'operator key required' };
 	const owner = operatorIdForKey(dir, key);
-	if (!owner || (id && owner !== id)) return { status: 403, error: 'clé d\'opérateur invalide' };
+	if (!owner || (id && owner !== id)) return { status: 403, error: 'invalid operator key' };
 	return null;
 }
 
 // --- FPVTP_ACQUIRE ----------------------------------------------------------
 //
-// Le fournisseur de terrain (kh.google.com) est un point d'accès interne non
-// documenté, sans clé, sans compte, sans conditions acceptées d'aucune sorte :
-// l'acquisition reste dans le dépôt, intacte, mais n'est active dans AUCUNE
-// build distribuée. Interrupteur par défaut FERMÉ, et fermé en `shared` quoi
-// qu'il arrive — deux gardes indépendantes, parce qu'une scène ne doit jamais
-// naître sur un serveur qui reçoit des inconnus.
+// The terrain provider (kh.google.com) is an undocumented internal endpoint,
+// with no key, no account, no terms accepted of any kind: acquisition stays in
+// the repository, intact, but is active in NO distributed build. Switch CLOSED
+// by default, and closed in `shared` whatever happens — two independent
+// guards, because a scene must never be born on a server that receives
+// strangers.
 //
-// Convention : FPVTP_ACQUIRE=1 ou FPVTP_ACQUIRE=true (insensible à la casse).
-// Tout le reste, absence comprise, ferme.
+// Convention: FPVTP_ACQUIRE=1 or FPVTP_ACQUIRE=true (case insensitive).
+// Everything else, absence included, closes it.
 const TRUTHY = new Set(['1', 'true']);
 
 export function acquireEnabled(mode) {
@@ -151,35 +151,52 @@ export function acquireEnabled(mode) {
 	return TRUTHY.has(String(process.env.FPVTP_ACQUIRE ?? '').trim().toLowerCase());
 }
 
-// --- l'inscription en libre service, et ses deux plafonds -------------------
+// --- self-service signup, and its two ceilings ------------------------------
 //
-// Sur le VPS, le cas nominal est un inconnu qui arrive sur le domaine et repart
-// avec un profil, sans que le propriétaire du serveur ne fasse rien. C'est
-// voulu — et c'est ce qui rend ces deux plafonds nécessaires. Les deux ne
-// s'appliquent QU'EN `shared` : en `local` il n'y a qu'une personne, derrière un
-// socket local, et rien ne change.
+// On the VPS, the nominal case is a stranger who lands on the domain and
+// leaves with a profile, without the server owner doing anything. That is
+// intended — and it is what makes these two ceilings necessary. Both apply
+// ONLY in `shared`: in `local` there is a single person, behind a loopback
+// socket, and nothing changes.
 
-// L'adresse du demandeur. En `shared` le serveur est derrière Caddy et n'écoute
-// que sur 127.0.0.1 : `remoteAddress` y vaut toujours la boucle locale, et
-// `x-forwarded-for` est la seule source utilisable — posé par un proxy de
-// confiance. En `local` cet en-tête serait falsifiable par le client : on ne le
-// lit pas du tout.
+// The requester's address. In `shared` the server sits behind Caddy and only
+// listens on 127.0.0.1: `remoteAddress` is always the loopback there, and
+// `x-forwarded-for` is the only usable source. In `local` that header would be
+// forgeable by the client: it is not read at all.
+//
+// TAKE THE LAST HOP, NOT THE FIRST. This is the whole point, and the obvious
+// reading is the wrong one. `X-Forwarded-For` is a trail written left to right,
+// oldest first, and a reverse proxy APPENDS the peer it is actually talking to
+// — Caddy's `reverse_proxy` does, as does nginx's `proxy_add_x_forwarded_for`.
+// It does not verify what was already in the header, and deploy/Caddyfile sets
+// no `trusted_proxies` and strips nothing. So a client that sends
+// `X-Forwarded-For: 203.0.113.9` makes the server see
+// `203.0.113.9, <its real address>`: every entry but the last is text the
+// client chose. Reading the first entry hands the client its own rate-limit
+// key, which it can rotate at will — which is to say, no rate limit at all.
+// The last entry is the only one written by something we trust.
+//
+// This assumes EXACTLY ONE appending proxy in front (the deployment in
+// deploy/Caddyfile). Put a second one there — a CDN in front of Caddy — and
+// the last hop becomes the CDN's edge address, collapsing every visitor onto a
+// handful of keys; that deployment must strip inbound `X-Forwarded-For` at the
+// outermost proxy and count hops from the right instead.
 export function clientIp(req, mode) {
 	if (mode === 'shared') {
-		const xff = String(req?.headers?.['x-forwarded-for'] ?? '').split(',')[0].trim();
-		if (xff) return xff;
+		const hops = String(req?.headers?.['x-forwarded-for'] ?? '')
+			.split(',').map((s) => s.trim()).filter(Boolean);
+		if (hops.length) return hops[hops.length - 1];
 	}
-	return req?.socket?.remoteAddress ?? 'inconnu';
+	return req?.socket?.remoteAddress ?? 'unknown';
 }
 
-// Cinq inscriptions par heure et par adresse. Une vraie personne s'inscrit une
-// fois ; cinq laisse la place à un NAT partagé, à une famille et à un bootstrap
-// repris après une erreur de nom, tout en ramenant une inondation scriptée à
-// quelque chose que le plafond d'octets par opérateur (plus bas) borne à son
-// tour. En mémoire, sans dépendance ni état sur disque : le serveur est
-// mono-processus — `jobs`/`current` dans api.mjs font déjà cette hypothèse — et
-// un redémarrage qui remet le compteur à zéro n'est pas un trou, juste un
-// redémarrage.
+// Five signups per hour and per address. A real person signs up once; five
+// leaves room for a shared NAT, for a family and for a bootstrap resumed after
+// a mistyped name, while bringing a scripted flood down to something the
+// per-operator byte ceiling (below) bounds in turn. In memory, with no
+// dependency and no state on disk: the server is single-process —
+// `jobs`/`current` in api.mjs already assume that — and a restart that resets
+// the counter is not a hole, just a restart.
 export const SIGNUP_MAX = 5;
 export const SIGNUP_WINDOW_MS = 60 * 60 * 1000;
 
@@ -194,29 +211,29 @@ export function checkSignup({ mode, req, now = Date.now() }) {
 	if (seen.length >= SIGNUP_MAX) {
 		signups.set(ip, seen);
 		const minutes = Math.max(1, Math.ceil((SIGNUP_WINDOW_MS - (now - seen[0])) / 60000));
-		return { status: 429, error: `trop d'inscriptions depuis cette adresse — réessayez dans ${minutes} min` };
+		return { status: 429, error: `too many signups from this address — try again in ${minutes} min` };
 	}
 	seen.push(now);
 	signups.set(ip, seen);
-	// Les adresses qui n'ont plus rien dans la fenêtre ne restent pas en mémoire.
+	// Addresses with nothing left in the window do not stay in memory.
 	if (signups.size > 10000) {
 		for (const [k, v] of signups) if (!v.some((t) => now - t < SIGNUP_WINDOW_MS)) signups.delete(k);
 	}
 	return null;
 }
 
-// Le plafond d'octets par opérateur, MESURÉ sur les fichiers réels de
-// l'utilisateur le 2026-09-07 :
+// The per-operator byte ceiling, MEASURED on the user's real files on
+// 2026-09-07:
 //
-//   303 sessions, 14 captures → 7 638 405 o, dont 6 897 334 o de captures
-//    15 sessions,  0 capture  →    43 651 o
+//   303 sessions, 14 captures → 7,638,405 B, of which 6,897,334 B of captures
+//    15 sessions,  0 capture  →    43,651 B
 //
-// Soit ~2,4 Ko par session et ~493 Ko par capture : c'est la capture qui pèse,
-// tout le reste est du bruit. 16 Mo laisse un facteur 2 au-dessus du plus gros
-// profil réel (7,6 Mo) — de l'ordre de 30 captures de plus, ou des milliers de
-// sessions sans capture — et borne ce qu'un inconnu peut écrire sur le disque du
-// VPS. Le VOL n'est jamais bloqué par ce plafond : seul l'ajout de captures
-// l'est, parce que c'est la seule écriture dont la taille dépende du client.
+// That is ~2.4 kB per session and ~493 kB per capture: the capture is what
+// weighs, all the rest is noise. 16 MB leaves a factor 2 above the biggest
+// real profile (7.6 MB) — of the order of 30 more captures, or thousands of
+// sessions without a capture — and bounds what a stranger can write on the
+// VPS's disk. The FLIGHT is never blocked by this ceiling: only adding
+// captures is, because it is the only write whose size depends on the client.
 export const OPERATOR_BYTES_MAX = 16 * 1024 * 1024;
 
 // Flight tracks (issue #24, D5) live BESIDE the operator file, in
@@ -234,7 +251,7 @@ function tracksBytes(dir, id) {
 	return total;
 }
 
-// Rend `null` si l'opérateur a encore de la place, sinon { status, error }.
+// Returns `null` if the operator still has room, otherwise { status, error }.
 export function checkOperatorQuota({ mode, dir, id }) {
 	if (mode !== 'shared') return null;
 	let size = 0;
@@ -243,19 +260,19 @@ export function checkOperatorQuota({ mode, dir, id }) {
 	if (size < OPERATOR_BYTES_MAX) return null;
 	return {
 		status: 413,
-		error: `quota atteint pour cet opérateur (${Math.round(size / 1e6)} Mo) — supprimez des sessions pour libérer de la place`,
+		error: `quota reached for this operator (${Math.round(size / 1e6)} MB) — delete sessions to free space`,
 	};
 }
 
-// --- la commande `key` ------------------------------------------------------
+// --- the `key` command ------------------------------------------------------
 //
-// Seule voie de récupération : pas de mot de passe, pas de compte email, une
-// clé perdue est un opérateur perdu. Aussi la migration des fichiers d'avant
-// #60, qui n'ont pas de clé : ils restent parfaitement utilisables en `local`
-// et le redeviennent en `shared` dès qu'on leur en donne une.
+// The only recovery path: no password, no email account, a lost key is a lost
+// operator. Also the migration of the files from before #60, which have no
+// key: they stay perfectly usable in `local` and become usable again in
+// `shared` as soon as they are given one.
 export function issueKey(dir, id) {
 	const file = path.join(dir, `${id}.json`);
-	if (!fs.existsSync(file)) throw new Error(`aucun opérateur "${id}" dans ${dir}`);
+	if (!fs.existsSync(file)) throw new Error(`no operator "${id}" in ${dir}`);
 	const state = JSON.parse(fs.readFileSync(file, 'utf8'));
 	const key = generateKey();
 	state.keyHash = hashKey(key);
@@ -266,8 +283,8 @@ export function issueKey(dir, id) {
 	return key;
 }
 
-// Le hash ne sort jamais du serveur : la clé est un secret du client, le
-// serveur n'en garde que de quoi la reconnaître.
+// The hash never leaves the server: the key is a client secret, the server
+// only keeps what it takes to recognise it.
 export function publicOperator(state) {
 	if (!state || typeof state !== 'object') return state;
 	const { keyHash: _drop, ...rest } = state;

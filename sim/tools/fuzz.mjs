@@ -15,10 +15,13 @@
 //
 // The HTTP surface is fuzzed separately, against a real server: tools/fuzz-api.mjs.
 
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { installFakeDom } from './lib/fake-dom.mjs';
 import {
 	makeRng, pick, int, chance, anyValue, anyObject, anyArray, mutate,
-	nearNumber, firstNonFinite, textLeak, pretty, runTarget, jsonText, NASTY_STRINGS,
+	nearNumber, firstNonFinite, textLeak, pretty, runTarget, runTargetAsync, jsonText, NASTY_STRINGS,
 } from './lib/fuzz.mjs';
 
 // src/input.js reads `window` at import time (device mapping persisted in
@@ -41,6 +44,24 @@ const targetModel = await import('./target-model.mjs');
 const hack = await import('./hack-model.mjs');
 const { parseSceneFlag, parseSwarmFlag, SCENE_SLUG_RE } = await import('./dev-flags.mjs');
 const scanner = await import('./scanner-model.mjs');
+const weather = await import('./lib/weather.mjs');
+const tiles = await import('./lib/tiles.mjs');
+const { estimateCost } = await import('./lib/estimates.mjs');
+const musicModel = await import('./music-model.mjs');
+const jukebox = await import('./jukebox-model.mjs');
+const terminal = await import('./terminal-model.mjs');
+const targetBuild = await import('./target-build.mjs');
+const entry = await import('../src/entry-state.js');
+const fenceField = await import('../src/fence-field.js');
+const { LiveNodeQueue, WAVE_STALL_MS } = await import('../src/live-node-queue.js');
+const { createPool } = await import('../src/rocktree-worker-pool.js');
+const lod = await import('./lib/rocktree/lod.mjs');
+const grammars = await import('../src/hack-grammars.js');
+const dialogueEngine = await import('./dialogue/engine.mjs');
+const dialogueCatalog = await import('./dialogue/catalog.mjs');
+const dialogueRender = await import('./dialogue/render.mjs');
+const cadence = await import('./dialogue/cadence.mjs');
+const { FALLBACK } = await import('../src/dialogue-fallback.js');
 
 const ZONES = [NOMINAL, CAUTION, HOLD, LOST];
 const MOTOR_IDLE_MAX = 1 + 1e-9;
@@ -85,6 +106,134 @@ const someProfile = (r) => PROFILES[pick(r, FAMILIES)];
 // What survives being written to a file and read back. `undefined` members,
 // symbols and prototype-less objects do not.
 const jsonRoundTrip = (v) => { try { return JSON.parse(jsonText(v)); } catch { return null; } };
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+// A ring the way the map GUI hands one to the server. The gate is
+// requirePoly() in server/api.mjs, mirrored here rather than imported: the
+// server file drags the whole API in, and what matters is the RULE — a ring
+// that gets past it is a trace someone really drew.
+const acceptsPoly = (p) => {
+	if (!Array.isArray(p) || p.length % 2 !== 0 || p.length < 6 || p.length > 400) return false;
+	if (!p.every(Number.isFinite)) return false;
+	const b = tiles.polygonBounds(p);
+	if (b.south < -85 || b.north > 85 || b.west < -180 || b.east > 180) return false;
+	if (b.south === b.north || b.west === b.east) return false;
+	return b.east - b.west < 180;
+};
+
+// A trace around one point. `spanDeg` bounds how big it is; the shapes below
+// are the ones leaflet-geoman really produces once a hand is on the mouse —
+// a doubled vertex from a double click, three collinear points, a bow tie.
+function drawnRing(r, spanDeg) {
+	const lat0 = nearNumber(r, -60, 60), lon0 = nearNumber(r, -170, 170);
+	const lat = Number.isFinite(lat0) ? Math.max(-80, Math.min(80, lat0)) : 48.85;
+	const lon = Number.isFinite(lon0) ? Math.max(-175, Math.min(175, lon0)) : 2.29;
+	const n = int(r, 3, 12);
+	const ring = [];
+	for (let i = 0; i < n; i++) {
+		const a = (i / n) * Math.PI * 2;
+		ring.push(lat + Math.cos(a) * spanDeg * (0.2 + r()), lon + Math.sin(a) * spanDeg * (0.2 + r()));
+	}
+	switch (int(r, 0, 4)) {
+		case 0: ring.push(ring[0], ring[1]); break;                       // doubled vertex
+		case 1: for (let i = 2; i < ring.length; i += 2) ring[i] = ring[0] + (i / 2) * 1e-4 * spanDeg; break;  // near-collinear
+		case 2: { const i = int(r, 1, n - 1) * 2; [ring[0], ring[i]] = [ring[i], ring[0]]; break; }            // bow tie
+		case 3: ring[2] = ring[0]; ring[3] = ring[1]; break;              // repeated point mid-ring
+		default: break;
+	}
+	return ring;
+}
+
+// One day of an Open-Meteo `daily` series, as the API hands it over: numbers,
+// sometimes nulls (a model that does not serve the field), sometimes a string.
+const meteoValue = (r, lo, hi) => {
+	switch (int(r, 0, 5)) {
+		case 0: return null;
+		case 1: return pick(r, [NaN, Infinity, -Infinity, -0, 1e308, -1e308]);
+		case 2: return String(nearNumber(r, lo, hi));
+		default: return nearNumber(r, lo, hi);
+	}
+};
+
+// A day of a STORED snapshot. The world state is a JSON file on disk that no
+// validator reads back (server/api.mjs GET /:id/weather serves it verbatim),
+// so this is the shape a hand-edited one really has.
+// A day of a STORED snapshot. `sanitize()` is the ONLY writer — every path in
+// weather-source.mjs goes through it — so the file holds exactly its output,
+// and inventing a shape it cannot produce would fuzz a caller that does not
+// exist. What varies is what it was handed: `1e400` in a JSON payload parses
+// to Infinity, an absent field arrives as undefined, a string comes through as
+// a string. `date` and `confidence` are added by makeSnapshot() on top.
+const rawDay = (r) => ({
+	windSpeed: pick(r, [0, 3.2, 40, 120, null, undefined, '5', NaN, Infinity, -1]),
+	windGust: pick(r, [0, 6, 90, null, undefined, NaN, Infinity]),
+	// Finite only: what ±Infinity does here is weather-sanitize's finding, and
+	// letting it through would make every target downstream report it again.
+	windDir: pick(r, [0, 180, 359, 359.6, -30, 1e9, null, undefined, NaN, '90']),
+	rateMmH: pick(r, [0, 0.1, 2.5, 200, null, undefined, NaN]),
+	precipMm: pick(r, [0, 12, null, NaN]),
+	visibilityM: pick(r, [60000, 400, 10, 1e9, null, undefined, NaN, Infinity]),
+	cloudPct: pick(r, [0, 60, 100, 400, null, undefined, NaN]),
+});
+const storedDay = (r) => ({
+	...weather.sanitize(rawDay(r)),
+	date: pick(r, ['2026-09-13', '2026-09-14']),
+	confidence: weather.confidence(pick(r, weather.SOURCES), int(r, 0, 8)),
+});
+
+// A live gamepad-free stub of Physics: entry-state only ever asks the world
+// "is there ground at (x, z)" and "is anything between these two points".
+const stubPhysics = (kind) => ({
+	groundBelow: (x, _y, z) => (kind === 'solid' ? 0
+		: kind === 'void' ? null
+		: kind === 'corridor' ? (Math.abs(x - z) < 30 ? 0 : null)
+		: (Math.abs(x % 97) < 20 ? x * 0 + 12 : null)),
+	obstructionBetween: () => ({ blocked: kind === 'corridor', span: 3 }),
+});
+
+// A scene manifest as prep.mjs writes one — and as a degenerate polygon, an
+// older prep or a hand edit leaves it. The SHAPE stays right (six numbers and
+// a spawn): a manifest missing its bbox fails at loadManifest, long before
+// anything here, and fuzzing that would fuzz a caller that does not exist.
+const someManifest = (r) => {
+	// Every number is FINITE: manifest.json is JSON, and prep.mjs writes metres.
+	// Degenerate, inverted and absurdly large are all reachable; NaN is not.
+	const metre = (lo, hi) => { const v = nearNumber(r, lo, hi); return Number.isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : 0; };
+	const span = () => pick(r, [1200, 600, 60, 2, 0.01, 0, 1e5]);
+	const w = span(), d = span();
+	const lo = metre(-50, 300), hi = metre(-50, 300);
+	return {
+		bbox: { min: [-w / 2, Math.min(lo, hi), -d / 2], max: [w / 2, Math.max(lo, hi), d / 2] },
+		spawn: { x: metre(-w, w), y: metre(-50, 300), z: metre(-d, d) },
+	};
+};
+
+// The real dialogue corpus, when it is on disk. src/dialogue.js fetches these
+// shards at runtime, so fuzzing a mutation of a REAL entry is fuzzing a shard
+// that half-downloaded or that an older build wrote — not an invented shape.
+// Absent, the embedded fallback pack stands in and the target still runs.
+const CORPUS = (() => {
+	const dir = path.join(HERE, '../public/dialogue');
+	try {
+		return fs.readdirSync(dir)
+			.filter((f) => f.endsWith('.json') && f !== 'manifest.json')
+			.flatMap((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).entries ?? []);
+	} catch { return []; }
+})();
+
+// A music manifest as public/music.json holds one. `validateManifest` is the
+// gate src/music.js runs at boot, so anything it calls clean has to render.
+const musicManifest = (r) => ({
+	schemaVersion: pick(r, [1, 1, 1, 0, '1', undefined]),
+	tracks: Array.from({ length: int(r, 0, 6) }, (_, i) => ({
+		id: pick(r, [`menu-${i}`, `race5-${i}`, '', 42, null, 'menu-0']),
+		pool: pick(r, [...musicModel.MUSIC_POOLS, 'nope', null]),
+		file: pick(r, [`music/${i}.opus`, '', null, 'music/0.opus']),
+		durS: pick(r, [90, 0, -1, NaN, null, 1e9, '90']),
+		bpm: pick(r, [128, 0, NaN, null, '128']),
+	})),
+});
 
 // Telemetry is bounded field by field since #83 (session.TELEMETRY_MAX), so the
 // generator aims AT the bounds rather than away from them: a third of the
@@ -867,6 +1016,876 @@ const targets = [
 	},
 },
 
+{
+	name: 'weather-source',
+	note: 'the api.open-meteo.com answer — a third party\'s JSON that the server turns into wind, rain and fog',
+	gen(r, i) {
+		const n = int(r, 0, 9);
+		const time = Array.from({ length: n }, (_, k) => `2026-09-${String(1 + k).padStart(2, '0')}`);
+		const hourlyTimes = [];
+		const visibility = [];
+		const cloud = [];
+		for (const d of time) {
+			for (let h = 0; h < 3; h++) {
+				hourlyTimes.push(`${d}T${String(h).padStart(2, '0')}:00`);
+				visibility.push(meteoValue(r, 0, 60000));
+				cloud.push(meteoValue(r, 0, 100));
+			}
+		}
+		const payload = {
+			daily: {
+				time,
+				weather_code: time.map(() => pick(r, [0, 1, 3, 45, 61, 95, 999, null])),
+				precipitation_sum: time.map(() => meteoValue(r, 0, 80)),
+				precipitation_hours: time.map(() => meteoValue(r, 0, 24)),
+				wind_speed_10m_max: time.map(() => meteoValue(r, 0, 45)),
+				wind_gusts_10m_max: time.map(() => meteoValue(r, 0, 70)),
+				// Finite: what ±Infinity does to a bearing is weather-sanitize's
+				// finding, and leaving it here would make this target report it on
+				// every run instead of the twenty other things it watches.
+				wind_direction_10m_dominant: time.map(() => pick(r, [0, 90, 359, 359.7, -45, 1e9, null, '180'])),
+			},
+			// Not every model serves the hourly series — that absence is the
+			// documented fallback path, so a third of the cases take it.
+			hourly: chance(r, 0.33) ? undefined : { time: hourlyTimes, visibility, cloud_cover: cloud },
+		};
+		return {
+			payload: i % 3 === 0 ? jsonRoundTrip(mutate(r, payload, 3)) : payload,
+			lat: nearNumber(r, -85, 85), lon: nearNumber(r, -180, 180),
+			day: pick(r, ['2026-09-13', '2026-01-01', '2027-03-02']),
+		};
+	},
+	check({ payload, lat, lon, day }) {
+		let days;
+		try { days = weather.fromOpenMeteo(payload); } catch (err) {
+			if (!(err instanceof Error) || !err.message) return `fromOpenMeteo threw a useless error: ${pretty(err)}`;
+			// The gate is allowed to say "réponse inexploitable". It is not
+			// allowed to trip over the value: that message reaches the server log
+			// and the fallback decision, not a refusal the code chose.
+			if (err instanceof TypeError) return `fromOpenMeteo refused with an engine error: ${err.message}`;
+			return null;
+		}
+		// Everything below is what sanitize() promises: the ranges the terminal,
+		// wind.js, rain.js and fog.js are all written against.
+		for (const [i, d] of days.entries()) {
+			const bad = firstNonFinite({ ...d, date: 0 });
+			if (bad) return `day ${i}: ${bad}`;
+			if (!weather.REGIMES.includes(d.regime)) return `day ${i}: unknown regime ${pretty(d.regime)}`;
+			if (!(d.windSpeed >= 0 && d.windSpeed <= 40)) return `day ${i}: windSpeed ${d.windSpeed}`;
+			if (!(d.windGust >= d.windSpeed)) return `day ${i}: gust ${d.windGust} under a mean of ${d.windSpeed}`;
+			if (!Number.isInteger(d.windDir) || d.windDir < 0 || d.windDir > 359) return `day ${i}: windDir ${pretty(d.windDir)}`;
+			if (!(d.rateMmH >= 0 && d.rateMmH <= 60)) return `day ${i}: rateMmH ${d.rateMmH}`;
+			if (!(d.cloudPct >= 0 && d.cloudPct <= 100)) return `day ${i}: cloudPct ${d.cloudPct}`;
+			if (!(d.visibilityM >= 30 && d.visibilityM <= 60000)) return `day ${i}: visibilityM ${d.visibilityM}`;
+			// What the flight model is handed. A non-finite wind speed is a drone
+			// that leaves the map on the first step.
+			const sim = weather.toSimParams(d);
+			const simBad = firstNonFinite(sim);
+			if (simBad) return `day ${i}: toSimParams holds ${simBad}`;
+			for (const k of ['rain', 'fog', 'cloud']) {
+				const v = k === 'cloud' ? sim.cloud.cover : sim[k].intensity;
+				if (!(v >= 0 && v <= 1)) return `day ${i}: sim.${k} out of 0..1 (${v})`;
+			}
+		}
+		if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;   // zoneKey's own gate, checked by the route
+		const snap = weather.makeSnapshot({ lat, lon, day, source: 'open-meteo', days });
+		for (const d of snap.days) if (!(d.confidence >= 0 && d.confidence <= 1)) return `confidence ${d.confidence}`;
+		// The server re-dates its own snapshot on every offline day. What it
+		// wrote, it has to be able to read back.
+		const kept = weather.restale(snap, '2027-01-01');
+		if (kept && kept.days.some((d) => !(d.confidence >= 0 && d.confidence <= 1))) return 'restale produced a confidence outside 0..1';
+		return null;
+	},
+},
+
+{
+	name: 'weather-sanitize',
+	known: 'sanitize() clamps every field but the bearing, which it only takes modulo 360 — and Infinity % 360 is NaN',
+	note: 'weather.sanitize() — the single point where an Open-Meteo answer and the generator are made physically possible, before anything classifies them or sends them to wind.js/rain.js/fog.js',
+	gen(r) {
+		// Exactly what a `daily` entry can carry once JSON.parse is done with it:
+		// `1e400` is Infinity, an absent field is undefined, a model that serves
+		// strings serves strings.
+		return { day: rawDay(r), dir: pick(r, [Infinity, -Infinity, 1e400, NaN, null, 0, 359, -720, 1e308]) };
+	},
+	check({ day, dir }) {
+		const d = weather.sanitize({ ...day, windDir: dir });
+		// Its whole job. Everything downstream — classify(), simParamsOf(),
+		// compassPoint() on the WEATHER screen — is written against these ranges
+		// and none of them checks again.
+		const bad = firstNonFinite(d);
+		if (bad) return `sanitize left ${bad}`;
+		if (!Number.isInteger(d.windDir) || d.windDir < 0 || d.windDir > 359) return `sanitize produced windDir ${pretty(d.windDir)}`;
+		if (!weather.REGIMES.includes(d.regime)) return `sanitize produced regime ${pretty(d.regime)}`;
+		// Idempotent, because the file is re-read and re-sanitized on every boot.
+		const again = weather.sanitize(d);
+		if (JSON.stringify(again) !== JSON.stringify(d)) return 'sanitize is not idempotent';
+		return null;
+	},
+},
+
+{
+	name: 'weather-store',
+	note: 'the world-state snapshot in the operator file — hand-editable, served verbatim by GET /:id/weather and read by the WEATHER screen',
+	// The CONTAINER is left alone — zone/day/source/days are what every version
+	// of makeSnapshot() has written, and inventing a `days: null` would fuzz a
+	// file nobody produces. What varies is what is INSIDE a day: a field an
+	// older schema did not have, and a non-finite one, which the server really
+	// does store today (see the weather-source finding on windDir).
+	gen(r) {
+		return {
+			snap: {
+				zone: '48.86,2.29',
+				lat: nearNumber(r, -85, 85), lon: nearNumber(r, -180, 180),
+				day: pick(r, ['2026-09-13', '2026-01-01']),
+				source: pick(r, weather.SOURCES),
+				fetchedAt: '2026-09-13T10:00:00.000Z',
+				days: Array.from({ length: int(r, 0, 4) }, () => storedDay(r)),
+			},
+			day: pick(r, ['2026-09-14', '2027-01-01']),
+		};
+	},
+	check({ snap, day }) {
+		// 1. What the SERVER does with it on the offline path (weather-source.mjs
+		//    step 3). It must refuse or re-date, never take the route down.
+		let kept = null;
+		try { kept = weather.restale(snap, day); } catch (err) {
+			return `restale threw on a stored snapshot: ${err?.name}: ${err?.message}`;
+		}
+		// 2. What the TERMINAL does with it. Every one of these is a line a
+		//    player reads; none of them may be an engine error or say NaN.
+		for (const s of [snap, kept].filter(Boolean)) {
+			let text;
+			try { text = weather.formatForecast(s, { title: 'LOCAL' }); } catch (err) {
+				return `formatForecast threw on a stored snapshot: ${err?.name}: ${err?.message}`;
+			}
+			const leak = textLeak(text);
+			if (leak) return `formatForecast ${leak}`;
+			for (const [name, fn] of [['dayRows', weather.dayRows], ['conditionsBlock', weather.conditionsBlock], ['conditionsLine', weather.conditionsLine]]) {
+				let out;
+				try { out = fn(s); } catch (err) { return `${name} threw: ${err?.name}: ${err?.message}`; }
+				const l = textLeak(out);
+				if (l) return `${name} ${l}`;
+			}
+			const t = weather.today(s);
+			const sev = weather.severity(t);
+			if (!['nominal', 'watch', 'marginal', 'nogo'].includes(sev)) return `severity invented ${pretty(sev)}`;
+			// Only when there IS a day: formatForecast answers 'NO FORECAST'
+			// without ever drawing a bar, so an empty window is not this
+			// function's problem.
+			if (t) {
+				const bar = weather.confidenceBar(t.confidence);
+				if (typeof bar !== 'string' || bar.length !== 12) return `confidenceBar produced ${pretty(bar)}`;
+			}
+		}
+		return null;
+	},
+},
+
+{
+	name: 'map-poly',
+	note: 'tiles.mjs behind requirePoly() — the trace a player draws in the GLOBAL SCANNER, sent to POST /__map-api/describe',
+	gen(r) {
+		// Small on purpose: this target measures CORRECTNESS. What a big-but-legal
+		// trace costs is a separate finding, and its own target (map-poly-cost).
+		return { ring: drawnRing(r, pick(r, [0.0005, 0.002, 0.01])), zoom: int(r, 13, 20) };
+	},
+	check({ ring, zoom }) {
+		// intIn(b.zoom, 13, 20, 20) in server/api.mjs: nothing else ever reaches
+		// these functions, and the shrinker loves to hand them a null.
+		if (!Number.isInteger(zoom) || zoom < 13 || zoom > 20) return null;
+		if (!acceptsPoly(ring)) return null;   // the server refuses it before any of this
+		// What a BIG trace costs is map-poly-cost's finding, and the shrinker
+		// walks straight into it: running polygonGrid on one here would be
+		// committing the denial of service this file is meant to report.
+		const cells = tiles.tileGrid(tiles.polygonBounds(ring), zoom);
+		if (cells.cols * cells.rows > 2e5) return null;
+		const b = tiles.polygonBounds(ring);
+		if (firstNonFinite(b)) return `polygonBounds holds ${firstNonFinite(b)}`;
+		if (!(b.south <= b.north && b.west <= b.east)) return `polygonBounds came out inverted: ${pretty(b)}`;
+		const area = tiles.polygonArea(ring);
+		if (!(area >= 0)) return `polygonArea = ${area}`;
+		const grid = tiles.polygonGrid(ring, zoom);
+		if (!Number.isInteger(grid.columns) || grid.columns < 0 || grid.columns > grid.cols * grid.rows) {
+			return `polygonGrid kept ${pretty(grid.columns)} of ${grid.cols * grid.rows} tiles`;
+		}
+		// The mask is what the map draws and what the exporter downloads. The two
+		// counts have to be the same number, or the escalier on screen is not the
+		// zone that gets extracted.
+		if (tiles.maskKeys(grid).length !== grid.columns) return `maskKeys says ${tiles.maskKeys(grid).length}, columns says ${grid.columns}`;
+		if (grid.masked !== grid.cols * grid.rows - grid.columns) return 'masked and columns do not add up to the grid';
+		for (const seg of tiles.maskOutline(grid, zoom)) {
+			if (firstNonFinite(seg)) return `maskOutline holds ${firstNonFinite(seg)}`;
+		}
+		// The probe point decides where the coverage question is asked. A point
+		// outside the trace answers about a zone nobody is extracting.
+		const probe = tiles.polygonProbePoint(ring, zoom);
+		if (probe) {
+			if (firstNonFinite(probe)) return `polygonProbePoint holds ${firstNonFinite(probe)}`;
+			// Against the SNAPPED box, not the trace: the probe is the centre of
+			// a kept tile, and extraction is quantised to tiles — a tile that
+			// straddles the edge legitimately has its centre just outside.
+			const s = grid.snapped;
+			if (probe.lat < s.south || probe.lat > s.north || probe.lon < s.west || probe.lon > s.east) {
+				return `polygonProbePoint fell outside the grid it came from: ${pretty(probe)} not in ${pretty(s)}`;
+			}
+		} else if (grid.columns > 0) {
+			return 'polygonProbePoint found nothing although the grid kept tiles';
+		}
+		// The cache directory is named after this string, and a Go port has to
+		// produce the same one. Six decimals, nothing else.
+		const canon = tiles.canonicalPoly(ring);
+		if (!/^-?\d+\.\d{6}(,-?\d+\.\d{6})*$/.test(canon)) return `canonicalPoly produced ${pretty(canon)}`;
+		const est = estimateCost({ columns: grid.columns, zoom, altitude: 20 });
+		const estBad = firstNonFinite(est);
+		if (estBad) return `estimateCost holds ${estBad}`;
+		if (!(est.totalSeconds >= 0)) return `estimateCost.totalSeconds = ${est.totalSeconds}`;
+		return null;
+	},
+},
+
+{
+	name: 'map-poly-cost',
+	known: 'polygonGrid() allocates and scans one byte per tile of the trace\'s bounding box, and requirePoly() lets a trace 179 degrees wide through',
+	note: 'the SIZE of a trace requirePoly() accepts — POST /__map-api/describe promises to answer instantly, on every mouse move',
+	gen(r) {
+		return { ring: drawnRing(r, pick(r, [0.05, 0.5, 5, 50, 80])), zoom: int(r, 13, 20) };
+	},
+	check({ ring, zoom }) {
+		if (!Number.isInteger(zoom) || zoom < 13 || zoom > 20) return null;
+		if (!acceptsPoly(ring)) return null;
+		// Counted, never allocated: a target that actually ran the grid would be
+		// the denial of service it is reporting. tileGrid() is pure arithmetic.
+		const b = tiles.polygonBounds(ring);
+		const grid = tiles.tileGrid(b, zoom);
+		const cells = grid.cols * grid.rows;
+		// ~1e6 cells is ~200 ms of tileIntersectsPolygon on this machine, already
+		// well past "instantané, appelable à chaque déplacement de la souris".
+		if (cells > 1e6) {
+			return `a trace the server accepts asks polygonGrid for ${cells.toExponential(2)} cells (${grid.cols}x${grid.rows}) at zoom ${zoom}`
+				+ ` — ${(b.north - b.south).toFixed(2)}° by ${(b.east - b.west).toFixed(2)}°`;
+		}
+		return null;
+	},
+},
+
+{
+	name: 'music-manifest',
+	note: 'public/music.json, fetched at boot — validateManifest() is the gate, and anything it calls clean has to reach the jukebox',
+	gen(r, i) {
+		const m = musicManifest(r);
+		return {
+			manifest: i % 3 === 0 ? jsonRoundTrip(mutate(r, m, 2)) : m,
+			pool: pick(r, [...musicModel.MUSIC_POOLS, 'nope', null]),
+			seed: pick(r, ['flight-1', '', '🛸']),
+			recent: Array.from({ length: int(r, 0, 20) }, () => pick(r, ['menu-0', 'race5-1', null, ''])),
+			filter: pick(r, ['ALL', 'menu', 'nope', null]),
+		};
+	},
+	check({ manifest, pool, seed, recent, filter }) {
+		let problems;
+		try { problems = musicModel.validateManifest(manifest); } catch (err) {
+			return `validateManifest threw instead of reporting: ${err?.name}: ${err?.message}`;
+		}
+		if (!Array.isArray(problems)) return `validateManifest returned ${pretty(problems)}`;
+		if (problems.some((p) => typeof p !== 'string' || !p)) return `validateManifest reported ${pretty(problems)}`;
+		// A manifest it refuses leaves the game silent, by design: nothing
+		// downstream ever sees it, so nothing downstream is checked with it.
+		if (problems.length > 0) return null;
+
+		const library = jukebox.buildLibrary(manifest);
+		if (library.length !== (manifest.tracks?.length ?? 0)) return 'buildLibrary lost a track the validator kept';
+		// Sorting has to be a total order: the list must not move under the
+		// cursor between two renders of the same library.
+		const again = jukebox.buildLibrary(manifest).map((t) => t.id);
+		if (JSON.stringify(again) !== JSON.stringify(library.map((t) => t.id))) return 'buildLibrary is not stable for one manifest';
+		const rows = library.map((t, i) => jukebox.jukeboxRow(t, { playing: i === 0 }));
+		const rowLeak = textLeak(rows);
+		if (rowLeak) return `jukeboxRow ${rowLeak}`;
+		if (textLeak(jukebox.nowPlayingLine(library[0] ?? null))) return `nowPlayingLine ${textLeak(jukebox.nowPlayingLine(library[0] ?? null))}`;
+		if (textLeak(jukebox.librarySummary(library))) return `librarySummary ${textLeak(jukebox.librarySummary(library))}`;
+		if (!jukebox.libraryFilters(library).includes('ALL')) return 'libraryFilters dropped ALL';
+		if (!Array.isArray(jukebox.filterLibrary(library, filter))) return 'filterLibrary did not return a list';
+		for (const d of [-1, 0, 1]) {
+			const i = jukebox.stepIndex(library.length, -1, d);
+			if (library.length > 0 && !(i >= 0 && i < library.length)) return `stepIndex(${library.length}, -1, ${d}) = ${i}`;
+		}
+		// The radio: same manifest, same pool, same seed, same track. A session
+		// resumed has to resume its music too.
+		const t1 = musicModel.pickTrack(manifest, pool, seed, recent);
+		const t2 = musicModel.pickTrack(manifest, pool, seed, recent);
+		if (t1 !== t2) return 'pickTrack is not deterministic for one (pool, seed, recent)';
+		if (t1 && t1.pool !== pool) return `pickTrack returned a ${pretty(t1.pool)} track for pool ${pretty(pool)}`;
+		const next = musicModel.pushRecent(recent, t1?.id);
+		if (next.length > musicModel.RECENT_LIMIT) return `pushRecent grew to ${next.length}`;
+		return null;
+	},
+},
+
+{
+	name: 'music-manifest-types',
+	known: 'validateManifest() checks that every required field is PRESENT and never what it holds; buildLibrary() then calls String(track.id)',
+	note: 'public/music.json — the gate src/music.js runs before it trusts the file, and the JUKEBOX screen that reads it afterwards',
+	gen(r) {
+		return {
+			manifest: {
+				schemaVersion: 1,
+				tracks: [{
+					id: pick(r, ['menu-0', { toString: null }, [], { a: 1 }]),
+					pool: 'menu', file: 'music/0.opus', durS: 90, bpm: 128,
+				}],
+			},
+		};
+	},
+	check({ manifest }) {
+		if (musicModel.validateManifest(manifest).length > 0) return null;   // refused: the game goes silent, by design
+		// Called clean, so every screen downstream is entitled to render it.
+		try { jukebox.buildLibrary(manifest); } catch (err) {
+			return `validateManifest called this manifest clean and buildLibrary then threw ${err?.name}: ${err?.message}`;
+		}
+		return null;
+	},
+},
+
+{
+	name: 'entry-state',
+	note: 'PHASE 13 entry draw against manifest.json — the bbox is JSON fetched at boot, and a polygon-traced or hand-edited scene makes it degenerate',
+	gen(r) {
+		return {
+			manifest: someManifest(r),
+			kind: pick(r, ['solid', 'void', 'corridor', 'patchy']),
+			category: pick(r, [...entry.CATEGORIES, 'NOPE', null]),
+			seed: pick(r, ['zone-1', '', '🛸', 'x'.repeat(200)]),
+			draws: int(r, 1, 12),
+		};
+	},
+	check({ manifest, kind, category, seed, draws }) {
+		const physics = stubPhysics(kind);   // fresh each case: occupancyOf caches on the instance
+		const rect = entry.insetRect(manifest);
+		if (firstNonFinite(rect)) return `insetRect holds ${firstNonFinite(rect)}`;
+		if (!(rect.x0 <= rect.x1 && rect.z0 <= rect.z1)) return `insetRect came out inverted: ${pretty(rect)}`;
+		const grid = entry.occupancyOf(physics, manifest);
+		if (!(grid.cells.length > 0)) return 'occupancyOf left no cell to draw in';
+		if (!Number.isInteger(grid.cols) || grid.cols < 1 || !Number.isInteger(grid.rows) || grid.rows < 1) {
+			return `occupancyOf built a ${pretty(grid.cols)}x${pretty(grid.rows)} grid`;
+		}
+		const rand = entry.rngFrom(seed);
+		const cat = entry.resolveCategory(category, rand);
+		if (!entry.CATEGORIES.includes(cat)) return `resolveCategory invented ${pretty(cat)}`;
+		for (let i = 0; i < draws; i++) {
+			const c = entry.sampleCandidate(cat, manifest, physics, rand);
+			if (c === null) continue;            // "no ground here" is the documented answer
+			const bad = firstNonFinite({ position: c.position, quaternion: c.quaternion, linvel: c.linvel, angvel: c.angvel });
+			if (bad) return `sampleCandidate holds ${bad}`;
+			const q = Math.hypot(c.quaternion.x, c.quaternion.y, c.quaternion.z, c.quaternion.w);
+			if (Math.abs(q - 1) > 1e-6) return `sampleCandidate produced a quaternion of norm ${q}`;
+			if (typeof entry.geometrySafe(c, physics) !== 'boolean') return 'geometrySafe did not answer yes or no';
+		}
+		// The last resort. It is what a flight starts from when twenty draws
+		// missed, so it may never be non-finite, whatever the manifest says.
+		const back = entry.fallbackCandidate(manifest, physics);
+		const backBad = firstNonFinite(back.position);
+		if (backBad) return `fallbackCandidate holds ${backBad}`;
+		if (back.position.x < rect.x0 - 1e-6 || back.position.x > rect.x1 + 1e-6
+			|| back.position.z < rect.z0 - 1e-6 || back.position.z > rect.z1 + 1e-6) {
+			return `fallbackCandidate landed outside its own inset rect: ${pretty(back.position)}`;
+		}
+		return null;
+	},
+},
+
+{
+	name: 'fence-field',
+	note: 'the fence surface projection — the bbox is manifest JSON, the drone position comes straight from Rapier and can be far outside it',
+	gen(r) {
+		const span = () => pick(r, [1200, 600, 60, 2, 0, 1e5]);
+		const w = span(), d = span();
+		const p = () => { const v = nearNumber(r, -3000, 3000); return Number.isFinite(v) ? Math.max(-1e6, Math.min(1e6, v)) : 0; };
+		return {
+			bbox: { min: [-w / 2, 0, -d / 2], max: [w / 2, 200, d / 2] },
+			pos: { x: p(), y: p(), z: p() },
+			centre: { x: p(), z: p() },
+			radius: pick(r, [300, 1, 0, -50, 1e6]),
+			// A distance ratio is (distance to the fence / corridor half-width),
+			// and geofence.js has guaranteed it finite since the zero-width map
+			// fix. Under, over and at the ends are reachable; NaN is not.
+			ratios: Array.from({ length: int(r, 1, 20) }, () => { const v = nearNumber(r, 0, 1); return Number.isFinite(v) ? v : 0; }),
+			dt: pick(r, [1 / 60, 1 / 250, 0, 5, 1e4]),
+		};
+	},
+	check({ bbox, pos, centre, radius, ratios, dt }) {
+		const box = fenceField.nearestOnBoxSurface(pos, bbox);
+		if (firstNonFinite(box)) return `nearestOnBoxSurface holds ${firstNonFinite(box)}`;
+		// `u` is a surface coordinate the shader wraps on `perimeter`. Outside
+		// [0, perimeter) the ring tears at the seam.
+		if (!(box.perimeter >= 0)) return `perimeter = ${box.perimeter}`;
+		if (box.perimeter > 0 && !(box.u >= 0 && box.u < box.perimeter)) return `u = ${box.u} outside a perimeter of ${box.perimeter}`;
+		const sph = fenceField.nearestOnSphereSurface(pos, centre, radius);
+		if (Number.isFinite(radius) && firstNonFinite(sph)) return `nearestOnSphereSurface holds ${firstNonFinite(sph)}`;
+		const clock = new fenceField.PingClock();
+		let fired = 0;
+		for (const ratio of ratios) {
+			const bias = fenceField.hueBiasFor(ratio);
+			if (!(bias >= 0 && bias <= fenceField.HUE_BIAS_CEIL)) return `hueBiasFor(${ratio}) = ${bias}`;
+			const iv = fenceField.pingIntervalFor(ratio);
+			if (Number.isNaN(iv) || iv <= 0) return `pingIntervalFor(${ratio}) = ${iv}`;
+			if (Number.isFinite(dt) && clock.advance(dt, ratio) === true) fired++;
+		}
+		// A dt spike (a tab back from the background) must not fire a burst of
+		// catch-up rings: the clock resets rather than subtracting.
+		if (fired > ratios.length) return `PingClock fired ${fired} times in ${ratios.length} frames`;
+		return null;
+	},
+},
+
+{
+	name: 'live-queue',
+	note: 'LiveNodeQueue — what the streaming window queued and released, in the order a recentring in flight really produces',
+	gen(r) {
+		const paths = Array.from({ length: int(r, 1, 8) }, (_, i) => `306040607163${i}`);
+		const ops = [];
+		for (let i = 0, n = int(r, 1, 60); i < n; i++) {
+			ops.push({
+				kind: pick(r, ['build', 'swap', 'release', 'covered', 'drop', 'drain']),
+				path: pick(r, paths),
+				// pendingFetches() is the window's own count; it drops to zero when
+				// the wave lands, and a recentring puts it back up.
+				pending: pick(r, [0, 0, 1, 40, 300]),
+				// A frame's clock. 0 is what a stubbed or coarse timer gives.
+				step: pick(r, [0, 0.2, 1, 4, 20]),
+			});
+		}
+		return { ops, budget: pick(r, [3, 8, 0, 1e6]) };
+	},
+	check({ ops, budget }) {
+		const q = new LiveNodeQueue();
+		const live = new Set();      // what is on screen
+		let clock = 0;
+		let work = 0;
+		for (const op of ops) {
+			switch (op.kind) {
+				case 'build': q.queueBuild(op.path, { p: op.path }); break;
+				case 'swap': q.queueBuild(op.path, { p: op.path }, { swap: true }); break;
+				case 'release': q.queueRelease(op.path); break;
+				case 'covered': q.queueCovered(op.path); break;
+				case 'drop': q.dropBuild(op.path); break;
+				default: {
+					// Bounded on purpose: drain() is a `while` on a clock, and a
+					// clock that never advances is exactly what a stubbed timer or
+					// a coarsened performance.now() gives.
+					const before = work;
+					q.drain({
+						budgetMs: budget,
+						pendingFetches: () => op.pending,
+						build: (p, job) => { work++; if (job?.p !== p) throw new Error('drain built a job under the wrong path'); live.add(p); },
+						dispose: (p) => { work++; live.delete(p); },
+						now: () => (clock += op.step),
+					});
+					if (work - before > 100000) return 'drain did not stop under its budget';
+					break;
+				}
+			}
+			if (q.builds.size + q.swaps.size + q.releases.length + q.covered.size > 4 * ops.length) return 'a queue grew past what was ever pushed into it';
+			if (typeof q.idle() !== 'boolean') return 'idle() did not answer yes or no';
+			if (!(q.budgetMs() > 0)) return `budgetMs() = ${q.budgetMs()}`;
+		}
+		// Everything queued must be drainable: what is left over is a node that
+		// stays on screen with nothing left to remove it, or a hole.
+		let guard = 0;
+		while (!q.idle()) {
+			if (++guard > 10000) return 'the queue never drains, even with no fetch in flight';
+			q.drain({ budgetMs: 1e6, pendingFetches: () => 0, build: (p) => live.add(p), dispose: (p) => live.delete(p), now: () => (clock += 0.001) });
+		}
+		return null;
+	},
+},
+
+{
+	name: 'lod-window',
+	note: 'the LOD ring assembly — the node lists come from traverse() over BulkMetadata that kh.google.com served',
+	gen(r) {
+		const digits = () => Array.from({ length: int(r, 2, 8) }, () => int(r, 0, 7)).join('');
+		const box = () => {
+			const s = nearNumber(r, -80, 80), w = nearNumber(r, -170, 170);
+			const h = Math.abs(nearNumber(r, 0, 2)) || 0.01;
+			return Number.isFinite(s) && Number.isFinite(w) ? { s, n: s + h, w, e: w + h } : null;
+		};
+		const rings = [];
+		for (const spec of lod.ringsFor(pick(r, [150, 600, 2000, 0, -10, 1e6]), int(r, 2, 22))) {
+			rings.push({
+				...spec,
+				nodes: Array.from({ length: int(r, 0, 12) }, () => ({
+					path: digits(), box: chance(r, 0.15) ? null : box(), exclude: chance(r, 0.3) ? [int(r, 0, 7)] : undefined,
+				})),
+			});
+		}
+		return { rings, centre: { lat: nearNumber(r, -85, 85), lon: nearNumber(r, -180, 180) } };
+	},
+	check({ rings, centre }) {
+		for (const ring of rings) {
+			if (!(ring.radiusM >= 0)) return `ringsFor produced a radius of ${ring.radiusM}`;
+			if (!Number.isInteger(ring.level) || ring.level < 14) return `ringsFor produced level ${pretty(ring.level)}`;
+		}
+		if (!Number.isFinite(centre.lat) || !Number.isFinite(centre.lon)) return null;   // the window's own gate (?live= refuses a NaN pair)
+		// The union over every ring: which occurrence of a path survives the disc
+		// tests is assembleLod's business, so any exclusion traverse() attached
+		// to any of them counts as "not this module's doing".
+		const given = new Map();
+		for (const ring of rings) {
+			for (const n of ring.nodes) {
+				if (!given.has(n.path)) given.set(n.path, new Set());
+				for (const d of n.exclude ?? []) given.get(n.path).add(d);
+			}
+		}
+		const out = lod.assembleLod(rings, centre);
+		const kept = new Set(out.map((n) => n.path));
+		const seen = new Set();
+		for (const n of out) {
+			// One path, one node. Two nodes for the same path is the same ground
+			// drawn twice, which is the z-fight this module exists to remove.
+			if (seen.has(n.path)) return `assembleLod kept ${n.path} twice`;
+			seen.add(n.path);
+			if (!Array.isArray(n.exclude)) return `exclude is ${pretty(n.exclude)}`;
+			if (n.exclude.some((d) => !Number.isInteger(d) || d < 0 || d > 7)) return `exclude holds a non-octant: ${pretty(n.exclude)}`;
+			if (new Set(n.exclude).size !== n.exclude.length) return `exclude repeats an octant: ${pretty(n.exclude)}`;
+			// Only the octants THIS module added: what traverse() already put on
+			// the node is its own decision, and asserting on it would be checking
+			// the generator. An octant assembleLod excludes with nothing finer
+			// drawing it is a hole — the sky through the ground.
+			for (const d of n.exclude) {
+				if (given.get(n.path)?.has(d)) continue;
+				if (![...kept].some((p) => p.startsWith(n.path + d) && p !== n.path)) {
+					return `assembleLod made ${n.path} exclude octant ${d} with nothing finer covering it`;
+				}
+			}
+			// And the reverse: a retained node whose parent is also retained must
+			// have that parent excluding the octant that leads to it.
+			for (let len = 1; len < n.path.length; len++) {
+				const ancestor = out.find((o) => o.path === n.path.slice(0, len));
+				if (ancestor && !ancestor.exclude.includes(Number(n.path[len]))) {
+					return `${ancestor.path} and ${n.path} both draw octant ${n.path[len]}`;
+				}
+			}
+		}
+		const d = lod.metersBetween(centre, { lat: centre.lat + 0.001, lon: centre.lon });
+		if (!(d >= 0)) return `metersBetween = ${d}`;
+		return null;
+	},
+},
+
+{
+	name: 'terminal-screen',
+	note: 'the FIELD header — /__map-api/scenes answers from a scenes.json that add-map, remove-map and sync-scenes all write, and that drifts from disk',
+	// The operator half of this screen is fuzzed by operator-file, which
+	// reproduces an unfixed defect and is therefore out of the default run.
+	// Here the operator is well-formed and the SCENE LIST is what is hostile:
+	// `null` is what the client sees when the route is unreachable, and a
+	// scene whose bytes are missing or absurd is what a drifted scenes.json
+	// gives (the route computes them from disk when the file has none).
+	gen(r) {
+		return {
+			operator: {
+				id: 'neo-0000',
+				name: pick(r, ['NEO', '', 'x'.repeat(400), '🛸', 'a b c']),
+				sessions: Array.from({ length: int(r, 0, 4) }, () => storedSession(r)),
+				terrainCache: Array.from({ length: int(r, 0, 3) }, () => ({ slug: 'tour-eiffel' })),
+			},
+			scenes: chance(r, 0.25) ? null : Array.from({ length: int(r, 0, 5) }, () => ({
+				slug: pick(r, ['tour-eiffel', '', 'a-b']),
+				name: pick(r, ['Tour Eiffel', '', 'Île de la Cité', 'x'.repeat(300)]),
+				bytes: pick(r, [1234567, 0, -1, NaN, null, undefined, 1e18, '5']),
+			})),
+			shared: chance(r, 0.5),
+		};
+	},
+	check({ operator, scenes, shared }) {
+		const model = terminal.terminalModel({ operator, scenes, shared });
+		if (typeof model.operatorName !== 'string' || !model.operatorName) return `operatorName = ${pretty(model.operatorName)}`;
+		if (typeof model.footer !== 'string' || !model.footer) return `footer = ${pretty(model.footer)}`;
+		// The footer is two words and a build number; nothing about a broken
+		// operator file may show up in it.
+		if (textLeak(model.footer)) return `footer ${textLeak(model.footer)}`;
+		if (!Array.isArray(model.areas)) return `areas = ${pretty(model.areas)}`;
+		for (const a of model.areas) {
+			if (typeof a.size !== 'string') return `area size = ${pretty(a.size)}`;
+			if (textLeak(a.size)) return `formatBytes ${textLeak(a.size)}`;
+		}
+		for (const n of [NaN, Infinity, -1, 0, 1e18, -0]) {
+			const s = terminal.formatBytes(n);
+			if (typeof s !== 'string' || textLeak(s)) return `formatBytes(${n}) = ${pretty(s)}`;
+		}
+		return null;
+	},
+},
+
+{
+	name: 'operator-file',
+	known: 'terminalModel() and countersOf() read the operator file with String(v) and (v ?? []).filter, the two shapes tools/lib/as-text.mjs and Array.isArray exist to stop',
+	note: 'the operator JSON on disk, read by the FIELD screen — the same hand-editable file the session validators already guard, on the one path that has no validator',
+	gen(r) {
+		return {
+			operator: {
+				id: 'neo-0000',
+				// Valid JSON, every one of them, and none is a string.
+				name: pick(r, ['NEO', '', null, 42, { toString: null }, [], { a: 1 }, true]),
+				sessions: pick(r, [[], null, false, 0, 'two', { length: 2 }, [null]]),
+				terrainCache: pick(r, [[], null, 3, {}]),
+			},
+			scenes: pick(r, [null, []]),
+		};
+	},
+	check({ operator, scenes }) {
+		// FIELD is the first screen after boot. Whatever this file holds, it has
+		// to mount — and the six sibling formatters already learned that lesson
+		// (tools/lib/as-text.mjs, fuzzing finding 3).
+		let model;
+		try { model = terminal.terminalModel({ operator, scenes }); } catch (err) {
+			return `terminalModel threw on a stored operator: ${err?.name}: ${err?.message}`;
+		}
+		if (typeof model.operatorName !== 'string') return `operatorName = ${pretty(model.operatorName)}`;
+		if (textLeak(model.footer)) return `footer ${textLeak(model.footer)}`;
+		return null;
+	},
+},
+
+{
+	name: 'drone-build',
+	note: '?build=<seed> — an arbitrary string from a crafted link that decides the mass, the thrust and the rates actually flown',
+	gen(r) {
+		return {
+			seed: chance(r, 0.5) ? pick(r, NASTY_STRINGS.filter((s) => s.length > 0)) : `${int(r, 0, 1e9)}`,
+			family: pick(r, FAMILIES),
+		};
+	},
+	check({ seed, family }) {
+		let b;
+		try { b = targetBuild.targetBuild({ seed, family }); } catch (err) {
+			if (!(err instanceof Error) || !err.message) return `targetBuild threw a useless error: ${pretty(err)}`;
+			return null;   // `seed requis` on a falsy seed is the documented refusal
+		}
+		const bad = firstNonFinite(b.profile);
+		if (bad) return `the flown profile holds ${bad}`;
+		const base = PROFILES[family];
+		// What defines the family never moves: a link may hand you a worn pack,
+		// not a different airframe.
+		for (const k of targetBuild.INVARIANTS) {
+			if (JSON.stringify(b.profile[k]) !== JSON.stringify(base[k])) return `?build= changed ${k}, which is a family invariant`;
+		}
+		const within = (v, [lo, hi], label) => (v >= lo - 1e-9 && v <= hi + 1e-9 ? null : `${label} = ${v}, outside [${lo}, ${hi}]`);
+		const B = targetBuild.BUILD_BOUNDS;
+		for (const [got, bounds, label] of [
+			[b.profile.mass / base.mass, B.mass, 'mass factor'],
+			[b.profile.maxOmega / base.maxOmega, B.kv, 'kv factor'],
+			[b.profile.torqueRatio / base.torqueRatio, B.torqueRatio, 'torqueRatio factor'],
+			[b.profile.bodyDrag.x / base.bodyDrag.x, B.bodyDrag, 'bodyDrag factor'],
+			[b.profile.battery.capacityMah / base.battery.capacityMah, B.capacity, 'capacity factor'],
+			[b.profile.battery.internalOhm / base.battery.internalOhm, B.internalOhm, 'internalOhm factor'],
+		]) {
+			const hit = within(got, bounds, label);
+			if (hit) return hit;
+		}
+		if (!(targetBuild.thrustToWeight(b.profile) > 1)) return `thrust/weight = ${targetBuild.thrustToWeight(b.profile)} — this build cannot take off`;
+		if (!(b.livery.wear >= 0 && b.livery.wear <= 1)) return `wear = ${b.livery.wear}`;
+		const rateBad = firstNonFinite(b.rates);
+		if (rateBad) return `rates hold ${rateBad}`;
+		// Same seed, same machine: the server and the client build the same one.
+		if (JSON.stringify(targetBuild.targetBuild({ seed, family })) !== JSON.stringify(b)) return 'targetBuild is not deterministic for one seed';
+		return null;
+	},
+},
+
+{
+	name: 'dialogue',
+	note: 'the RTC crew — /dialogue/<event>.json is fetched at runtime, and the anti-repetition memory lives in the hand-editable operator file',
+	// The pool is REAL entries. A shard that half-downloaded is not JSON and
+	// falls back to the embedded pack (src/dialogue.js catches it), and the
+	// corpus itself is gated by tools/dialogue/validate.mjs — so a shard whose
+	// entries have the wrong TYPES is a shape nothing produces. What a shard
+	// really varies by is which entries it holds and in what order, and that is
+	// what is drawn here. The hostility lives in `ctx` (live flight numbers,
+	// which really do go non-finite) and in `memory` (the operator file).
+	gen(r, i) {
+		const pool = CORPUS.length ? CORPUS : FALLBACK;
+		const entries = [];
+		for (let k = 0, n = int(r, 0, 12); k < n; k++) entries.push(pool[int(r, 0, pool.length - 1)]);
+		return {
+			event: pick(r, [...Object.keys(dialogueCatalog.EVENTS), 'NOPE', '']),
+			entries,
+			// Live flight numbers. resolvePath() is documented to turn a NaN into
+			// null (i.e. into ineligibility), which is exactly the promise here.
+			ctx: {
+				operator: { name: pick(r, ['NEO', '', null, 42]) },
+				machine: { gpu: pick(r, ['Apple M2', null]), display: pick(r, ['2560 × 1440', null]) },
+				area: { name: pick(r, ['tour-eiffel', '', null, { toString: null }]) },
+				weather: { summary: pick(r, ['CLEAR / CALM', null]), windMs: pick(r, [4, 0, NaN, Infinity, null]), rain: pick(r, ['2.0 mm/h', null]), visibility: pick(r, ['10 km', null]) },
+				scan: { count: pick(r, [4, 0, NaN, null]) },
+				target: { video: pick(r, ['ANALOG', null]), rssiDbm: pick(r, [-70, NaN, null]), hackType: pick(r, ['GNSS SPOOF', null]) },
+				drone: { label: pick(r, ['freestyle 5"', null]) },
+				terrain: { tiles: pick(r, [1200, 0, NaN, null]), megabytes: pick(r, [340, Infinity, null]) },
+				session: { durationS: pick(r, [600, NaN, null]) },
+			},
+			memory: i % 2 === 0 ? dialogueEngine.emptyMemory() : {
+				ring: Array.from({ length: int(r, 0, 40) }, () => pick(r, ['hack/0001', '', null])),
+				seen: chance(r, 0.5) ? {} : anyObject(r, 1),
+				buckets: chance(r, 0.5) ? {} : { jensen: pick(r, [0, -1, NaN, 'x']) },
+				seq: pick(r, [0, 5, -1, NaN, '3', 1e15]),
+			},
+			rounds: int(r, 1, 12),
+		};
+	},
+	check({ event, entries, ctx, memory, rounds }) {
+		let mem = memory;
+		const rng = makeRng(7);
+		for (let i = 0; i < rounds; i++) {
+			let r2;
+			try { r2 = dialogueEngine.select({ event, pool: entries, ctx, memory: mem, rng }); } catch (err) {
+				return `select threw on a stored memory: ${err?.name}: ${err?.message}`;
+			}
+			if (!r2 || typeof r2 !== 'object') return `select returned ${pretty(r2)}`;
+			mem = r2.memory;
+			if (!Array.isArray(mem.ring)) return `select produced a memory whose ring is ${pretty(mem.ring)}`;
+			// The memory is written back to the operator file on every line. An
+			// unbounded one grows that file for ever.
+			if (mem.ring.length > dialogueCatalog.MEMORY_RING) return `the memory ring grew to ${mem.ring.length}`;
+			if (Object.keys(mem.seen ?? {}).length > dialogueCatalog.MEMORY_SEEN + 1) return `the seen map grew to ${Object.keys(mem.seen).length}`;
+			if (!r2.entry) continue;
+			// render() is documented to throw on a corpus validate.mjs never saw,
+			// and both call sites catch it. What it must NOT do is succeed and put
+			// a NaN in front of the player.
+			let lines;
+			try { lines = dialogueRender.render(r2.entry, ctx); } catch (err) {
+				if (!(err instanceof Error) || !err.message) return `render threw a useless error: ${pretty(err)}`;
+				continue;
+			}
+			const leak = textLeak(lines.map((l) => l.text));
+			if (leak) return `render ${leak}`;
+			const beats = cadence.planExchange(lines, event, rng);
+			let last = -1;
+			for (const b of beats) {
+				if (!Number.isFinite(b.atMs) || b.atMs < last) return `planExchange produced ${pretty(b.atMs)} after ${last}`;
+				last = b.atMs;
+			}
+			if (!Number.isFinite(cadence.nextGapMs(event, rng))) return 'nextGapMs is not a delay';
+		}
+		return null;
+	},
+},
+
+{
+	name: 'hack-pattern',
+	note: 'the ASCII grammars — t is (now - start)/1000 and survives a backgrounded tab, dur is variant.ms / variant.beats',
+	gen(r) {
+		return {
+			name: pick(r, [...Object.keys(grammars.GRAMMARS), ...Object.keys(grammars.RITUAL_PRIMITIVES)]),
+			// performance.now() is monotonic, so t never goes backwards; a tab
+			// left in the background for a day is how it gets large.
+			t: pick(r, [0, 0.5, 3.2, 1e4, 1e9, 86400]),
+			seed: grammars.cosmeticSeed(pick(r, ['zone-1', '', '🛸', 'x'.repeat(300)])),
+			lock: pick(r, [0, 0.5, 1, -1, 2, undefined]),
+			dur: pick(r, [4, 1, 0.2, 0, undefined]),
+		};
+	},
+	check({ name, t, seed, lock, dur }) {
+		const draw = grammars.GRAMMARS[name] ?? grammars.RITUAL_PRIMITIVES[name];
+		if (typeof draw !== 'function') return null;
+		const el = { textContent: '' };
+		draw(el, { t, seed, lock, dur });
+		const text = el.textContent;
+		if (typeof text !== 'string') return `${name} wrote ${pretty(text)} into the element`;
+		// The field is a fixed 44x12 block. A row that is short or long shifts
+		// every row under it, and the screen is monospace and framed.
+		const rows = text.split('\n');
+		if (rows.length !== 12) return `${name} drew ${rows.length} rows instead of 12`;
+		for (const [i, row] of rows.entries()) {
+			if ([...row].length !== 44) return `${name} row ${i} is ${[...row].length} characters wide, not 44`;
+		}
+		const leak = textLeak(text);
+		if (leak) return `${name} ${leak}`;
+		// Same (t, seed): same frame. The pattern is redrawn every animation
+		// frame and must not flicker between two identical ones.
+		const el2 = { textContent: '' };
+		draw(el2, { t, seed, lock, dur });
+		if (el2.textContent !== text) return `${name} is not deterministic for one (t, seed)`;
+		return null;
+	},
+},
+
+{
+	name: 'worker-pool',
+	async: true,
+	note: 'the rocktree Worker pool — a wave in flight, cancelled halfway, with the answers coming back out of order',
+	gen(r) {
+		const size = int(r, 1, 4);
+		const maxInFlight = int(r, 1, 5);
+		return {
+			size, maxInFlight,
+			jobs: int(r, 1, 24),
+			// Which requests the window abandons at the next recentring, and when.
+			abortAt: Array.from({ length: int(r, 0, 8) }, () => int(r, 0, 23)),
+			// The order the workers answer in, and what they answer.
+			shuffle: chance(r, 0.5),
+			failures: Array.from({ length: int(r, 0, 6) }, () => int(r, 0, 23)),
+			workerError: chance(r, 0.2),
+			// Answers to ids nobody asked for: a stale worker from a previous wave.
+			ghosts: int(r, 0, 3),
+		};
+	},
+	async check({ size, maxInFlight, jobs, abortAt, shuffle, failures, workerError, ghosts }) {
+		if (!(jobs > 0)) return null;
+		const workers = [];
+		const pool = createPool({ size, maxInFlight, makeWorker: () => { const w = { posted: [], postMessage(m) { this.posted.push(m); } }; workers.push(w); return w; } });
+		const aborts = new Set(abortAt.filter((i) => Number.isInteger(i) && i >= 0 && i < jobs));
+		const failed = new Set(failures.filter((i) => Number.isInteger(i)));
+		const closed = [];
+		const settled = new Array(jobs).fill(null);
+		const controllers = [];
+		for (let i = 0; i < jobs; i++) {
+			const ctrl = new AbortController();
+			controllers.push(ctrl);
+			pool.fetchNode({ path: `3060${i}`, epoch: 1014 }, { signal: ctrl.signal })
+				.then(() => { settled[i] = 'ok'; }, (e) => { settled[i] = e?.name === 'AbortError' ? 'abort' : 'error'; });
+		}
+		// Never more in flight than the pool says it allows: the cap is what keeps
+		// six workers from decoding 640 MB of ImageBitmap at once.
+		for (const w of workers) {
+			if (w.posted.length > maxInFlight) return `a worker was handed ${w.posted.length} requests for a cap of ${maxInFlight}`;
+		}
+		if (pool.stats().inFlight > size * maxInFlight) return `stats() reports ${pool.stats().inFlight} in flight, over a capacity of ${size * maxInFlight}`;
+		for (const i of aborts) controllers[i]?.abort();
+		// Answer everything that was ever posted, in whatever order, twice for
+		// some: a shared worker can answer after the request was abandoned.
+		const answer = (w, msg) => w.onmessage?.({ data: msg });
+		// Until the pool stops posting: a response frees a slot, which posts the
+		// next queued job, which needs answering in its turn. The cap is only
+		// there so a target bug cannot spin.
+		for (let round = 0; round < 200 && workers.some((w) => w.posted.length); round++) {
+			for (const w of workers) {
+				const posted = shuffle ? [...w.posted].reverse() : [...w.posted];
+				w.posted = [];
+				for (const req of posted) {
+					const id = req.id;
+					if (failed.has(id % 24)) answer(w, { id, ok: false, error: 'node 404', status: 404 });
+					else answer(w, { id, ok: true, matrix: new Float64Array(16), copyrightIds: [], meshes: [{ bitmap: { close() { closed.push(id); } } }] });
+				}
+			}
+			for (let g = 0; g < ghosts; g++) answer(workers[0], { id: -1 - g, ok: true, meshes: [{ bitmap: { close() { closed.push(-1); } } }] });
+			if (workerError && round === 2) workers[0]?.onerror?.({ message: 'out of memory' });
+		}
+		if (workers.some((w) => w.posted.length)) return 'the pool kept posting after every answer was delivered';
+		await Promise.resolve();
+		await new Promise((res) => setImmediate(res));
+		// Nothing may be left hanging: a promise that never settles is a node
+		// the window waits on for ever, and the wave never completes.
+		const pendingIdx = settled.findIndex((s, i) => s === null && !aborts.has(i));
+		if (pendingIdx >= 0) return `request ${pendingIdx} never settled`;
+		for (const i of aborts) if (settled[i] !== 'abort' && settled[i] !== null) return `an aborted request settled as ${settled[i]}`;
+		const stats = pool.stats();
+		if (stats.queued !== 0) return `${stats.queued} job(s) left in the queue with every answer delivered`;
+		if (stats.inFlight !== 0) return `${stats.inFlight} request(s) still counted in flight with every answer delivered`;
+		return null;
+	},
+},
+
 ];
 
 // --- CLI --------------------------------------------------------------------
@@ -880,7 +1899,13 @@ const has = (name) => argv.includes(`--${name}`);
 
 if (has('list')) {
 	console.log('fuzz targets:\n');
-	for (const t of targets) console.log(`  ${t.name.padEnd(18)} ${t.note}`);
+	for (const t of targets) console.log(`  ${t.known ? '!' : ' '} ${t.name.padEnd(18)} ${t.note}`);
+	const known = targets.filter((t) => t.known);
+	if (known.length) {
+		console.log('\n! = known failure: registered, reproduces an unfixed defect, and left OUT of the');
+		console.log('    default run so it does not break CI. Run one with --only <name>, or all with --known.');
+		for (const t of known) console.log(`      ${t.name}: ${t.known}`);
+	}
 	process.exit(0);
 }
 
@@ -888,7 +1913,10 @@ const cases = Number(flag('cases', 3000));
 const seed = Number(flag('seed', 0x46555A5A));   // "FUZZ"
 const only = flag('only', null);
 const verbose = has('verbose');
-const chosen = only ? targets.filter((t) => t.name === only) : targets;
+// A target that reproduces a defect nobody has fixed yet still belongs in the
+// file — it is how the fix gets verified — but it cannot be what CI runs.
+// `--only <name>` and `--known` are the two ways back in.
+const chosen = only ? targets.filter((t) => t.name === only) : targets.filter((t) => has('known') || !t.known);
 
 if (chosen.length === 0) {
 	console.error(`unknown target "${only}" — try --list`);
@@ -899,7 +1927,9 @@ console.log(`fuzz: ${chosen.length} target(s), ${cases} cases each, seed 0x${see
 
 let failed = 0;
 for (const target of chosen) {
-	const result = runTarget(target, { cases, seed, verbose });
+	const result = target.async
+		? await runTargetAsync(target, { cases: Math.min(cases, 400), seed, verbose })
+		: runTarget(target, { cases, seed, verbose });
 	const mark = result.failures.length === 0 ? ' ok ' : 'FAIL';
 	console.log(`  ${mark}  ${target.name.padEnd(18)} ${String(result.ms).padStart(6)} ms`);
 	for (const f of result.failures) {
@@ -911,5 +1941,7 @@ for (const target of chosen) {
 	}
 }
 
+const skipped = only ? [] : targets.filter((t) => t.known && !chosen.includes(t));
+if (skipped.length) console.log(`\nskipped (known failure): ${skipped.map((t) => t.name).join(', ')} — run with --known`);
 console.log(`\n${failed === 0 ? 'no findings' : `${failed} finding(s)`} — replay with --seed 0x${seed.toString(16)} --cases ${cases}`);
 process.exit(failed === 0 ? 0 : 1);

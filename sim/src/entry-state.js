@@ -299,6 +299,28 @@ export function resolveCategory(forced, rand) {
 	return forced && CATEGORIES.includes(forced) ? forced : pickCategory(rand);
 }
 
+// A ceiling on how hairy a drawn entry may be. CATEGORIES is ordered gentlest
+// first, so this is just an index clamp.
+//
+// It exists for the keyboard. The weighted draw gives HOLY_SHIT 3 % of the
+// time — 25-40 m/s, up to 80 degrees of bank, 1.5 m off the deck — which is a
+// fine thing to inherit with a proportional stick in your hands and an
+// impossible one with four arrow keys. main.js caps a keyboard-only pilot at
+// ACTIVE (18 m/s, 25 degrees) and passes nothing at all when a pad is present,
+// so the gamepad draw is untouched, weight for weight.
+//
+// A forced category (the bench's own choice) is NOT capped: asking for
+// HOLY_SHIT at the bench is a request, not a draw, and the bench is where you
+// go to ask for things. An unknown ceiling is ignored rather than throwing —
+// same rule as resolveCategory().
+export function capCategory(category, maxCategory) {
+	const ceiling = CATEGORIES.indexOf(maxCategory);
+	if (ceiling < 0) return category;
+	const at = CATEGORIES.indexOf(category);
+	if (at < 0) return category;
+	return CATEGORIES[Math.min(at, ceiling)];
+}
+
 // Le rectangle où un vol a le droit de commencer : la bbox moins le couloir
 // CAUTION effectif de la scène, exactement celui qu'utilise occupancyOf() pour
 // le tirage. Sorti en fonction parce que le REPLI doit désormais s'y ramener
@@ -390,9 +412,16 @@ export function fallbackCandidate(manifest, physics = null) {
 // existence of a bench.
 //   category: 'ACTIVE'  force that category, still through both safety nets
 //   idle: true          spawn at rest on the ground, no draw at all
+//
+// `maxCategory` is a third, and it is not the bench's: it caps the DRAW (see
+// capCategory), and main.js passes it for a keyboard-only pilot. It is applied
+// after resolveCategory() so that the random stream is consumed identically
+// either way — a capped draw and an uncapped one see the same seed produce the
+// same subsequent sampling, which is what keeps the gamepad path bit for bit
+// what it always was.
 export function generateEntryState({
 	physics, manifest, seed, maxAttempts = DEFAULT_MAX_ATTEMPTS,
-	category: forced = null, idle = false,
+	category: forced = null, idle = false, maxCategory = null,
 } = {}) {
 	if (idle) {
 		const at = fallbackCandidate(manifest, physics);
@@ -404,7 +433,9 @@ export function generateEntryState({
 		return at;
 	}
 	const rand = rngFrom(seed);
-	const category = resolveCategory(forced, rand);
+	// The cap applies to the draw only: a forced category is an explicit request.
+	const drawn = resolveCategory(forced, rand);
+	const category = forced ? drawn : capCategory(drawn, maxCategory);
 	for (let i = 0; i < maxAttempts; i++) {
 		const candidate = sampleCandidate(category, manifest, physics, rand);
 		if (candidate && geometrySafe(candidate, physics) && rolloutSafe(candidate, physics)) {

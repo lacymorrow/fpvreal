@@ -147,7 +147,7 @@ t('A SESSION spells the loop, with the keys read from the live map', () => {
 	const screen = briefingScreens({ input: { kind: 'keyboard' }, keyRows })[2];
 	const labels = screen.rows.map((r) => r[0]);
 	assert.deepEqual(labels.slice(0, 2), ['TARGET SCAN', 'FLIGHT']);
-	assert.equal(screen.rows.find((r) => r[0] === 'HOLD K')[1], 'CUT THE LINK');
+	assert.equal(screen.rows.find((r) => r[0] === 'HOLD K')[1], 'CUT LINK');
 	assert.equal(screen.rows.find((r) => r[0] === 'V')[1], 'FPV / CHASE VIEW');
 	assert.equal(screen.rows.find((r) => r[0] === 'SPACE')[1], 'PAUSE');
 	assert.ok(labels.includes('THE LOG'));
@@ -155,14 +155,14 @@ t('A SESSION spells the loop, with the keys read from the live map', () => {
 	// Rebound, the rows follow.
 	const rows = keyMapRows({ ...DEFAULT_KEY_MAP, cutLink: ['x'], view: ['c'] });
 	const moved = briefingScreens({ input: { kind: 'keyboard' }, keyRows: rows })[2];
-	assert.equal(moved.rows.find((r) => r[0] === 'HOLD X')[1], 'CUT THE LINK');
+	assert.equal(moved.rows.find((r) => r[0] === 'HOLD X')[1], 'CUT LINK');
 	assert.ok(moved.rows.some((r) => r[0] === 'C'));
 });
 
 t('the screens hold together with no key rows at all', () => {
 	const screens = briefingScreens({ input: { kind: 'keyboard' }, keyRows: [] });
 	assert.equal(screens.length, 4);
-	assert.equal(screens[2].rows.find((r) => r[0] === 'HOLD K')[1], 'CUT THE LINK');
+	assert.equal(screens[2].rows.find((r) => r[0] === 'HOLD K')[1], 'CUT LINK');
 });
 
 t('briefingScreens survives being called with nothing', () => {

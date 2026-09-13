@@ -1,9 +1,9 @@
-// PHASE 12 — l'OSD FPVTP!, la couche locale. Injectée par notre station,
-// au-dessus de l'image reçue : elle ne traverse pas la liaison, donc rien ne la
-// dégrade. C'est la moitié stable du double HUD.
+// PHASE 12 — the FPVTP! OSD, the local layer. Injected by our station on top
+// of the received image: it does not cross the link, so nothing degrades it.
+// This is the stable half of the double HUD.
 //
-// Toujours métrique, même quand la cible affiche des pieds : c'est NOTRE
-// station. Le désaccord entre les deux systèmes fait partie du propos.
+// Always metric, even when the target displays feet: this is OUR station. The
+// disagreement between the two systems is part of the point.
 
 import { PORTRAIT_LINE, RANDOMART_LINE } from './flight-end.js';
 import { randomart } from '../tools/randomart.mjs';
@@ -11,9 +11,10 @@ import { randomart } from '../tools/randomart.mjs';
 // est du DOM, elle n'ouvre pas de contexte de rendu.
 import { dronePortrait } from './drone-portrait.js';
 import { droneViewer } from './drone-viewer.js';
+import { storedKeyLabel } from './key-map.js';
 import { versionLine } from './version.js';
 
-// D'où le vent pousse, dans le repère du drone : l'index 0 est droit devant.
+// Where the wind pushes from, in the drone's frame: index 0 is straight ahead.
 const ARROWS = ['↓', '↙', '←', '↖', '↑', '↗', '→', '↘'];
 
 const clock = (s) => {
@@ -23,14 +24,14 @@ const clock = (s) => {
 
 // Ce que la ligne de vol du HUD annonce. Sorti en fonction PURE parce que c'est
 // un invariant de fiction, pas de la mise en forme : un vol qui n'ouvre aucune
-// session ne doit pas écrire SESSION — le HUD mentirait sur ce que le vol est en
-// train de faire.
+// session must not write SESSION — the HUD would be lying about what the flight
+// is doing.
 //
-//   BENCH   — le banc : pas de session, et pas de temps à compter non plus.
-//   LIVE    — terrain streamé (#218). Le vol est une session comme une autre —
+//   BENCH   — the bench: no session, and no time to count either.
+//   LIVE    — streamed terrain (#218). The flight is a session like any other —
 //             cible, exemplaire, hack, rituel, trace au journal — mais le
-//             terrain n'est PAS sur le disque : pas de clôture, et le relief
-//             arrive pendant qu'on vole. C'est ce que la ligne signale.
+//             terrain is NOT on disk: no fence, and the relief arrives while
+//             you fly. That is what the line signals.
 //   SESSION — un vol de terrain sur une zone acquise.
 export function flightLabel({ bench = false, live = false, sessionSeconds = 0 } = {}) {
 	if (bench) return 'BENCH';
@@ -50,7 +51,7 @@ export class FpvtpOsd {
 					<div id="fo-mode">ACRO</div>
 					<div id="fo-rates">—</div>
 					<div id="fo-input">KEYBOARD</div>
-					<button type="button" id="fo-view">[V] FPV</button>
+					<button type="button" id="fo-view"></button>
 					<div id="fo-fps">—</div>
 				</div>
 				<div class="corner bl">
@@ -60,7 +61,7 @@ export class FpvtpOsd {
 				<div class="corner br">
 					<div id="fo-credit"></div>
 				</div>
-				<div id="fo-pause" hidden>PAUSED<small>PRESS SPACE</small></div>
+				<div id="fo-pause" hidden>PAUSED<small></small></div>
 				<div id="fo-status" hidden></div>
 				<div id="fo-turtle" hidden></div>
 				<div id="fo-cut" hidden><span id="fo-cut-text"></span><i id="fo-cut-bar"></i></div>
@@ -94,25 +95,25 @@ export class FpvtpOsd {
 		this._fpsAt = performance.now();
 		this._fps = 0;
 		this._endLines = '';
-		// Les deux états centraux occupent la même place. Ils ne s'excluent pas
-		// dans le monde — on peut être en pause sur un drone détruit — donc ils
-		// sont tenus ici, et un seul est peint.
+		// The two central states occupy the same place. They do not exclude each
+		// other in the world — you can be paused on a destroyed drone — so both
+		// are held here, and only one is painted.
 		this._paused = false;
 		this._status = null;
-		// PHASE 16 : disponibilité de la capture, compteur et flash bref au clic.
+		// PHASE 16: capture availability, counter, and a brief flash on click.
 		this._photoReady = false;
 		this._photoCount = 0;
 		this._flashUntil = 0;
-		// #216 : le dernier libellé peint, pour ne pas réécrire le DOM à 60 Hz.
+		// #216: the last painted label, so the DOM is not rewritten at 60 Hz.
 		this._cutText = '';
-		// #105 : même règle pour la ligne du retournement.
+		// #105: same rule for the turtle line.
 		this._turtleText = '';
 		// D16: the first-flight line, same rule — what it says is decided
 		// elsewhere (tools/briefing-model.mjs); this layer only paints it.
 		this._hintText = '';
-		// #264 : l'exemplaire en vol, et son dessin une fois le lien perdu. Le
-		// dessin n'est fabriqué qu'au moment où la ligne apparaît — un vol qui
-		// se termine bien n'en construit jamais.
+		// #264: the machine in flight, and its drawing once the link is lost. The
+		// drawing is only built at the moment the line appears — a flight that
+		// ends well never builds one.
 		this._target = null;
 		this._portrait = null;
 		this._randomart = null;
@@ -123,11 +124,17 @@ export class FpvtpOsd {
 		this._endUp = false;
 		this.el.view.addEventListener('click', () => this._viewToggle?.());
 		this._paintView();
+		this._paintPause();
 	}
 
 	// The FPV / CHASE toggle (D11). The label names the key: without it the
 	// view exists and nobody finds it — the same rule as [HOLD K] below.
 	// `onToggle` is re-registered on every call: main.js is its source.
+	//
+	// The key is READ, never written here (#105's rule, applied to the two
+	// hints that had escaped it): `view` and `pause` are remappable in
+	// SETTINGS, and `[V]` / `PRESS SPACE` were hardcoded, so a player who had
+	// rebound them was told to press a key that does nothing.
 	setView(mode, onToggle) {
 		this._view = mode === 'chase' ? 'chase' : 'fpv';
 		if (onToggle !== undefined) this._viewToggle = onToggle;
@@ -135,16 +142,17 @@ export class FpvtpOsd {
 	}
 
 	_paintView() {
-		const text = this._view === 'chase' ? '[V] CHASE' : '[V] FPV';
+		const key = storedKeyLabel('view');
+		const text = `[${key}] ${this._view === 'chase' ? 'CHASE' : 'FPV'}`;
 		if (this.el.view.textContent !== text) this.el.view.textContent = text;
 		// The flight is over: there is no view left to choose, and the end
 		// screen holds the screen on its own.
 		this.el.view.hidden = this._endUp;
 	}
 
-	// L'exemplaire que la station suit (#264) : `family` et `buildSeed`, les
-	// deux champs dont le portrait se déduit. Sans eux — chemins dev, override
-	// NOMINAL — la ligne du portrait reste un blanc, jamais son jeton.
+	// The machine the station follows (#264): `family` and `buildSeed`, the two
+	// fields the portrait is derived from. Without them — dev paths, NOMINAL
+	// override — the portrait line stays blank, never its token.
 	//
 	// `cameraSeed` (D12) is the SESSION seed, the one main.js draws the
 	// target's camera from — and therefore the pod the machine wears in
@@ -161,9 +169,9 @@ export class FpvtpOsd {
 		this._target = (family && buildSeed) ? { family, buildSeed, cameraSeed } : null;
 	}
 
-	// Le nœud du portrait, fabriqué une seule fois : la séquence de fin
-	// reconstruit ses lignes à chaque ligne qui apparaît, et un portrait
-	// reconstruit à chaque fois repartirait de son premier angle.
+	// The portrait node, built once only: the end sequence rebuilds its lines
+	// every time a line appears, and a portrait rebuilt each time would restart
+	// from its first angle.
 	//
 	// D12: the REAL machine first, in 3D and turnable — we are inside the sim,
 	// the mesh and its shaders are already loaded. The SVG wireframe stays the
@@ -182,14 +190,14 @@ export class FpvtpOsd {
 		this._randomart = null;
 	}
 
-	// L'empreinte de la machine perdue (#57). Fabriquée une seule fois, comme
-	// le portrait : la séquence de fin reconstruit ses lignes à chaque ligne
-	// qui apparaît. Sans exemplaire connu, la ligne retombe sur un blanc —
-	// jamais sur son jeton, qui n'est pas fait pour être lu.
+	// The fingerprint of the lost machine (#57). Built once only, like the
+	// portrait: the end sequence rebuilds its lines every time a line appears.
+	// With no known machine the line falls back to a blank — never to its
+	// token, which is not made to be read.
 	//
-	// Le titre du cadre est `TGT ??` et non un numéro : `targetSeq` est
-	// attribué par le serveur et le client ne le connaît pas à cet endroit. Le
-	// numéro est ce que l'archive sait, pas ce que l'opérateur sait en vol.
+	// The frame's title is `TGT ??` and not a number: `targetSeq` is assigned by
+	// the server and the client does not know it here. The number is what the
+	// archive knows, not what the operator knows in flight.
 	_randomartNode() {
 		if (!this._randomart && this._target?.buildSeed) {
 			const pre = document.createElement('pre');
@@ -206,26 +214,26 @@ export class FpvtpOsd {
 	show() { this.el.root.hidden = false; }
 	setPaused(paused) { this._paused = !!paused; this._refreshCentre(); }
 
-	// Crédit fournisseur. Discret et permanent : Google impose d'afficher les
-	// copyrights des tuiles rendues, et on applique la même règle à tous les
-	// fournisseurs. Sur la couche FPVTP!, jamais sur l'OSD du drone — c'est la
-	// station qui crédite, pas l'appareil (issue #18).
+	// Provider credit. Discreet and permanent: Google requires the copyrights of
+	// rendered tiles to be displayed, and the same rule is applied to every
+	// provider. On the FPVTP! layer, never on the drone OSD — it is the station
+	// that credits, not the aircraft (issue #18).
 	setCredit(text) {
 		this.el.credit.textContent = text ?? '';
 	}
 
-	// Disponibilité de la capture (PHASE 16) : vrai seulement quand ce qu'on
-	// verrait à l'écran est vraiment le flux de la cible (en vol, armé, pas en
-	// vue CHASE, pas pendant l'agonie du lien).
+	// Capture availability (PHASE 16): true only when what is on screen really
+	// is the target's feed (in flight, armed, not in CHASE view, not during the
+	// link's death throes).
 	setPhotoReady(ready) { this._photoReady = !!ready; this._renderPhoto(); }
 
-	// `count` est celui que le serveur a renvoyé — il fait autorité, pas un
-	// compteur client optimiste qui pourrait diverger d'un échec réseau silencieux.
+	// `count` is the one the server returned — it is authoritative, not an
+	// optimistic client counter that could drift on a silent network failure.
 	//
-	// `null` veut dire « rien n'a été compté » : c'est le banc (PHASE 26), où
-	// l'image part sur le disque de l'opérateur sans que rien ne l'enregistre.
-	// Il n'y a donc pas de total à afficher, et en inventer un serait mentir
-	// sur ce que le mode promet.
+	// `null` means "nothing was counted": that is the bench (PHASE 26), where
+	// the image goes to the operator's disk without anything recording it. So
+	// there is no total to show, and inventing one would lie about what the
+	// mode promises.
 	flashCaptured(count) {
 		this._photoCount = count;
 		this._flashUntil = performance.now() + 900;
@@ -253,8 +261,8 @@ export class FpvtpOsd {
 		this._refreshCentre();
 	}
 
-	// Priorité explicite : verdict de session > pause. Un seul visible, sans
-	// quoi les deux se superposent lettre sur lettre au même endroit.
+	// Explicit priority: session verdict > pause. Only one is visible, otherwise
+	// the two overlap letter on letter in the same place.
 	_refreshCentre() {
 		const e = this.el.status;
 		if (this._status) {
@@ -263,21 +271,35 @@ export class FpvtpOsd {
 			else delete e.dataset.kind;
 		}
 		e.hidden = !this._status;
+		this._paintPause();
 		this.el.pause.hidden = !!this._status || !this._paused;
 	}
 
-	// La coupure du lien (#216). Deux choses au même endroit, et jamais en même
-	// temps : le RAPPEL qu'elle existe, quand la machine a l'air coincée, et la
+	// `[SPACE] RESUME`, in the same `[KEY] VERB` form as every other key hint in
+	// the game (terminal.js keyHints, `[HOLD K] CUT LINK` below) — it used to be
+	// the prose `PRESS SPACE`, with the key written in. Repainted here rather
+	// than once at construction, so a rebind made mid-session is reflected the
+	// next time the pause comes up.
+	_paintPause() {
+		const small = this.el.pause.querySelector('small');
+		if (!small) return;
+		const text = `[${storedKeyLabel('pause')}] RESUME`;
+		if (small.textContent !== text) small.textContent = text;
+	}
+
+	// Cutting the link (#216). Two things in the same place, and never at the
+	// same time: the REMINDER that it exists, when the machine looks stuck, and
+	// the
 	// JAUGE du maintien en cours. Le rappel est conditionnel ; le geste, lui,
-	// est toujours disponible — c'est ce qui fait qu'un rappel manqué ne
-	// bloque personne, et c'est pour ça que rien ici ne décide de quoi que ce
-	// soit : flight-end.js a déjà tranché, on peint.
+	// is always available — which is what makes a missed reminder harmless, and
+	// why nothing here decides anything: flight-end.js has already ruled, we
+	// paint.
 	//
-	// Nommer la touche à l'écran est le sujet même de l'issue : sans ça le
+	// Naming the key on screen is the very subject of the issue: without it the
 	// geste existe et personne ne le trouve.
-	// `key` est la touche RÉELLEMENT liée à la coupure (#105) : elle était
-	// écrite en dur ici, ce qui mentait à quiconque l'avait remappée — nommer la
-	// touche à l'écran ne vaut que si c'est la bonne.
+	// `key` is the key ACTUALLY bound to the cut (#105): it used to be hardcoded
+	// here, which lied to anyone who had remapped it — naming the key on screen
+	// is only worth anything if it is the right one.
 	setCut({ stuck = false, cutProgress = 0 } = {}, key = 'K') {
 		const e = this.el.cut;
 		const cutting = cutProgress > 0;
@@ -292,16 +314,16 @@ export class FpvtpOsd {
 			this.el.cutText.textContent = text;
 		}
 		// La barre ne vit que pendant le maintien : hors maintien, le rappel est
-		// une phrase, pas une jauge à zéro qui laisserait croire qu'il se passe
-		// déjà quelque chose.
+		// a sentence, not a gauge at zero that would suggest something is already
+		// happening.
 		this.el.cutBar.hidden = !cutting;
 		this.el.cutBar.style.width = `${Math.round(cutProgress * 100)}%`;
 	}
 
 	// Le retournement (#105). Juste au-dessus du rappel de coupure, et pour la
-	// même raison : une machine sur le dos a deux issues, et celle qui rend la
-	// machine se lit avant celle qui la perd. Comme #fo-cut, rien ne se décide
-	// ici — turtle.js a déjà tranché, on peint.
+	// same reason: a machine on its back has two ways out, and the one that gives
+	// the machine back reads before the one that loses it. Like #fo-cut, nothing
+	// is decided here — turtle.js has already ruled, we paint.
 	setTurtle({ eligible = false } = {}, key = 'T') {
 		const text = eligible ? `[${String(key).toUpperCase()}] TURTLE` : '';
 		if (text === this._turtleText) return;
@@ -325,11 +347,11 @@ export class FpvtpOsd {
 		this.el.hint.hidden = !next;
 	}
 
-	// L'écran de fin de vol (PHASE 14). Il n'annonce pas une défaite : il montre
-	// un lien qui s'éteint. `blackout` est l'opacité du noir qui recouvre la
-	// dernière image, `lines` ce qui s'écrit dessus, une ligne à la fois.
+	// The end-of-flight screen (PHASE 14). It does not announce a defeat: it
+	// shows a link going out. `blackout` is the opacity of the black covering the
+	// last image, `lines` what is written on it, one line at a time.
 	// Repris tel quel de l'ancien hud.js — c'est la couche locale qui porte
-	// cette mise en scène, elle ne traverse pas la liaison.
+	// this staging, it does not cross the link.
 	setFlightEnd({ lines, blackout }) {
 		const e = this.el.flightEnd;
 		if (this._endUp !== (lines.length > 0 || blackout > 0)) {
@@ -339,15 +361,15 @@ export class FpvtpOsd {
 		if (!lines.length && blackout <= 0) {
 			if (!e.hidden) {
 				e.hidden = true; e.textContent = ''; this._endLines = '';
-				// L'écran est vidé : le portrait n'a plus de raison de tourner.
+				// The screen is cleared: the portrait has no reason to keep spinning.
 				this._dropPortrait();
 			}
 			return;
 		}
 		e.hidden = false;
 		e.style.background = `rgba(10, 9, 8, ${blackout})`; // --black (issue #224)
-		// Le DOM n'est reconstruit que quand le texte change : ceci tourne à la
-		// fréquence d'affichage pendant toute la séquence.
+		// The DOM is rebuilt only when the text changes: this runs at display
+		// frequency for the whole sequence.
 		const key = lines.join('\n');
 		if (key !== this._endLines) {
 			this._endLines = key;
@@ -355,7 +377,7 @@ export class FpvtpOsd {
 				// Ni le portrait ni l'empreinte ne sont du texte : ce sont deux
 				// dessins de la machine. Faute d'exemplaire connu, la ligne
 				// retombe sur un blanc — jamais sur son jeton, qui n'est pas
-				// fait pour être lu.
+				// made to be read.
 				if (text === PORTRAIT_LINE) {
 					const node = this._portraitNode();
 					if (node) return node;
@@ -379,17 +401,17 @@ export class FpvtpOsd {
 		if (rates) this.el.rates.textContent = rates;
 		this.el.input.textContent = usingGamepad ? 'GAMEPAD' : 'KEYBOARD';
 		this.el.operator.textContent = `OPERATOR // ${operator ?? '—'}`;
-		// Au banc il n'y a pas de session : la ligne dit ce qu'elle est plutôt
+		// At the bench there is no session: the line says what it is rather
 		// que de compter le temps d'une chose qui n'existe pas. C'est le seul
-		// endroit du HUD où le banc se signale, et il suffit.
+		// place in the HUD where the bench announces itself, and it is enough.
 		//
-		// Une reconnaissance (#206) n'en ouvre pas non plus — rien n'est écrit,
-		// donc écrire SESSION serait un mensonge du HUD sur ce que le vol est en
-		// train de faire. Elle garde son chronomètre : le temps de vol se lit,
-		// même quand il ne s'enregistre nulle part.
+		// A recon flight (#206) does not open one either — nothing is written, so
+		// writing SESSION would be the HUD lying about what the flight is doing.
+		// It keeps its clock: flight time is read even when it is recorded
+		// nowhere.
 		this.el.session.textContent = flightLabel({ bench, live, sessionSeconds });
 
-		// Une seule ligne d'environnement : trois nombres que l'opérateur lit
+		// A single environment line: three numbers the operator reads
 		// d'un coup, pas trois blocs qui se disputent un coin.
 		const parts = [];
 		if (Number.isFinite(windMs) && windMs >= 0.5) {
@@ -399,14 +421,14 @@ export class FpvtpOsd {
 			parts.push('WIND CALM');
 		}
 		if (Number.isFinite(visibilityM)) parts.push(`VIS ${(visibilityM / 1000).toFixed(1)} km`);
-		// LOOPBACK plutôt qu'un RSSI : afficher −41 dBm là où le flux ne
-		// traverse rien serait un chiffre inventé, et ce HUD ne montre que ce
-		// qu'il sait (Bible §2, « Information, not assistance »).
+		// LOOPBACK rather than an RSSI: showing −41 dBm where the feed crosses
+		// nothing would be an invented figure, and this HUD only shows what it
+		// knows (Bible §2, "Information, not assistance").
 		if (bench) parts.push('LINK LOOPBACK');
 		else if (Number.isFinite(rssiDbm)) parts.push(`LINK ${Math.round(rssiDbm)} dBm`);
 		this.el.env.textContent = parts.join(' · ');
-		// Rafraîchi ici aussi pour que le flash de capture (PHASE 16) s'éteigne
-		// de lui-même, sans minuteur séparé : cette fonction tourne déjà à 60 Hz.
+		// Refreshed here too so that the capture flash (PHASE 16) goes out by
+		// itself, without a separate timer: this function already runs at 60 Hz.
 		this._renderPhoto();
 
 		this._frames++;

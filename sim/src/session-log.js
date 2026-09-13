@@ -1,15 +1,16 @@
-// SESSION LOG (PHASE 17, Bible §28 et §30). Écrans client purs :
-// `screen`/`button` de terminal.js, aucune dépendance Three/Rapier. Tout le
-// formatage vit dans tools/session-log-model.mjs — ici, rien que du DOM.
+// SESSION LOG (PHASE 17, Bible §28 and §30). Pure client screens:
+// `screen`/`button` from terminal.js, no Three/Rapier dependency. All the
+// formatting lives in tools/session-log-model.mjs — here, nothing but DOM.
 //
-// terminal.js importe ce module À LA DEMANDE (`await import`), comme il le fait
-// déjà pour le scanner : un import statique fermerait un cycle, puisque ce
-// fichier importe screen/button de terminal.js.
-import { screen, button, backRow, fetchScenes } from './terminal.js';
+// terminal.js imports this module ON DEMAND (`await import`), as it already
+// does for the scanner: a static import would close a cycle, since this file
+// imports screen/button from terminal.js.
+import { screen, button, backRow, fetchScenes, emptyState } from './terminal.js';
 import { menuNav, blockNav } from './menu-nav.js';
 import * as operatorApi from './operator.js';
-// Le portrait est du SVG en ligne (issue #264) : il n'ouvre aucun contexte
-// WebGL, et cet écran reste le client pur qu'annonce l'en-tête.
+import { armConfirm } from './confirm-button.js';
+// The portrait is inline SVG (issue #264): it opens no WebGL context, and this
+// screen stays the pure client its header announces.
 import { dronePortrait } from './drone-portrait.js';
 import { targetLivery } from '../tools/target-build.mjs';
 import { liveryLabel } from '../tools/target-livery.mjs';
@@ -21,9 +22,9 @@ import {
 	SESSION_FILTERS, filterSessions, sessionRow, sessionDetail,
 } from '../tools/session-log-model.mjs';
 
-// Vignettes des captures. `dataUrl` n'existe que sur la réponse de la route
-// dédiée (spec D4) — d'où le garde-fou : une session lue depuis le cache
-// opérateur n'affiche simplement rien.
+// Capture thumbnails. `dataUrl` only exists on the dedicated route's response
+// (spec D4) — hence the guard: a session read from the operator cache simply
+// shows nothing.
 function gallery(photos) {
 	const wrap = document.createElement('div');
 	wrap.className = 'session-shots';
@@ -37,14 +38,15 @@ function gallery(photos) {
 	return wrap;
 }
 
-// La machine, redessinée depuis `family` + `buildSeed` — les deux champs que le
-// serveur persiste en clair sur la session depuis PHASE 07. Rien à migrer :
-// tout l'historique déjà journalisé sait se dessiner. Une session qui n'a ni
-// l'un ni l'autre (chemins dev, override NOMINAL, journaux d'avant la cible)
-// ne rend RIEN — pas un cadre vide qui tiendrait la place.
+// The machine, redrawn from `family` + `buildSeed` — the two fields the server
+// has persisted in clear on the session since PHASE 07. Nothing to migrate:
+// the whole logged history knows how to draw itself. A session that has
+// neither (dev paths, NOMINAL override, logs from before the target) renders
+// NOTHING — not an empty frame holding the space.
 //
-// Rend `null` ou `{ el, stop }` : l'appelant doit garder `stop` et l'appeler en
-// quittant l'écran, sinon le portrait continue de tourner sur un arbre démonté.
+// Returns `null` or `{ el, stop }`: the caller must keep `stop` and call it
+// when leaving the screen, otherwise the portrait keeps spinning on a detached
+// tree.
 function portraitOf(target, { caption = null } = {}) {
 	const p = dronePortrait({ family: target?.family, buildSeed: target?.buildSeed });
 	if (!p) return null;
@@ -59,22 +61,22 @@ function portraitOf(target, { caption = null } = {}) {
 	return { el: wrap, stop: p.stop };
 }
 
-// SESSION LOG (Bible §28). Liste filtrable, curseur ↑/↓, ←/→ change de filtre,
-// Entrée ouvre la fiche, Échap revient — même grammaire que le TARGET SCAN.
-// La grammaire vit dans menu-nav.js (issue #123) : chaque rangée est un vrai
-// bouton, le curseur est le focus natif — cliquable, tabulable, lisible par
-// une aide technique, et pilotable à la manette.
+// SESSION LOG (Bible §28). Filterable list, ↑/↓ cursor, ←/→ changes filter,
+// Enter opens the record, Escape goes back — the same grammar as TARGET SCAN.
+// That grammar lives in menu-nav.js (issue #123): every row is a real button,
+// the cursor is native focus — clickable, tabbable, readable by assistive
+// technology, and drivable with a gamepad.
 //
-// Résout `undefined` (retour au terminal) ou un slug de zone (REVISIT AREA
-// remonté depuis la fiche).
+// Resolves `undefined` (back to the terminal) or an area slug (REVISIT AREA
+// coming back up from the record).
 export function runSessionLog(root, { operator, scenes = null } = {}) {
-	// Plus récent en haut : c'est ce que l'opérateur vient de vivre. Copie
-	// locale, parce qu'une suppression la modifie sans toucher au cache.
+	// Most recent on top: that is what the operator has just lived through. A
+	// local copy, because a deletion changes it without touching the cache.
 	const all = [...(operator?.sessions ?? [])].reverse();
 
 	return new Promise((resolve) => {
 		let filter = 'ALL';
-		let busy = false; // une fiche est ouverte : la liste ne réagit plus
+		let busy = false; // a record is open: the list stops responding
 		let done = false;
 		let nav = null;
 
@@ -89,12 +91,12 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 			resolve(value);
 		};
 
-		// `focusIdx` : la rangée où reposer le curseur après le re-rendu — celle
-		// d'où l'on vient en refermant une fiche, la première sinon.
+		// `focusIdx`: the row to put the cursor back on after the re-render — the
+		// one you came from when closing a record, the first one otherwise.
 		const draw = (focusIdx = 0) => {
 			const list = rows();
-			// createElement plutôt qu'innerHTML, comme le reste de la maison :
-			// c'est ce qui rend l'écran montable sur le faux DOM.
+			// createElement rather than innerHTML, like the rest of the house:
+			// that is what makes the screen mountable on the fake DOM.
 			s.box.replaceChildren();
 			const title = document.createElement('pre');
 			title.textContent = 'SESSION LOG';
@@ -105,9 +107,7 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 			if (list.length) {
 				list.forEach((sess, i) => wrap.appendChild(button(sessionRow(sess), () => openAt(i), 'terminal-row')));
 			} else {
-				const empty = document.createElement('pre');
-				empty.textContent = 'NO SESSIONS MATCH THIS FILTER';
-				wrap.appendChild(empty);
+				wrap.appendChild(emptyState('NO SESSIONS MATCH THIS FILTER'));
 			}
 			s.box.appendChild(wrap);
 
@@ -115,9 +115,9 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 			filters.className = 'terminal-nav';
 			SESSION_FILTERS.forEach((f, i) => {
 				if (i) filters.appendChild(document.createTextNode(' · '));
-				// Le filtre actif s'écrit en vidéo inverse, comme tout état actif du
-				// jeu : entre crochets, il ne se distinguait pas d'une touche
-				// clavier citée dans une aide (keyHints).
+				// The active filter is written in reverse video, like every active
+				// state in the game: in brackets it was indistinguishable from a
+				// keyboard key quoted in a hint (keyHints).
 				const b = button(f, () => {
 					filter = f;
 					draw();
@@ -152,7 +152,7 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 
 		nav = menuNav(s.el, {
 			back: () => finish(undefined),
-			// ←/→ change de filtre où que soit le curseur, comme avant.
+			// ←/→ changes filter wherever the cursor is, as before.
 			onDir: (dir) => {
 				const d = dir === 'right' ? 1 : -1;
 				const i = SESSION_FILTERS.indexOf(filter);
@@ -160,24 +160,26 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 				draw();
 				return true;
 			},
-			focusFirst: false, // draw() place lui-même le curseur
+			focusFirst: false, // draw() places the cursor itself
 		});
 
 		draw();
 	});
 }
 
-// Détail d'une session (Bible §28). Charge la session COMPLÈTE via la route
-// dédiée : c'est le seul endroit du jeu qui rapatrie les images.
+// A session's record (Bible §28). Loads the COMPLETE session through the
+// dedicated route: this is the only place in the game that fetches the images.
 //
-// Résout `undefined` (retour), `{ revisit: slug }` ou `{ deleted: sessionId }`.
+// Resolves `undefined` (back), `{ revisit: slug }` or `{ deleted: sessionId }`.
 export async function runSessionDetail(root, sessionId, { scenes = null } = {}) {
 	const s = screen(root);
-	s.box.innerHTML = '<pre>SESSION\n\nREADING LOG…</pre>';
+	const head = document.createElement('pre');
+	head.textContent = 'SESSION\n\nREADING LOG…';
+	s.box.appendChild(head);
 
-	// Pendant le chargement, cette fiche n'a encore rien à naviguer mais des
-	// écrans restés visibles dessous en ont : bloquer la pile évite qu'une
-	// flèche ou un bouton manette n'agisse derrière READING LOG… (issue #123).
+	// While loading, this record has nothing to navigate yet but screens left
+	// visible underneath do: blocking the stack stops an arrow key or a gamepad
+	// button acting behind READING LOG… (issue #123).
 	const unblock = blockNav(s.el);
 
 	let session = null;
@@ -185,12 +187,12 @@ export async function runSessionDetail(root, sessionId, { scenes = null } = {}) 
 	try { session = await operatorApi.getSession(sessionId); }
 	catch (e) { error = e; }
 
-	// L'écran a pu être démonté pendant la requête.
+	// The screen may have been unmounted during the request.
 	if (!s.el.isConnected) { unblock(); return undefined; }
 
 	if (error) {
 		unblock();
-		s.box.querySelector('pre').textContent = `SESSION\n\nLOG UNREADABLE — ${error.message}`;
+		head.textContent = `SESSION\n\nLOG UNREADABLE — ${error.message}`;
 		return new Promise((resolve) => {
 			const close = () => { nav.detach(); s.remove(); resolve(undefined); };
 			backRow(s.box, close);
@@ -198,8 +200,8 @@ export async function runSessionDetail(root, sessionId, { scenes = null } = {}) 
 		});
 	}
 
-	// REVISIT n'est proposé que si la zone est encore sur disque. `scenes` vaut
-	// `null` quand l'appelant ne l'a pas déjà : on le demande alors nous-mêmes.
+	// REVISIT is only offered if the area is still on disk. `scenes` is `null`
+	// when the caller does not already have it: we then ask for it ourselves.
 	const known = scenes ?? await fetchScenes().catch(() => null);
 	const areaKnown = Array.isArray(known) && known.some((sc) => sc.slug === session.area);
 	if (!s.el.isConnected) { unblock(); return undefined; }
@@ -208,8 +210,8 @@ export async function runSessionDetail(root, sessionId, { scenes = null } = {}) 
 	return new Promise((resolve) => {
 		let done = false;
 		let nav = null;
-		// Tenu ici pour que `finish` puisse le couper : une fiche refermée ne
-		// doit pas laisser une animation tourner sur un arbre démonté.
+		// Held here so that `finish` can stop it: a closed record must not leave
+		// an animation running on a detached tree.
 		let portrait = null;
 		const finish = (value) => {
 			if (done) return;
@@ -220,34 +222,48 @@ export async function runSessionDetail(root, sessionId, { scenes = null } = {}) 
 			resolve(value);
 		};
 
-		s.box.innerHTML = `<pre>${sessionDetail(session)}</pre>`;
-		// La machine avant ses images : la fiche parle de ce qui a volé, les
-		// captures de ce qu'elle a vu.
-		// Sa livrée en légende (issue #284) : le portrait est monochrome — c'est
-		// le terminal — mais la fiche peut DIRE de quelles couleurs était la
-		// machine. Déduite de la graine, comme le portrait : aucune migration.
+		// `sessionDetail()` carries the operator's own note, typed by a player,
+		// and the weather regime, which comes off the wire. Interpolated into
+		// innerHTML that was a stored injection: on a shared server one player's
+		// note renders in another operator's browser, in the origin that holds
+		// their bearer key (src/operator.js). It is text — so it goes in as text.
+		const detail = document.createElement('pre');
+		detail.textContent = sessionDetail(session);
+		s.box.replaceChildren(detail);
+		// The machine before its images: the record speaks of what flew, the
+		// captures of what it saw.
+		// Its livery as a caption (issue #284): the portrait is monochrome — this
+		// is the terminal — but the record can SAY what colours the machine wore.
+		// Derived from the seed, like the portrait: no migration.
 		portrait = portraitOf(session.target, { caption: session.target?.buildSeed ? liveryLabel(targetLivery({ seed: session.target.buildSeed, family: session.target.family })) : null });
 		if (portrait) s.box.appendChild(portrait.el);
 		if (session.photos?.length) s.box.appendChild(gallery(session.photos));
 
 		if (areaKnown) {
-			// REVISIT AREA ne rejoue PAS la session (issue #54) : il rend le slug au
-			// terminal, qui repart par le chemin de vol normal — TARGET SCAN frais,
-			// météo courante, entry state neuf, terrain relu sur disque.
+			// REVISIT AREA does NOT replay the session (issue #54): it hands the
+			// slug back to the terminal, which leaves by the normal flight path —
+			// fresh TARGET SCAN, current weather, new entry state, terrain read
+			// again from disk.
 			s.box.appendChild(button('REVISIT AREA', () => finish({ revisit: session.area }), 'terminal-cta'));
 		}
-		s.box.appendChild(button('DELETE SESSION', async () => {
+		// A session is the only record of a flight, and it was deleted on one
+		// press. Same guard as every other destructive action (#213): the first
+		// press arms the button, the second one deletes, and the arming lapses
+		// on its own if the cursor leaves.
+		const del = button('DELETE SESSION', null, 'terminal-cta');
+		armConfirm(del, async () => {
 			if (done) return;
 			try { await operatorApi.deleteSession(session.id); }
 			catch (e) {
-				console.warn('[session-log] suppression refusée', e);
+				console.warn('[session-log] deletion refused', e);
 				const warn = document.createElement('pre');
 				warn.textContent = `\nDELETE REFUSED — ${e.message}`;
 				s.box.appendChild(warn);
 				return;
 			}
 			finish({ deleted: session.id });
-		}, 'terminal-cta'));
+		});
+		s.box.appendChild(del);
 		backRow(s.box, () => finish(undefined));
 
 		nav = menuNav(s.el, { back: () => finish(undefined) });

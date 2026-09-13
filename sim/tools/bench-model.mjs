@@ -53,9 +53,14 @@ export const MODES = ['field', 'bench', 'data', 'jukebox', 'settings'];
 // dire ce que chaque voie coûte, pas ce qu'elle offre.
 export const MODE_SELECT = {
 	title: 'SELECT OPERATION MODE',
+	// "acquire terrain" was a promise no shipped build can keep: acquisition is
+	// gated behind FPVTP_ACQUIRE=1 (server/auth.mjs), which neither the desktop
+	// app nor `npm run dev` sets, so DRAW BOX never appears anywhere a player
+	// can reach. What FIELD actually offers is the live terrain — find a place
+	// on the map, drop a pin, fly it — and that is what the line now says.
 	field: {
 		label: 'FIELD',
-		lines: ['acquire terrain · find a signal', 'take a machine that is not yours'],
+		lines: ['live terrain · find a signal', 'take a machine that is not yours'],
 	},
 	bench: {
 		label: 'BENCH',

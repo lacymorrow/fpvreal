@@ -10,9 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	CATEGORIES, WEIGHTS, rngFrom, pickCategory, occupancyOf, sampleCandidate,
-	resolveCategory, fallbackCandidate, generateEntryState, insetRect,
+	resolveCategory, capCategory, fallbackCandidate, generateEntryState, insetRect, RANGES,
 } from '../src/entry-state.js';
 import { Geofence } from '../src/geofence.js';
+import { PROFILES } from '../src/drone-profiles.js';
 
 let failures = 0;
 function check(label, ok, detail) {
@@ -128,6 +129,100 @@ check('corridor: fallback to a resting spawn becomes negligible',
 //
 // The bench asks for a category, or for the ground. Everything here must leave
 // the FIELD draw exactly as it was — that is the whole point of checking it.
+
+// ------------------------------------------------------- the keyboard ceiling
+//
+// B4. Bible §20 hands you a machine already in flight and 3 % of the time that
+// means HOLY_SHIT: 25-40 m/s, up to 80 degrees of bank, a metre and a half off
+// the deck. With a proportional stick in your hands that is the intended shock.
+// With four arrow keys — which is what most people arriving on launch day have
+// — it is a crash you were never given the means to avoid.
+//
+// So main.js caps the DRAW for a keyboard-only pilot, and passes nothing at all
+// when a pad is present. Nothing about the gamepad experience changes.
+
+console.log('\nentry-state: the keyboard ceiling on the draw');
+
+{
+	check('the categories are ordered gentlest first', CATEGORIES[0] === 'COMFORTABLE'
+		&& CATEGORIES[CATEGORIES.length - 1] === 'HOLY_SHIT');
+	// The ceiling main.js actually uses. ACTIVE and not COMFORTABLE: angle mode
+	// plus a ramped stick makes 18 m/s at 25 degrees a flight, not a fall, and
+	// a keyboard pilot should still meet the variety the game is about.
+	const capped = CATEGORIES.map((c) => capCategory(c, 'ACTIVE'));
+	check('nothing above ACTIVE survives the cap', capped.every((c) => CATEGORIES.indexOf(c) <= CATEGORIES.indexOf('ACTIVE')),
+		capped.join(' '));
+	check('and what was already gentle is left alone', capCategory('COMFORTABLE', 'ACTIVE') === 'COMFORTABLE');
+	check('the cap is what it says: ACTIVE tops out at 18 m/s, not 40', RANGES.ACTIVE.speedMs[1] === 18
+		&& RANGES.HOLY_SHIT.speedMs[1] === 40);
+	check('and at 25 degrees of bank, not 80', RANGES.ACTIVE.tiltDeg[1] === 25 && RANGES.HOLY_SHIT.tiltDeg[1] === 80);
+}
+
+{
+	// No ceiling (a gamepad) leaves the draw exactly as it was, weight for
+	// weight — this is the property the whole change hangs on.
+	for (const junk of [null, undefined, '', 'COMFY', 0, {}]) {
+		check(`no ceiling (${JSON.stringify(junk)}) changes nothing`,
+			CATEGORIES.every((c) => capCategory(c, junk) === c));
+	}
+	check('an unknown category is passed through rather than clamped to nonsense',
+		capCategory('IDLE', 'ACTIVE') === 'IDLE');
+}
+
+{
+	// The cap must not disturb the random stream: a capped run and an uncapped
+	// run consume the same draws for the same seed, so the sampling that
+	// follows is identical. That is what keeps FIELD-on-a-gamepad bit for bit
+	// what it always was.
+	const a = rngFrom('cap-seed');
+	const b = rngFrom('cap-seed');
+	const raw = Array.from({ length: 200 }, () => resolveCategory(null, a));
+	const capped = Array.from({ length: 200 }, () => capCategory(resolveCategory(null, b), 'ACTIVE'));
+	check('the capped stream is the same draw, only ceilinged',
+		raw.every((c, i) => capped[i] === capCategory(c, 'ACTIVE')));
+	check('and the cap actually bit on that stream',
+		raw.some((c) => CATEGORIES.indexOf(c) > CATEGORIES.indexOf('ACTIVE')));
+}
+
+{
+	// generateEntryState wiring, on a stub Physics that accepts every candidate:
+	// the two safety nets are already checked against a real scene in
+	// tools/selftest.mjs, so here they are simply told to pass and what is under
+	// test is WHICH CATEGORY comes out.
+	const manifest = manifestOf(BBOX);
+	const accepting = () => ({
+		groundBelow: () => 0,
+		obstructionBetween: () => ({ blocked: false, span: 0 }),
+		applyEntryState() {},
+		world: { timestep: 1 / 250 },
+		rotation: { x: 0, y: 0, z: 0, w: 1 },
+		angularVelocity: { x: 0, y: 0, z: 0 },
+		position: { x: 0, y: 20, z: 0 },
+		velocity: { x: 0, y: 0, z: 0 },
+		// rolloutSafe builds a real FlightController from this and steps it; an
+		// impact of 0 is "nothing was hit", which is what a stub scene is.
+		profile: PROFILES.freestyle5,
+		step: () => 0,
+	});
+	// 200 draws is enough that HOLY_SHIT (3 %) would appear several times.
+	const seeds = Array.from({ length: 200 }, (_, i) => `cap-wire-${i}`);
+	const uncapped = seeds.map((seed) => generateEntryState({ physics: accepting(), manifest, seed }).category);
+	const capped = seeds.map((seed) => generateEntryState({ physics: accepting(), manifest, seed, maxCategory: 'ACTIVE' }).category);
+	check('without a ceiling the hairy categories still come up',
+		uncapped.some((c) => CATEGORIES.indexOf(c) > CATEGORIES.indexOf('ACTIVE')),
+		uncapped.filter((c) => CATEGORIES.indexOf(c) > CATEGORIES.indexOf('ACTIVE')).length + ' of 200');
+	check('with the ceiling, none of them do',
+		capped.every((c) => CATEGORIES.indexOf(c) <= CATEGORIES.indexOf('ACTIVE')));
+	check('and the gentle draws are the SAME draws, seed for seed',
+		uncapped.every((c, i) => capped[i] === capCategory(c, 'ACTIVE')));
+	// A forced category is a REQUEST, not a draw: asking for HOLY_SHIT at the
+	// bench is the whole reason that control exists, and a ceiling must not
+	// quietly overrule it.
+	const forced = generateEntryState({ physics: accepting(), manifest, seed: 'f', category: 'HOLY_SHIT', maxCategory: 'COMFORTABLE' });
+	check('a forced category is never capped', forced.category === 'HOLY_SHIT', forced.category);
+	const idle = generateEntryState({ physics: accepting(), manifest, seed: 'x', idle: true, maxCategory: 'COMFORTABLE' });
+	check('IDLE is still IDLE with a ceiling set', idle.category === 'IDLE');
+}
 
 console.log('\nentry-state: bench overrides');
 

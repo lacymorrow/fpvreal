@@ -1,38 +1,45 @@
-// Le geste de confirmation du terminal (issue #213).
+// The terminal's confirmation gesture (issue #213).
 //
-// La Bible §44 refuse l'UI de navigateur : un `confirm()` est une modale
-// système, elle casse la fiction du terminal et ne se navigue ni au clavier du
-// jeu ni à la manette. Mais une action destructrice ne peut pas non plus partir
-// sur une seule pression distraite. #211 a posé la réponse pour l'acquisition,
-// et c'est celle-ci qu'on généralise :
+// Bible §44 refuses browser UI: a `confirm()` is a system modal, it breaks the
+// terminal fiction and it navigates neither with the game's keyboard nor with
+// a gamepad. But a destructive action cannot fire on a single distracted press
+// either. #211 laid down the answer for acquisition, and this generalises it:
 //
-//     [ REMOVE TERRAIN ]  →  [ REMOVE TERRAIN — CONFIRM ]  →  fait
+//     [ REMOVE TERRAIN ]  →  [ REMOVE TERRAIN — CONFIRM ]  →  done
 //
-// La deuxième pression EST la confirmation. L'armement retombe tout seul :
-// après TIMEOUT_MS, ou dès que le curseur quitte le bouton — sans quoi un
-// bouton armé attendrait indéfiniment la pression suivante, qui pourrait
-// arriver pour une tout autre raison.
+// The second press IS the confirmation. Arming lapses on its own: after
+// TIMEOUT_MS, or as soon as the cursor leaves the button — otherwise an armed
+// button would wait forever for the next press, which could arrive for a
+// completely unrelated reason.
 //
-// La logique de décision est pure et testée sans DOM (tools/confirm-selftest.mjs) :
-// `nextConfirmState` dit ce qu'une pression doit produire, `armConfirm` se
-// contente de la câbler sur un vrai bouton.
+// The decision logic is pure and tested without a DOM (tools/confirm-selftest.mjs):
+// `nextConfirmState` says what a press must produce, `armConfirm` only wires it
+// onto a real button.
 
 export const CONFIRM_TIMEOUT_MS = 4000;
 
-export const confirmLabel = (label) => `${label} — CONFIRM`;
+// The brackets belong to the CTA and enclose the WHOLE label (src/screen.js):
+// `[ REMOVE TERRAIN — CONFIRM ]`, never `[ REMOVE TERRAIN ] — CONFIRM`, which
+// would read as a bracketed button followed by a loose word. A label without
+// brackets — an inline link — simply takes the suffix.
+const BRACKETED = /^\[\s([\s\S]*)\s\]$/;
+export const confirmLabel = (label) => {
+	const inner = String(label).match(BRACKETED);
+	return inner ? `[ ${inner[1]} — CONFIRM ]` : `${label} — CONFIRM`;
+};
 
-// L'automate, en une fonction. `armed` est l'état courant du bouton ; le
-// retour dit l'état suivant et si l'action doit partir maintenant.
+// The state machine, in one function. `armed` is the button's current state;
+// the return says the next state and whether the action must fire now.
 export function nextConfirmState(armed) {
 	return armed ? { armed: false, fire: true } : { armed: true, fire: false };
 }
 
-// Câble le geste sur un bouton existant.
-// - `button` : l'élément. Son libellé courant devient le libellé neutre.
-// - `onConfirm` : appelé à la DEUXIÈME pression seulement. Peut être async ;
-//   le bouton reste désarmé pendant, et un rejet ne le laisse pas armé.
-// - `timeoutMs` : retour à l'état neutre sans nouvelle pression.
-// Rend une fonction qui désarme et détache les écouteurs de retombée.
+// Wires the gesture onto an existing button.
+// - `button`: the element. Its current label becomes the neutral label.
+// - `onConfirm`: called on the SECOND press only. May be async; the button
+//   stays disarmed meanwhile, and a rejection does not leave it armed.
+// - `timeoutMs`: return to the neutral state without a further press.
+// Returns a function that disarms and detaches the lapse listeners.
 export function armConfirm(button, onConfirm, { timeoutMs = CONFIRM_TIMEOUT_MS } = {}) {
 	const neutral = button.textContent;
 	let armed = false;
@@ -60,8 +67,8 @@ export function armConfirm(button, onConfirm, { timeoutMs = CONFIRM_TIMEOUT_MS }
 	};
 
 	button.addEventListener('click', onClick);
-	// Quitter le bouton le désarme : au curseur comme au focus, parce que la
-	// navigation du terminal se fait aux flèches autant qu'à la souris.
+	// Leaving the button disarms it: with the cursor as with the focus, because
+	// the terminal is navigated with the arrow keys as much as with the mouse.
 	button.addEventListener('mouseleave', disarm);
 	button.addEventListener('blur', disarm);
 

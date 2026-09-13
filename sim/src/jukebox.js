@@ -1,26 +1,26 @@
-// L'écran JUKEBOX (issue #120). Une VUE sur src/radio.js, rien de plus : il
-// s'abonne, il repeint, et il ne possède jamais la lecture. Fermer cet écran
-// n'arrête pas la radio — c'est tout l'intérêt de la fonctionnalité.
+// The JUKEBOX screen (issue #120). A VIEW onto src/radio.js, nothing more: it
+// subscribes, it repaints, and it never owns playback. Closing this screen does
+// not stop the radio — that is the whole point of the feature.
 //
-// Même grammaire que src/session-log.js : une liste de vrais boutons, le
-// curseur EST le focus natif, Échap remonte. Deux différences assumées :
+// Same grammar as src/session-log.js: a list of real buttons, the cursor IS
+// native focus, Escape goes back up. Two deliberate differences:
 //
 //   1. ←/→ pilotent la TRANSPORT et non le filtre. C'est l'idiome radio, et
-//      c'est ce que « comme une radio » veut dire. Le filtre de pool reste une
-//      rangée de boutons qu'on atteint au curseur.
-//   2. draw() et paint() sont séparés. L'enchaînement automatique survient
-//      pendant que l'opérateur parcourt la liste : un replaceChildren() à cet
-//      instant lui arracherait le curseur des mains en plein défilement. paint()
-//      ne réécrit que du texte.
-import { screen, button, keyHints } from './terminal.js';
+//      that is what "like a radio" means. The pool filter stays a row of
+//      buttons reached with the cursor.
+//   2. draw() and paint() are separate. The automatic hand-over happens while
+//      the operator is scrolling the list: a replaceChildren() at that moment
+//      would tear the cursor out of their hands mid-scroll. paint() only
+//      rewrites text.
+import { screen, button, keyHints, emptyState } from './terminal.js';
 import { menuNav } from './menu-nav.js';
 import { radio } from './radio.js';
 import {
 	libraryFilters, filterLibrary, jukeboxRow, nowPlayingLine, librarySummary,
 } from '../tools/jukebox-model.mjs';
 
-// Résout quand on remonte au choix de voie. Ne rend rien : il n'y a rien à
-// rapporter d'une écoute.
+// Resolves when going back up to the mode choice. Returns nothing: there is
+// nothing to report from listening.
 export function runJukebox(root) {
 	return new Promise((resolve) => {
 		let done = false;
@@ -39,17 +39,17 @@ export function runJukebox(root) {
 			if (done) return;
 			done = true;
 			nav?.detach();
-			// Sans ce désabonnement, la fermeture laisserait un rappel retenir un
-			// arbre DOM détaché pour le reste de la session.
+			// Without this unsubscribe, closing would leave a callback holding a
+			// detached DOM tree for the rest of the session.
 			off();
 			s.remove();
 			resolve();
 		};
 
-		// À l'antenne : c'est la radio qui le sait, pas l'écran.
+		// On air: the radio knows it, the screen does not.
 		const onAir = (track) => radio.owns && radio.current?.id === track.id;
 
-		// Ne réécrit QUE du texte — aucun nœud n'est créé ni remplacé.
+		// Rewrites ONLY text — no node is created or replaced.
 		const paint = () => {
 			if (done) return;
 			if (nowEl) nowEl.textContent = nowPlayingLine(radio.owns ? radio.current : null);
@@ -73,8 +73,8 @@ export function runJukebox(root) {
 			summary.textContent = librarySummary(library);
 			s.box.appendChild(summary);
 
-			// terminal-log porte déjà le niveau DATA et les chiffres tabulaires :
-			// la ligne d'antenne s'aligne sur les rangées sans une règle de plus.
+			// terminal-log already carries the DATA level and tabular figures: the
+			// on-air line lines up with the rows without one more rule.
 			nowEl = document.createElement('pre');
 			nowEl.className = 'terminal-log';
 			s.box.appendChild(nowEl);
@@ -85,16 +85,14 @@ export function runJukebox(root) {
 				shown.forEach((track, i) => {
 					wrap.appendChild(button(
 						jukeboxRow(track, { playing: onAir(track) }),
-						// La liste AFFICHÉE devient la programmation : filtrer sur
+						// The DISPLAYED list becomes the programme: filtering on
 						// RACE5 puis lancer donne une radio race5.
 						() => { radio.playAt(i, shown).catch(() => {}); },
 						'terminal-row',
 					));
 				});
 			} else {
-				const empty = document.createElement('pre');
-				empty.textContent = library.length ? 'NO TRACK IN THIS POOL' : 'NO MUSIC LIBRARY';
-				wrap.appendChild(empty);
+				wrap.appendChild(emptyState(library.length ? 'NO TRACK IN THIS POOL' : 'NO MUSIC LIBRARY'));
 			}
 			s.box.appendChild(wrap);
 			rowEls = wrap.querySelectorAll('.terminal-row');
@@ -104,9 +102,9 @@ export function runJukebox(root) {
 			libraryFilters(library).forEach((f, i) => {
 				if (i) filters.appendChild(document.createTextNode(' · '));
 				const label = f.toUpperCase();
-				// Le filtre actif s'écrit en vidéo inverse, comme tout état actif du
-				// jeu. Il se lisait entre crochets — typographiquement identique à
-				// une touche clavier citée dans une aide (keyHints).
+				// The active filter is written in reverse video, like every active
+				// state in the game. It used to read in brackets — typographically
+				// identical to a keyboard key quoted in a hint (keyHints).
 				const b = button(label, () => {
 					filter = f;
 					draw();
@@ -127,8 +125,8 @@ export function runJukebox(root) {
 			s.box.appendChild(transport);
 
 			s.box.appendChild(button('BACK', () => finish(), 'terminal-cta'));
-			// Le JUKEBOX est directement sous la racine : Échap y remonte, et il le
-			// dit — comme le banc (src/bench.js).
+			// The JUKEBOX sits directly under the root: Escape goes back up there,
+			// and it says so — like the bench (src/bench.js).
 			s.box.appendChild(keyHints([['ESC', 'OPERATION MODE'], ['←/→', 'PREV / NEXT']]));
 
 			paint();
@@ -137,22 +135,22 @@ export function runJukebox(root) {
 
 		nav = menuNav(s.el, {
 			back: () => finish(),
-			// La transport, où que soit le curseur.
+			// The transport controls, wherever the cursor is.
 			onDir: (dir) => {
 				if (dir === 'right') radio.next().catch(() => {});
 				else if (dir === 'left') radio.prev().catch(() => {});
 				else return false;
 				return true;
 			},
-			focusFirst: false,   // draw() place lui-même le curseur
+			focusFirst: false,   // draw() places the cursor itself
 		});
 
 		off = radio.onChange(paint);
 
 		draw();
-		// La bibliothèque est presque toujours déjà là (la musique de menu a
-		// chargé le manifeste au premier geste) : ready() est mémoïsé et rend la
-		// main dans une microtâche. Le premier draw() évite l'écran vide dans le
+		// The library is almost always already there (the menu music loaded the
+		// manifest on the first gesture): ready() is memoised and hands back in a
+		// microtask. The first draw() avoids the empty screen in the
 		// cas contraire.
 		radio.ready().then((lib) => {
 			if (done) return;

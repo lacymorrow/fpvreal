@@ -17,6 +17,12 @@
 //
 // Routes that reach the network or start a terrain extraction (/plan, /probe,
 // POST /jobs) are deliberately out: fuzzing them would fuzz Google's servers.
+//
+// Two targets:
+//   http            one malformed request at a time (the four invariants above);
+//   http-concurrent a burst of them at once, because the operator file is read,
+//                   mutated and rewritten whole by every write route — the
+//                   interleaving is a shape a single-request target never sees.
 
 import fs from 'node:fs';
 import os from 'node:os';
@@ -101,8 +107,55 @@ const ROUTES = [
 	['GET', '/__map-api/providers'],
 	['GET', '/__map-api/jobs'],
 	['POST', '/__map-api/describe', () => ({ bbox: { south: 48.85, west: 2.29, north: 48.86, east: 2.30 }, zoom: 20 })],
+	// The other half of /describe: a hand-drawn trace. requirePoly() is the gate
+	// and this is what gets past it — the ring is kept SMALL on purpose, because
+	// what a big one costs is a finding of its own (tools/fuzz.mjs, map-poly-cost)
+	// and provoking it here would only hang this fuzzer.
+	['POST', '/__map-api/describe', () => ({ poly: [48.85, 2.29, 48.855, 2.295, 48.851, 2.30], zoom: 20 })],
 	['DELETE', '/__map-api/scenes/tour-eiffel'],
+	// The static half of the server (server/static.mjs). It is the only place a
+	// request path becomes a filesystem path, so it is where a traversal would
+	// land if one ever got through.
+	['GET', '/'],
+	['GET', '/scenes.json'],
+	['GET', '/scenes/{scene}/manifest.json'],
+	['GET', '/{stray}'],
 ];
+
+// A path segment aimed at the filesystem. The percent-encoding matters: a
+// literal `../` is folded away by fetch()'s own URL normalisation long before
+// the server sees it, so the only traversal that actually arrives is an encoded
+// one — plus the encodings a decoder might unfold twice.
+const TRAVERSALS = [
+	'..', '../..', '%2e%2e', '%2e%2e%2f%2e%2e%2fetc%2fpasswd',
+	'%252e%252e%252f', '..%c0%af..%c0%afetc%2fpasswd', '....//....//etc/passwd',
+	'%2e%2e%5c%2e%2e%5cwindows', '/etc/passwd', 'operator-state%2fneo-0000.json',
+	'..%00/etc/passwd', 'a%2f..%2f..%2f..%2fpackage.json',
+	'\\..\\..\\package.json', '.git/config', 'node_modules/.bin/vite',
+];
+
+// Headers a proxy, a crawler or a crafted page really sends. `x-forwarded-for`
+// is the one that matters: auth.mjs reads it to rate-limit signup in `shared`.
+function someHeaders(r, contentType) {
+	const h = { 'content-type': contentType };
+	if (chance(r, 0.6)) return h;
+	const add = pick(r, [
+		['x-forwarded-for', pick(r, ['1.2.3.4', '1.2.3.4, 5.6.7.8', 'x'.repeat(4000), '::1', '', 'not an address'])],
+		['origin', pick(r, ['https://evil.example', 'null', 'http://localhost:5173', 'x'.repeat(2000)])],
+		['referer', 'https://evil.example/page'],
+		['accept', pick(r, ['*/*', 'text/html', 'x'.repeat(4000)])],
+		['accept-encoding', pick(r, ['gzip', 'br, gzip;q=0.1', 'x'.repeat(2000)])],
+		['range', pick(r, ['bytes=0-1', 'bytes=-99999999999', 'bytes=0-0,1-1,2-2', 'bytes=abc'])],
+		['content-length', pick(r, ['0', '999999999', '-1'])],
+		['user-agent', 'A'.repeat(int(r, 1, 6) * 1000)],
+		['cookie', `fpvtp=${'A'.repeat(int(r, 1, 4) * 1000)}`],
+		['x-fpvtp-key', pick(r, ['', '../..', 'A'.repeat(3000)])],
+	]);
+	// content-length is computed by fetch(); overriding it is refused by undici
+	// rather than sent, so it is dropped instead of failing the case.
+	if (add[0] !== 'content-length') h[add[0]] = add[1];
+	return h;
+}
 
 const METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'];
 
@@ -156,68 +209,143 @@ function leakIn(text) {
 	return null;
 }
 
-const target = {
-	name: 'http',
-	gen(r) {
-		const [method, template, good] = pick(r, ROUTES);
-		return {
-			method: chance(r, 0.8) ? method : pick(r, METHODS),
-			path: template.replace('{op}', someId(r, OP)).replace('{sid}', someId(r, SID)),
-			query: chance(r, 0.75) ? '' : `?${pick(r, ['limit=-1', 'limit=1e9', 'lat=NaN&lon=NaN', 'day=../..', 'a'.repeat(2000), 'zoom=99'])}`,
-			body: someBody(r, good),
-			contentType: chance(r, 0.8) ? 'application/json' : pick(r, ['text/plain', 'application/x-www-form-urlencoded', '', 'application/json; charset=utf-16']),
-		};
-	},
-	async check({ method, path: p, query, body, contentType }) {
-		const sendable = method !== 'GET' && method !== 'HEAD' && body !== undefined;
-		let res;
-		try {
-			res = await fetch(base + p + query, {
-				method,
-				headers: sendable ? { 'content-type': contentType } : undefined,
-				body: sendable ? body : undefined,
-			});
-		} catch (err) {
-			// No exception any more: an oversized body gets a 413 before the
-			// socket goes (#84). A dead connection is always a finding.
-			return `the connection died instead of answering (${err?.cause?.code ?? err.message})`;
-		}
-		if (res.status >= 500) {
-			return `HTTP ${res.status} — ${(await res.text()).slice(0, 200)}`;
-		}
-		const text = await res.text();
-		if (method !== 'HEAD' && text.length > 0) {
+// An API answer must be JSON. A STATIC answer must not be — it is index.html,
+// a manifest or a binary — so the two are told apart by prefix rather than
+// being held to one rule that only fits half of them.
+const isApi = (p) => p.startsWith('/__');
+
+// The four invariants, applied to one exchange. Shared by both targets.
+async function inspect({ method, path: p, query, body, contentType, headers }) {
+	const sendable = method !== 'GET' && method !== 'HEAD' && body !== undefined;
+	let res;
+	try {
+		res = await fetch(base + p + query, {
+			method,
+			headers: headers ?? (sendable ? { 'content-type': contentType } : undefined),
+			body: sendable ? body : undefined,
+		});
+	} catch (err) {
+		// No exception any more: an oversized body gets a 413 before the
+		// socket goes (#84). A dead connection is always a finding.
+		return `the connection died instead of answering (${err?.cause?.code ?? err.message})`;
+	}
+	if (res.status >= 500) {
+		return `HTTP ${res.status} — ${(await res.text()).slice(0, 200)}`;
+	}
+	const text = await res.text();
+	if (method !== 'HEAD' && text.length > 0) {
+		if (isApi(p)) {
 			let parsed;
 			try { parsed = JSON.parse(text); } catch {
 				return `answered ${res.status} with something that is not JSON: ${text.slice(0, 120)}`;
 			}
 			const leak = leakIn(JSON.stringify(parsed));
 			if (leak) return `the answer leaks ${leak}: ${text.slice(0, 200)}`;
+		} else {
+			// The static half has one job here: never hand back a file, or a
+			// path, from outside what it is allowed to serve.
+			const leak = leakIn(text);
+			if (leak) return `a static answer leaks ${leak}: ${text.slice(0, 200)}`;
+			if (/-----BEGIN |"dependencies"\s*:|\broot:x:0:0\b/.test(text)) return `a static answer served a file it should not: ${text.slice(0, 200)}`;
 		}
-		// Still alive, still readable: the operator file survives whatever that
-		// request was, and it is still the JSON the next boot will parse.
-		const after = await fetch(`${base}/__operator/${OP}`);
-		if (after.status !== 200) return `a known-good read broke after this request: HTTP ${after.status}`;
-		try { await after.json(); } catch { return 'the operator no longer reads back as JSON'; }
-		// Nothing may appear outside the operator directory.
-		const stray = fs.readdirSync(DIR).filter((f) => !['operator-state', 'dist', 'scenes', 'scenes.json', 'cache'].includes(f));
-		if (stray.length) return `the request created ${stray.join(', ')} in the data directory`;
-		if (({}).polluted !== undefined) return 'a request body polluted Object.prototype';
+	}
+	return null;
+}
+
+// Still alive, still readable: the operator file survives whatever those
+// requests were, and it is still the JSON the next boot will parse.
+async function stillStanding() {
+	const after = await fetch(`${base}/__operator/${OP}`);
+	if (after.status !== 200) return `a known-good read broke after this request: HTTP ${after.status}`;
+	try { await after.json(); } catch { return 'the operator no longer reads back as JSON'; }
+	// Nothing may appear outside the operator directory.
+	const stray = fs.readdirSync(DIR).filter((f) => !['operator-state', 'dist', 'scenes', 'scenes.json', 'cache'].includes(f));
+	if (stray.length) return `the request created ${stray.join(', ')} in the data directory`;
+	if (({}).polluted !== undefined) return 'a request body polluted Object.prototype';
+	return null;
+}
+
+function someRequest(r) {
+	const [method, template, good] = pick(r, ROUTES);
+	return {
+		method: chance(r, 0.8) ? method : pick(r, METHODS),
+		path: template
+			.replace('{op}', someId(r, OP))
+			.replace('{sid}', someId(r, SID))
+			.replace('{scene}', chance(r, 0.5) ? 'tour-eiffel' : encodeURIComponent(pick(r, TRAVERSALS)))
+			.replace('{stray}', chance(r, 0.5) ? pick(r, TRAVERSALS) : encodeURIComponent(pick(r, TRAVERSALS))),
+		query: chance(r, 0.75) ? '' : `?${pick(r, ['limit=-1', 'limit=1e9', 'lat=NaN&lon=NaN', 'day=../..', 'a'.repeat(2000), 'zoom=99'])}`,
+		body: someBody(r, good),
+		contentType: chance(r, 0.8) ? 'application/json' : pick(r, ['text/plain', 'application/x-www-form-urlencoded', '', 'application/json; charset=utf-16', 'multipart/form-data; boundary=--x']),
+		headers: someHeaders(r, chance(r, 0.8) ? 'application/json' : 'text/plain'),
+	};
+}
+
+const targets = [
+
+{
+	name: 'http',
+	gen: (r) => someRequest(r),
+	async check(input) {
+		return (await inspect(input)) ?? (await stillStanding());
+	},
+},
+
+{
+	name: 'http-concurrent',
+	// Every write route does read-modify-write on ONE operator file: _readOperator,
+	// mutate, _writeOperator, the whole document each time. A single-request
+	// target can never see what two of those do when they overlap — a lost
+	// session, a half-written file, a sessionSeq handed out twice. Requests are
+	// fired together and awaited together, which is what a client that opened
+	// two tabs, or a reconnecting one replaying its queue, really does.
+	gen(r) {
+		return Array.from({ length: int(r, 2, 8) }, () => someRequest(r));
+	},
+	async check(reqs) {
+		if (!Array.isArray(reqs) || reqs.length === 0) return null;
+		const verdicts = await Promise.all(reqs.map((q) => inspect(q).catch((e) => `the burst threw: ${e?.message}`)));
+		const bad = verdicts.find(Boolean);
+		if (bad) return bad;
+		const standing = await stillStanding();
+		if (standing) return standing;
+		// Ids are the operator file's only unique keys. Two concurrent writers
+		// that both read the same seq hand out the same one, and the second
+		// flight silently overwrites the first.
+		const after = await (await fetch(`${base}/__operator/${OP}`)).json();
+		const sessions = after?.operator?.sessions ?? [];
+		const ids = sessions.map((x) => x.id);
+		if (new Set(ids).size !== ids.length) return `the operator file holds a duplicate session id after a burst: ${ids.length - new Set(ids).size} collision(s)`;
+		const seqs = sessions.map((x) => x.seq).filter((n) => Number.isInteger(n));
+		if (new Set(seqs).size !== seqs.length) return `two sessions were given the same seq: ${seqs.join(', ')}`;
 		return null;
 	},
-};
+},
 
-console.log(`fuzz-api: ${cases} requests, seed 0x${seed.toString(16)}, data in ${DIR}\n`);
+];
 
-const result = await runTargetAsync(target, { cases, seed, verbose });
-console.log(`  ${result.failures.length === 0 ? ' ok ' : 'FAIL'}  http  ${result.ms} ms`);
-for (const f of result.failures) {
-	console.log(`        ${f.kind}: ${f.detail}`);
-	console.log(`        seen in ${f.count ?? 1} case(s), smallest input (case ${f.case}):`);
-	console.log(`          ${pretty(f.input)}`);
+const only = flagOf('only', null);
+const chosen = only ? targets.filter((t) => t.name === only) : targets;
+if (chosen.length === 0) { console.error(`unknown target "${only}" — try http or http-concurrent`); process.exit(2); }
+
+console.log(`fuzz-api: ${cases} cases per target, seed 0x${seed.toString(16)}, data in ${DIR}\n`);
+
+let failed = 0;
+for (const target of chosen) {
+	// A burst is several requests, so it gets proportionally fewer cases: the
+	// point is the interleaving, not the request count.
+	const n = target.name === 'http-concurrent' ? Math.max(20, Math.round(cases / 4)) : cases;
+	const result = await runTargetAsync(target, { cases: n, seed, verbose });
+	console.log(`  ${result.failures.length === 0 ? ' ok ' : 'FAIL'}  ${target.name.padEnd(16)} ${String(result.ms).padStart(6)} ms`);
+	for (const f of result.failures) {
+		failed++;
+		console.log(`        ${f.kind}: ${f.detail}`);
+		console.log(`        seen in ${f.count ?? 1} case(s), smallest input (case ${f.case}):`);
+		console.log(`          ${pretty(f.input)}`);
+	}
 }
 
 await started.close?.();
 fs.rmSync(DIR, { recursive: true, force: true });
-console.log(`\n${result.failures.length === 0 ? 'no findings' : `${result.failures.length} finding(s)`} — replay with --seed 0x${seed.toString(16)} --cases ${cases}`);
-process.exit(result.failures.length === 0 ? 0 : 1);
+console.log(`\n${failed === 0 ? 'no findings' : `${failed} finding(s)`} — replay with --seed 0x${seed.toString(16)} --cases ${cases}`);
+process.exit(failed === 0 ? 0 : 1);

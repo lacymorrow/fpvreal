@@ -308,6 +308,12 @@ t('sérialisation : rien de ce qui est stocké ne dit qu\'un vol a eu lieu', () 
 t('MODE_SELECT : cinq voies, nommées, en anglais', () => {
 	assert.deepEqual(MODES, ['field', 'bench', 'data', 'jukebox', 'settings']);
 	assert.equal(MODE_SELECT.field.label, 'FIELD');
+	// FIELD must not offer to acquire terrain: acquisition is closed in every
+	// distributed build (server/auth.mjs needs FPVTP_ACQUIRE=1, which nothing
+	// shipped sets), so the old wording sent a first-time player looking for a
+	// button that does not exist. The line names the live terrain instead.
+	assert.deepEqual(MODE_SELECT.field.lines, ['live terrain · find a signal', 'take a machine that is not yours']);
+	assert.ok(!/acquire/i.test(MODE_SELECT.field.lines.join(' ')), 'FIELD ne promet pas une acquisition fermee');
 	assert.equal(MODE_SELECT.bench.label, 'BENCH');
 	// Issue #26 : ARCHIVE est devenu DATA, et la copie dit ce qu'on y lit —
 	// des relevés de vol, pas une promesse de progression.

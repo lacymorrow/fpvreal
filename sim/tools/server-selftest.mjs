@@ -263,12 +263,70 @@ try {
 	check('une route d\'API inconnue rend 404 JSON, pas un fichier',
 		unknown.status === 404 && unknown.type.includes('json'));
 
+	// --- the ceiling on how much work one zone may ask for --------------------
+	//
+	// requireBox/requirePoly bound the shape, not its size: a legal ring is up
+	// to 180° x 170°, and polygonGrid then walks cols x rows. On a
+	// single-process server those seconds are seconds nobody else is served.
+	// The gate must refuse BEFORE allocating, so the refusal is also fast.
+	const postApi = (p, b) => fetch(base + '/__map-api' + p, {
+		method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(b),
+	});
+	const square = (lat, lon, deg) => [lat, lon, lat + deg, lon, lat + deg, lon + deg, lat, lon + deg];
+
+	{
+		const t0 = Date.now();
+		const huge = await postApi('/describe', { poly: square(0, 0, 4), zoom: 20 });
+		const ms = Date.now() - t0;
+		const body = await huge.json();
+		check('describe: a 4° ring at zoom 20 is refused, not computed',
+			huge.status === 400 && /zone too large/.test(body.error ?? ''));
+		// The message has to say what the limit IS: "too large" alone leaves the
+		// caller guessing how much to shrink by.
+		check('… and the refusal names both the count and the limit',
+			/135,862,311 tiles/.test(body.error ?? '') && /4,000,000/.test(body.error ?? ''));
+		check('… and it refuses fast (no grid was allocated)', ms < 1000);
+
+		// Same ceiling on the bbox shape, and on the three other routes.
+		check('describe: the bbox shape is bounded too',
+			(await postApi('/describe', { bbox: { south: 0, west: 0, north: 8, east: 8 }, zoom: 20 })).status === 400);
+		check('plan: bounded before it can fan out to the provider',
+			(await postApi('/plan', { poly: square(0, 0, 4), zoom: 20 })).status === 400);
+		check('probe: bounded before it can fan out to the provider',
+			(await postApi('/probe', { poly: square(0, 0, 4), zoom: 20 })).status === 400);
+		// /jobs is gated by acquireEnabled first, so it answers 403 here rather
+		// than 400 — what matters is that it does not do the work either.
+		check('jobs: an oversized zone never reaches startJob',
+			[400, 403].includes((await postApi('/jobs', { name: 'x', poly: square(0, 0, 4), zoom: 20 })).status));
+	}
+
+	{
+		// The zones that actually exist must be untouched. `add-map --radius 25`
+		// is 51 x 51 tiles; radius 35 is 71 x 71. Both are far below the ceiling
+		// and must still come back with their mask.
+		const ok = await postApi('/describe', { poly: square(48.85, 2.29, 0.0113), zoom: 20 });
+		const body = await ok.json();
+		check('describe: a real zone (~1.25 km, the add-map default) still passes',
+			ok.status === 200 && body.grid.cols * body.grid.rows < 4_000_000);
+		check('… and still carries its mask, so the staircase is still drawn',
+			Array.isArray(body.grid.keep) && body.grid.keep.length === body.grid.cols * body.grid.rows);
+
+		// Below the ceiling but far past anything drawable: the mask is dropped
+		// rather than shipped, and the client falls back to the bounding box.
+		// The figures on the rail come from `masked`/`columns`, which stay.
+		const wide = await postApi('/describe', { poly: square(48.85, 2.29, 0.36), zoom: 20 });
+		const wideBody = await wide.json();
+		check('describe: a zone past the mask ceiling drops keep, keeps the figures',
+			wide.status === 200 && wideBody.grid.keep === undefined
+			&& Number.isFinite(wideBody.grid.masked) && Number.isFinite(wideBody.grid.columns));
+	}
+
 	const notAllowed = await fetch(base + '/scenes.json', { method: 'DELETE' });
 	check('une méthode non supportée sur un fichier rend 405 JSON',
 		notAllowed.status === 405 && (notAllowed.headers.get('content-type') ?? '').includes('json'));
 
 	// --- le garde-fou réseau ---------------------------------------------------
-	assert.throws(() => resolveOptions({ host: '0.0.0.0' }), /refusé en mode local/);
+	assert.throws(() => resolveOptions({ host: '0.0.0.0' }), /refused in local mode/);
 	check('resolveOptions refuse --host 0.0.0.0 en mode local', true);
 	check('… et l\'accepte avec --mode shared',
 		resolveOptions({ host: '0.0.0.0', mode: 'shared' }).host === '0.0.0.0');
@@ -281,13 +339,13 @@ try {
 		cwd: SIM_ROOT, encoding: 'utf8', env: { ...process.env, FPVTP_DATA_DIR: DATA },
 	});
 	check('node server/index.mjs --host 0.0.0.0 : sort en erreur, message explicite',
-		refused.status === 1 && /refusé en mode local/.test(refused.stderr));
+		refused.status === 1 && /refused in local mode/.test(refused.stderr));
 
 	const badOption = spawnSync(process.execPath, ['server/index.mjs', '--nope'], {
 		cwd: SIM_ROOT, encoding: 'utf8', env: { ...process.env, FPVTP_DATA_DIR: DATA },
 	});
 	check('une option inconnue sort en erreur au lieu de démarrer',
-		badOption.status === 2 && /option inconnue/.test(badOption.stderr));
+		badOption.status === 2 && /unknown option/.test(badOption.stderr));
 
 	// ================= issue #79: where the request comes FROM =================
 	//
@@ -350,7 +408,7 @@ try {
 	// catalogue is what stops the request. The `shared` 403 is further down.
 	const gone = await rawLocal(`/__map-api/scenes/${SLUG}`, { method: 'DELETE' });
 	check('local: DELETE /__map-api/scenes/<slug> is not gated — 404, empty catalogue',
-		gone.status === 404 && /aucune carte/.test(gone.body.error ?? ''));
+		gone.status === 404 && /no map/.test(gone.body.error ?? ''));
 	check('local: DELETE /__map-api/jobs/<id> neither — 404, unknown job',
 		(await rawLocal('/__map-api/jobs/00000000-0000-0000-0000-000000000000', { method: 'DELETE' })).status === 404);
 
@@ -399,7 +457,7 @@ try {
 
 	const closedJob = await postJob(base);
 	check('local, drapeau absent : POST /__map-api/jobs refuse (403)',
-		closedJob.status === 403 && /désactivée/.test(bodyOf(closedJob).error ?? ''));
+		closedJob.status === 403 && /disabled/.test(bodyOf(closedJob).error ?? ''));
 
 	process.env.FPVTP_ACQUIRE = '1';
 	check('local, FPVTP_ACQUIRE=1 : GET /__map-api/scenes annonce acquire:true',
@@ -410,7 +468,7 @@ try {
 	// tout autre raison passerait pour un succès.
 	const openedJob = await postJob(base);
 	check('local, FPVTP_ACQUIRE=1 : la garde s\'ouvre — POST /jobs cale sur le corps, pas sur elle',
-		openedJob.status === 400 && !/désactivée/.test(bodyOf(openedJob).error ?? ''));
+		openedJob.status === 400 && !/disabled/.test(bodyOf(openedJob).error ?? ''));
 
 	check('FPVTP_ACQUIRE=nimportequoi ne vaut pas vrai',
 		(process.env.FPVTP_ACQUIRE = 'oui', bodyOf(await get('/__map-api/scenes')).acquire === false));
@@ -427,12 +485,25 @@ try {
 
 	const { SIGNUP_MAX, OPERATOR_BYTES_MAX, clientIp } = await import('../server/auth.mjs');
 
-	// Derrière Caddy, `remoteAddress` vaut toujours la boucle locale : seul
-	// x-forwarded-for identifie le demandeur. En `local` il serait falsifiable
-	// par le client, et on ne le lit PAS.
+	// Behind Caddy, `remoteAddress` is always the loopback: only
+	// x-forwarded-for identifies the requester. In `local` it would be
+	// forgeable by the client, so it is NOT read.
 	const proxied = { headers: { 'x-forwarded-for': '203.0.113.7' }, socket: { remoteAddress: '127.0.0.1' } };
-	check('x-forwarded-for n\'est lu qu\'en `shared`',
+	check('x-forwarded-for is only read in `shared`',
 		clientIp(proxied, 'shared') === '203.0.113.7' && clientIp(proxied, 'local') === '127.0.0.1');
+
+	// The proxy APPENDS the peer it is really talking to, so the last hop is
+	// the only entry we trust; everything to its left is text the client chose.
+	// Reading the first entry would let a client pick its own rate-limit key.
+	const forged = {
+		headers: { 'x-forwarded-for': '203.0.113.7, 198.51.100.4' },
+		socket: { remoteAddress: '127.0.0.1' },
+	};
+	check('x-forwarded-for multi-hop: the LAST hop is the client, not the first',
+		clientIp(forged, 'shared') === '198.51.100.4');
+	// No header at all (no proxy in front): fall back to the real socket.
+	check('x-forwarded-for absent: falls back to remoteAddress',
+		clientIp({ headers: {}, socket: { remoteAddress: '198.51.100.9' } }, 'shared') === '198.51.100.9');
 
 	let localCodes = [];
 	for (let i = 0; i < SIGNUP_MAX + 2; i++) localCodes.push((await signup(base, `flood${i}`)).status);
@@ -511,7 +582,7 @@ try {
 		bodyOf(await sget('/__map-api/scenes', { headers: bearer(KEY) })).acquire === false);
 	const sharedJob = await postJob(sbase, bearer(KEY));
 	check('shared, FPVTP_ACQUIRE=1, clé valide : POST /__map-api/jobs refuse quand même (403)',
-		sharedJob.status === 403 && /désactivée/.test(bodyOf(sharedJob).error ?? ''));
+		sharedJob.status === 403 && /disabled/.test(bodyOf(sharedJob).error ?? ''));
 	delete process.env.FPVTP_ACQUIRE;
 	check('shared : GET /__map-api/scenes annonce mode:"shared"',
 		bodyOf(await sget('/__map-api/scenes', { headers: bearer(KEY) })).mode === 'shared');
@@ -553,14 +624,23 @@ try {
 		codes.slice(0, SIGNUP_MAX).every((c) => c === 201));
 	const over = await signup(sbase, 'detrop', { 'x-forwarded-for': IP_A });
 	const overBody = await over.json();
-	check('shared : la suivante rend 429, avec un message lisible en français',
-		over.status === 429 && /trop d'inscriptions/.test(overBody.error ?? '')
+	check('shared : la suivante rend 429, avec un message lisible',
+		over.status === 429 && /too many signups/.test(overBody.error ?? '')
 		&& /min/.test(overBody.error ?? ''));
 	check('shared : une AUTRE adresse a son propre compteur',
 		(await signup(sbase, 'ailleurs', { 'x-forwarded-for': '203.0.113.99' })).status === 201);
-	// Le proxy pose plusieurs sauts : c'est le PREMIER qui est le client.
-	check('shared : x-forwarded-for à plusieurs sauts — c\'est le premier qui compte',
-		(await signup(sbase, 'saut', { 'x-forwarded-for': `${IP_A}, 10.0.0.1` })).status === 429);
+	// Multi-hop x-forwarded-for: the proxy APPENDS the peer, so the LAST entry
+	// is the client and everything left of it is client-supplied text. IP_A is
+	// already over its ceiling above, which makes the two directions testable.
+	//
+	// Forging a leading hop must not let the real address escape its counter:
+	// `<anything>, IP_A` is still IP_A, still 429.
+	check('shared: a forged leading hop does not escape the counter — the last hop wins',
+		(await signup(sbase, 'forged', { 'x-forwarded-for': `198.51.100.1, ${IP_A}` })).status === 429);
+	// And the mirror image: an exhausted address in the FIRST position must not
+	// be charged to the real peer, which is a fresh address and must pass.
+	check('shared: an exhausted address in the first position is not charged',
+		(await signup(sbase, 'realpeer', { 'x-forwarded-for': `${IP_A}, 198.51.100.2` })).status === 201);
 
 	// --- le quota d'octets par opérateur -------------------------------------
 	//
@@ -591,7 +671,7 @@ try {
 
 	const refusedPhoto = await photo(fat.key, 1);
 	check('shared : au-delà du plafond, la capture est refusée (413) et le dit',
-		refusedPhoto.status === 413 && /quota atteint/.test((await refusedPhoto.json()).error ?? ''));
+		refusedPhoto.status === 413 && /quota reached/.test((await refusedPhoto.json()).error ?? ''));
 	const closed = await fetch(`${sbase}/__operator/${fat.operator.id}/sessions/${sid}`, {
 		method: 'PATCH', headers: { ...bearer(fat.key), 'content-type': 'application/json' },
 		body: JSON.stringify({ result: 'CRASHED', end: new Date().toISOString() }),
@@ -621,7 +701,7 @@ try {
 		cwd: SIM_ROOT, encoding: 'utf8', env: { ...process.env },
 	});
 	check('key sur un opérateur inconnu : sort en erreur, n\'écrit rien',
-		unknownKey.status === 1 && /aucun opérateur/.test(unknownKey.stderr));
+		unknownKey.status === 1 && /no operator/.test(unknownKey.stderr));
 } finally {
 	await started?.close();
 	await shared?.close();

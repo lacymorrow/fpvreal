@@ -1,13 +1,13 @@
-// Logique pure du modèle de session (PHASE 06). Aucune E/S : importée par le
-// plugin de dev, le selftest et (via un bundle Vite) le client.
+// Pure logic of the session model (PHASE 06). No I/O: imported by the dev
+// plugin, by the selftest and (through a Vite bundle) by the client.
 //
-// Une session lie un opérateur, une zone de terrain, une cible, un instantané
-// météo, un intervalle temporel, un verdict et une télémétrie agrégée.
+// A session binds an operator, a terrain area, a target, a weather snapshot, a
+// time interval, a verdict and aggregated telemetry.
 //
 //   terrain persistent, flights ephemeral
 //
-// `PENDING` → `CRASHED` (impact, sortie de zone ou lien coupé : drone détruit,
-//                        session terminée)
+// `PENDING` → `CRASHED` (impact, fence exit or cut link: drone destroyed,
+//                        session terminated)
 import { randomBytes } from 'node:crypto';
 import { slugify } from './operator-store.mjs';
 import { asText, nameOf } from './lib/as-text.mjs';
@@ -21,22 +21,21 @@ import {
 // migration: a v2 session simply has no swarm, honestly, the way a v1 session
 // has no ambients.
 export const SESSION_SCHEMA_VERSION = 3;
-// Les verdicts qu'un vol peut PRODUIRE. `LANDED` en est parti avec
-// l'atterrissage (D9, 2026-09-08) : un vol ne se termine plus que par un crash,
-// une sortie de zone ou une coupure du lien, et les trois sont `CRASHED`.
+// The verdicts a flight can PRODUCE. `LANDED` left with landing itself
+// (D9, 2026-09-08): a flight now ends only by a crash, a fence exit or a cut
+// link, and all three are `CRASHED`.
 export const SESSION_RESULTS = ['PENDING', 'CRASHED'];
-// Les verdicts qu'un fichier opérateur peut CONTENIR. Les états écrits avant la
-// disparition de l'atterrissage portent `LANDED` : ils doivent continuer à se
-// relire, s'afficher et se laisser annoter. Pas de migration, pas de bump de
-// SESSION_SCHEMA_VERSION — un verdict passé reste vrai.
+// The verdicts an operator file may CONTAIN. States written before landing
+// disappeared carry `LANDED`: they must keep being read back, displayed and
+// annotated. No migration, no SESSION_SCHEMA_VERSION bump — a past verdict
+// stays true.
 const STORED_RESULTS = [...SESSION_RESULTS, 'LANDED'];
 export const SESSION_ID_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*-[0-9a-f]{4}$/;
 
-// Une session qui traîne en `PENDING` plus longtemps que ça au moment d'un
-// rechargement du terminal n'a pas été fermée proprement : l'onglet est mort en
-// vol. C'est un crash. Large exprès — mieux vaut rattraper un crash tard que
-// marquer CRASHED une session encore en vol dont on a rouvert le terminal dans
-// un autre onglet.
+// A session left in `PENDING` for longer than this when the terminal reloads
+// was not closed cleanly: the tab died in flight. That is a crash. Deliberately
+// generous — better to catch a crash late than to mark CRASHED a session still
+// in flight whose terminal was reopened in another tab.
 const STALE_MS = 30 * 60 * 1000;
 
 const ZERO_TELEMETRY = {
@@ -59,27 +58,44 @@ export function newSessionId(area) {
 	return `${base}-${randomBytes(2).toString('hex')}`;
 }
 
-// Ne garde que la forme connue de l'instantané météo. `null` est licite : la
-// météo est du décor, elle n'a pas le droit d'empêcher un vol — donc pas non
-// plus d'empêcher une session de s'ouvrir.
+// Keeps only the known shape of the weather snapshot. `null` is legal: the
+// weather is scenery, it is not allowed to prevent a flight — so it is not
+// allowed to prevent a session opening either.
+//
+// It PICKS its keys rather than spreading `day0`. The snapshot arrives from
+// the client and is written to the operator file, then read back and rendered
+// on the SESSION record: whatever the client put in `day0` was stored verbatim
+// and travelled all the way to another operator's screen. Only the ten fields
+// the weather model actually produces survive here, each coerced to its own
+// type — an unknown key is dropped, and a string field cannot smuggle a value
+// the record will not treat as text.
+const DAY_TEXT = ['date', 'regime'];
+const DAY_NUM = [
+	'windSpeed', 'windGust', 'windDir', 'rateMmH', 'precipMm',
+	'cloudPct', 'visibilityM', 'confidence',
+];
+const text = (v) => (typeof v === 'string' ? v : null);
 export function sanitizeWeatherSnapshot(raw) {
 	if (raw == null) return null;
 	if (typeof raw !== 'object') throw new Error('weatherSnapshot invalide');
-	const day0 = raw.day0 ?? raw.days?.[0] ?? null;
-	if (!day0 || typeof day0 !== 'object') throw new Error('weatherSnapshot sans jour');
+	const src = raw.day0 ?? raw.days?.[0] ?? null;
+	if (!src || typeof src !== 'object') throw new Error('weatherSnapshot sans jour');
 	const num = (v) => (Number.isFinite(v) ? v : null);
+	const day0 = {};
+	for (const k of DAY_TEXT) day0[k] = text(src[k]);
+	for (const k of DAY_NUM) day0[k] = num(src[k]);
 	return {
-		zone: raw.zone ?? null,
-		day: raw.day ?? null,
-		source: raw.source ?? null,
-		regime: day0.regime ?? null,
-		confidence: num(day0.confidence),
+		zone: text(raw.zone),
+		day: text(raw.day),
+		source: text(raw.source),
+		regime: day0.regime,
+		confidence: day0.confidence,
 		day0,
 	};
 }
 
-// Le scan d'origine (issue #250). `null` pour une session v1, qui n'en a
-// jamais eu : elle garde sa cible mais pas ses ambiants.
+// The originating scan (issue #250). `null` for a v1 session, which never had
+// one: it keeps its target but not its ambients.
 function sanitizeScan(raw) {
 	if (raw == null) return null;
 	if (typeof raw !== 'object') throw new Error('target.scan invalide');
@@ -116,8 +132,8 @@ function sanitizeSwarm(raw) {
 // carries it legitimately, so it is allowed here, explicitly.
 const STORED_FAMILIES = [...TARGET_FAMILIES, SWARM_FAMILY];
 
-// Ne garde que la forme connue du descripteur de cible (PHASE 08). `null` est
-// licite : une session peut s'ouvrir sans cible (chemin dev ?scene=).
+// Keeps only the known shape of the target descriptor (PHASE 08). `null` is
+// legal: a session can open with no target (the ?scene= dev path).
 export function sanitizeTarget(raw) {
 	if (raw == null) return null;
 	if (typeof raw !== 'object') throw new Error('target invalide');
@@ -142,9 +158,9 @@ export function sanitizeTarget(raw) {
 	};
 }
 
-// Ne garde que la forme connue d'une capture (PHASE 16). `ts` est reposé par le
-// serveur, jamais celui qu'envoie le client : l'horodatage de la photo n'a pas
-// à dépendre de l'horloge du navigateur.
+// Keeps only the known shape of a capture (PHASE 16). `ts` is stamped by the
+// server, never the one the client sends: a photo's timestamp must not depend
+// on the browser's clock.
 export function sanitizePhoto(raw) {
 	if (!raw || typeof raw !== 'object') throw new Error('photo invalide');
 	if (typeof raw.dataUrl !== 'string' || !raw.dataUrl.startsWith('data:image/')) {
@@ -155,8 +171,8 @@ export function sanitizePhoto(raw) {
 	return { dataUrl: raw.dataUrl, w: raw.w, h: raw.h, ts: new Date().toISOString() };
 }
 
-// Ajoute une capture sans muter la session existante : plusieurs captures par
-// session, chacune un élément de plus dans `photos[]`.
+// Adds a capture without mutating the existing session: several captures per
+// session, each one more element in `photos[]`.
 export function addPhoto(session, raw) {
 	if (!session || typeof session !== 'object') throw new Error('session illisible');
 	const photo = sanitizePhoto(raw);
@@ -174,8 +190,8 @@ export function openSession({ operatorId, area, weatherSnapshot, target, seq, ta
 		id,
 		operatorId,
 		area: areaSlug,
-		// Numéro d'affichage (PHASE 17). Attribué par le serveur, qui seul connaît
-		// le compteur de l'opérateur ; figé pour toujours.
+		// Display number (PHASE 17). Assigned by the server, the only side that
+		// knows the operator's counter; frozen forever.
 		seq,
 		target: resolved,
 		weatherSnapshot: sanitizeWeatherSnapshot(weatherSnapshot),
@@ -186,15 +202,15 @@ export function openSession({ operatorId, area, weatherSnapshot, target, seq, ta
 		photos: [],
 		comment: null,
 	};
-	// Sans cible, la clé n'est posée que si l'appelant a dit quelque chose : une
-	// session ouverte sans TARGET SCAN n'a pas de `targetSeq` du tout, et un
-	// `null` explicite reste un `null` (ce que `validateSession` accepte).
+	// With no target the key is only set if the caller said something: a session
+	// opened without TARGET SCAN has no `targetSeq` at all, and an explicit
+	// `null` stays a `null` (which `validateSession` accepts).
 	if (resolved || targetSeq !== undefined) session.targetSeq = targetSeq;
 	return session;
 }
 
-// Fusionne deux jeux d'agrégats : `max` sur les pics, `+` sur les cumuls.
-// Associative — trois segments dans n'importe quel ordre donnent le même total.
+// Merges two sets of aggregates: `max` on the peaks, `+` on the totals.
+// Associative — three segments in any order give the same total.
 export function mergeTelemetry(rawA = ZERO_TELEMETRY, rawB = ZERO_TELEMETRY) {
 	// A default parameter only covers `undefined`. A stored session whose
 	// `flightTelemetry` is null — JSON can hold that, and a file written by
@@ -229,9 +245,9 @@ export function closeSession(session, { result, telemetry } = {}) {
 	};
 }
 
-// OPERATOR NOTE (PHASE 15, Bible §25) : texte libre, attaché à une session déjà
-// close aussi bien qu'à une session PENDING — contrairement à closeSession, qui
-// exige PENDING (un verdict ne se rouvre pas), une note s'ajoute à tout moment.
+// OPERATOR NOTE (PHASE 15, Bible §25): free text, attached to an already closed
+// session as well as to a PENDING one — unlike closeSession, which requires
+// PENDING (a verdict does not reopen), a note can be added at any time.
 const COMMENT_MAX_LEN = 400;
 
 export function sanitizeComment(raw) {
@@ -248,16 +264,16 @@ export function annotateSession(session, comment) {
 	return { ...session, comment: sanitizeComment(comment) };
 }
 
-// PHASE 17, spec D4 : les captures sont stockées en base64 DANS la session, et
-// le terminal recharge l'opérateur entier à chaque retour au menu. On élide les
-// `dataUrl` de toutes les réponses sauf celle de la route dédiée
-// `GET .../sessions/:sid`, seule à les rendre — et seule appelée par l'écran
-// VIEW SESSION. `w`/`h`/`ts` restent : ils suffisent au compte et au filtre
-// WITH PHOTOS.
+// PHASE 17, spec D4: captures are stored as base64 INSIDE the session, and the
+// terminal reloads the whole operator every time it returns to the menu. The
+// `dataUrl`s are elided from every response except the dedicated route
+// `GET .../sessions/:sid`, the only one that returns them — and the only one
+// the VIEW SESSION screen calls. `w`/`h`/`ts` stay: they are enough for the
+// count and for the WITH PHOTOS filter.
 //
-// Le résultat est un FORMAT DE FIL, pas un état persistable : il ne repasse
-// jamais par `validateSession` (qui exige à raison une `dataUrl` par capture),
-// et l'élision n'a lieu qu'au moment de répondre, après l'écriture disque.
+// The result is a WIRE FORMAT, not a persistable state: it never goes back
+// through `validateSession` (which rightly demands a `dataUrl` per capture),
+// and the elision only happens when answering, after the disk write.
 export function stripPhotoData(session) {
 	if (!session || typeof session !== 'object') return session;
 	return {
@@ -271,11 +287,11 @@ export function stripOperatorPhotoData(state) {
 	return { ...state, sessions: (state.sessions ?? []).map(stripPhotoData) };
 }
 
-// PHASE 17, spec D3 : suppression franche. L'entrée quitte `state.sessions`,
-// captures comprises ; le terrain n'est JAMAIS touché — symétrique de
-// « supprimer le terrain ne supprime pas le souvenir » (Bible §29).
-// Les compteurs ne reculent pas : un numéro ne se recycle pas, la suppression
-// laisse un trou visible dans le journal.
+// PHASE 17, spec D3: outright deletion. The entry leaves `state.sessions`,
+// captures included; the terrain is NEVER touched — the mirror of "removing the
+// terrain does not remove the memory" (Bible §29).
+// The counters do not go back: a number is not recycled, a deletion leaves a
+// visible hole in the log.
 export function deleteSession(state, sid) {
 	const sessions = state?.sessions ?? [];
 	const i = sessions.findIndex((s) => s.id === sid);
@@ -285,8 +301,8 @@ export function deleteSession(state, sid) {
 		throw e;
 	}
 	if (sessions[i].result === 'PENDING') {
-		// Peut-être encore en vol dans un autre onglet : on ne supprime pas sous
-		// les pieds d'une session ouverte.
+		// Possibly still in flight in another tab: we do not delete out from
+		// under an open session.
 		const e = new Error(`session "${sid}" encore en vol`);
 		e.status = 409;
 		throw e;
@@ -294,20 +310,20 @@ export function deleteSession(state, sid) {
 	return { ...state, sessions: [...sessions.slice(0, i), ...sessions.slice(i + 1)] };
 }
 
-// Garde-fou serveur : rejette tout ce qui n'a pas la forme attendue.
+// Server guard: rejects anything that does not have the expected shape.
 export function validateSession(s) {
 	if (!s || typeof s !== 'object') throw new Error('session illisible');
 	if (!SESSION_ID_RE.test(asText(s.id))) throw new Error('id de session invalide');
 	if (!STORED_RESULTS.includes(s.result)) throw new Error(`result inconnu : ${asText(s.result, nameOf(s.result))}`);
 	if (!s.operatorId) throw new Error('operatorId requis');
 	if (!slugify(s.area)) throw new Error('area invalide');
-	sanitizeWeatherSnapshot(s.weatherSnapshot); // throw si malformé
+	sanitizeWeatherSnapshot(s.weatherSnapshot); // throws if malformed
 	// sanitizeTarget holds ALL of the target's shape validation, the v3 swarm
 	// included: validating it a second time here would mean two rules to keep.
-	if (s.target != null) sanitizeTarget(s.target); // throw si malformé
-	// Numéros d'affichage (PHASE 17). Contrôlés APRÈS la forme de la cible : une
-	// cible malformée est une erreur plus fondamentale que sa numérotation, et
-	// c'est elle que l'appelant doit voir en premier.
+	if (s.target != null) sanitizeTarget(s.target); // throws if malformed
+	// Display numbers (PHASE 17). Checked AFTER the target's shape: a malformed
+	// target is a more fundamental error than its numbering, and that is what
+	// the caller must see first.
 	if (!Number.isInteger(s.seq) || s.seq < 1) throw new Error('seq de session invalide');
 	if (s.target != null) {
 		if (!Number.isInteger(s.targetSeq) || s.targetSeq < 1) {
@@ -324,12 +340,12 @@ export function validateSession(s) {
 	}
 	if (s.result !== 'PENDING' && !s.end) throw new Error('session fermée sans end');
 	if (!Array.isArray(s.photos)) throw new Error('photos invalide');
-	for (const p of s.photos) sanitizePhoto(p); // throw si une capture est malformée
+	for (const p of s.photos) sanitizePhoto(p); // throws if a capture is malformed
 	return s;
 }
 
-// Passe en `CRASHED` toute session restée `PENDING` au-delà du seuil : l'onglet
-// est mort en vol. Renvoie `{ state, changed }` — l'appelant réécrit si besoin.
+// Turns to `CRASHED` any session left `PENDING` past the threshold: the tab
+// died in flight. Returns `{ state, changed }` — the caller rewrites if needed.
 export function reconcileStaleSessions(state, now = Date.now()) {
 	let changed = false;
 	const sessions = (state.sessions ?? []).map((s) => {

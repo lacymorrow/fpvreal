@@ -28,6 +28,35 @@ const DEADBAND = 0.06;
 const PASSTHROUGH_KEYS = ['tab', 'escape', 'enter'];
 const GAMEPAD_MOVE_THRESHOLD = 0.15;
 
+// How long a held key takes to reach full stick deflection, in seconds.
+//
+// A keyboard has no travel: the smallest roll command the hardware can express
+// used to be an instant step to +/-1, which at the freestyle rate preset is
+// 820 deg/s of roll arriving in a single frame. Nobody can fly that, and most
+// people who arrive here have no radio on the desk. Ramping gives back the
+// thing a stick has and a key does not — the middle of the range — simply by
+// making SHORT taps small and long presses full.
+//
+// 150 ms is a tap: measured against the throttle integrator, which has been
+// 1.2 units/s (0.83 s cut to full) since the beginning and reads as right. A
+// roll axis needs to be much quicker than a throttle — it is a correction, not
+// a setting — and 150 ms is about the shortest deliberate keypress a human
+// makes, so a stab still gives a real fraction of the stick while a hold still
+// reaches the stop. It changes nothing a gamepad does: this is the keyboard
+// reader, and readGamepad() never comes through here.
+//
+// Symmetric on release: a spring-return gimbal does not snap to centre either.
+const KEY_RAMP_S = 0.15;
+
+// One axis of that ramp. Lands EXACTLY on the target rather than approaching it
+// forever, which is what lets the mouse know the keys have finished releasing.
+function rampAxis(value, target, dt) {
+	if (dt <= 0) return value;
+	const step = dt / KEY_RAMP_S;
+	const delta = target - value;
+	return Math.abs(delta) <= step ? target : value + Math.sign(delta) * step;
+}
+
 // -----------------------------------------------------------------------------
 // GAMEPAD MAPPINGS
 // -----------------------------------------------------------------------------
@@ -333,6 +362,10 @@ export class Input {
 		// Keyboard
 		this.keys = new Set();
 		this.kbThrottle = 0;
+		// The ramped position of the three keyboard sticks (see KEY_RAMP_S).
+		// Throttle is not here: it has always been an integrator, which is a
+		// stronger version of the same idea and already right.
+		this.kbAxes = { roll: 0, pitch: 0, yaw: 0 };
 
 		// Remappable bindings (D13). The map is the ONLY place a key name
 		// appears from here on: nothing below compares a literal.
@@ -854,16 +887,34 @@ export class Input {
 			pitch += 1;
 		}
 
-		// Mouse. Exception assumée à la convention ci-dessus : la souris n'est
-		// pas un manche qu'on pousse, c'est une visée. Souris vers le haut =
-		// regarder vers le haut = cabrer, comme partout ailleurs.
+		// Everything above is the TARGET: which way the key says to go. What the
+		// machine actually gets is the ramp toward it (KEY_RAMP_S), so a tap is
+		// a nudge and a hold still reaches the stop.
+		this.kbAxes.roll = rampAxis(this.kbAxes.roll, roll, dt);
+		this.kbAxes.pitch = rampAxis(this.kbAxes.pitch, pitch, dt);
+		this.kbAxes.yaw = rampAxis(this.kbAxes.yaw, yaw, dt);
+
+		let outRoll = this.kbAxes.roll;
+		let outPitch = this.kbAxes.pitch;
+
+		// Mouse. A deliberate exception to the convention above: the mouse is
+		// not a stick you push, it is an aim. Mouse up = look up = pitch up, as
+		// everywhere else.
+		//
+		// It takes over only once the keys have finished releasing — the ramp
+		// lands exactly on zero, so this is the same "no arrow held" rule as
+		// before, 150 ms later. Deliberately outside the ramp: the mouse is
+		// already proportional and already self-centres (the decay below), and
+		// smoothing it twice would only make aiming mushy.
 		if (
 			this.pointerLocked &&
 			roll === 0 &&
-			pitch === 0
+			pitch === 0 &&
+			this.kbAxes.roll === 0 &&
+			this.kbAxes.pitch === 0
 		) {
-			roll = this.mouse.x;
-			pitch = this.mouse.y;
+			outRoll = this.mouse.x;
+			outPitch = this.mouse.y;
 
 			const decay =
 				Math.exp(-dt * 3.5);
@@ -875,9 +926,9 @@ export class Input {
 		this.sticks.throttle =
 			this.kbThrottle;
 
-		this.sticks.roll = roll;
-		this.sticks.pitch = pitch;
-		this.sticks.yaw = yaw;
+		this.sticks.roll = outRoll;
+		this.sticks.pitch = outPitch;
+		this.sticks.yaw = this.kbAxes.yaw;
 	}
 
 	// ---------------------------------------------------------------------------
@@ -910,6 +961,11 @@ export class Input {
 		this.kbThrottle = 0;
 		this.mouse.x = 0;
 		this.mouse.y = 0;
+		// A respawn must not inherit the stick the last life died holding: the
+		// ramp is a position, exactly like the throttle integrator above.
+		this.kbAxes.roll = 0;
+		this.kbAxes.pitch = 0;
+		this.kbAxes.yaw = 0;
 	}
 }
 

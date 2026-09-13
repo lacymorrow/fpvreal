@@ -51,6 +51,7 @@ import { runJukebox } from './jukebox.js';
 import { space } from './space.js';
 import { flightIntensity, PHASE_INTENSITY, FADE } from '../tools/music-model.mjs';
 import { droneOsdLayout } from '../tools/drone-osd-model.mjs';
+import { bootFailureMessage, terrainEmptyError, NO_WEBGL2 } from '../tools/boot-failure-model.mjs';
 import { liveAreaId } from '../tools/session-log-model.mjs';
 import { DroneOsd } from './drone-osd.js';
 import { FpvtpOsd } from './fpvtp-osd.js';
@@ -175,7 +176,29 @@ scene.background = new THREE.Color(SKY);
 // rainfall.js, lens.js et les tuiles lisent tous. Une seule couleur d'air.
 const skyDome = new SkyDome(scene);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// The HUD is built BEFORE the renderer, and that order is the whole point: a
+// WebGLRenderer that cannot get a context throws at module top level, which
+// aborts everything below it. Built afterwards, as it used to be, nothing
+// existed that could put the failure on screen and the page simply stayed
+// black. index.html probes for WebGL2 before the bundle even loads and paints
+// its own panel; this is the second net, for a GPU that answers the probe and
+// then fails anyway (a blocklisted driver, a lost context at creation).
+const hud = new Hud(document.getElementById('ui'));
+
+let renderer;
+try {
+	renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+	console.error(err);
+	// index.html already said it better, with instructions: leave its panel up.
+	if (!window.__FPVTP_NO_WEBGL2) {
+		hud.show();
+		hud.fail(NO_WEBGL2);
+	}
+	// Rethrown on purpose. Everything below needs a renderer; carrying on would
+	// only bury the readable message under a pile of null-reference noise.
+	throw err;
+}
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 // The imagery already carries its own lighting and colour, so nothing should be
 // re-encoded on the way to the framebuffer.
@@ -184,7 +207,6 @@ renderer.toneMapping = THREE.NoToneMapping;
 document.body.appendChild(renderer.domElement);
 
 const input = new Input();
-const hud = new Hud(document.getElementById('ui'));
 // Les deux couches du HUD (PHASE 12). Celle de la station existe dès le départ
 // et ne dépend d'aucune cible ; celle du drone appartient à la machine pilotée,
 // donc elle naît à l'ouverture de session, avec sa fiche caméra.
@@ -195,6 +217,38 @@ let camSpec = null;
 // changements, et pour que applyTargetCamera() recompose la nuit en cours.
 let lastNightGain = 0;
 const settings = new Settings(document.getElementById('ui'), input);
+
+// The flight mode a machine STARTS in, decided here because only main.js knows
+// what is plugged in — flightController.js must stay ignorant of input devices.
+//
+// Acro on a gamepad is the game, and nothing about the gamepad experience
+// changes. Acro on a KEYBOARD is not a difficulty setting, it is a wall: the
+// arrow keys have no travel, so the smallest tap the hardware can express is
+// full deflection, and full deflection at the freestyle preset is 820 deg/s.
+// Most people arriving on launch day have no radio on the desk, and the first
+// thing that happened to them was an unrecoverable tumble.
+//
+// The question asked is "is a pad plugged in at all", not `usingGamepad`, which
+// only turns true once a stick has actually moved: this runs before the first
+// stick input, and a pad sitting there silently is still the device this player
+// is about to fly with. Same question briefingArgs() asks, for the same reason.
+// M still cycles acro -> angle -> altitude, so nothing is taken away.
+function defaultFlightMode() {
+	const pad = input.usingGamepad || input.getGamepad?.();
+	return pad ? 'acro' : 'angle';
+}
+
+// The ceiling on the entry draw, for the same reason and asking the same
+// question. Bible §20 hands you a machine already in flight, and 3 % of the
+// time that means 40 m/s at 80 degrees of bank one and a half metres off the
+// deck. That is the intended shock with a stick in your hands; with four arrow
+// keys it is a crash you were never given the means to avoid.
+//
+// A pad gets null — the draw is untouched, weight for weight. See
+// entry-state.js:capCategory().
+function entryCategoryCap() {
+	return defaultFlightMode() === 'acro' ? null : 'ACTIVE';
+}
 // The briefing (D16). What it shows is read LIVE from the input stack, so a
 // key rebound a minute ago is the key it names. The slot is filled here, right
 // after the panel is built: renderSystem() draws [ REPLAY BRIEFING ] on tab
@@ -406,7 +460,7 @@ function applyBenchConfig() {
 		physics.setProfile(profile);
 		PROFILE = physics.profile;
 		audio.setProfile(physics.profile);
-		controller = new FlightController({ profile: PROFILE, rates: build?.rates });
+		controller = new FlightController({ profile: PROFILE, rates: build?.rates, mode: defaultFlightMode() });
 		console.log(`[bench] cellule → ${PROFILE.family} (${PROFILE.label})`);
 		// Le drone du joueur suit la cellule (#286) : ses hélices, sa livrée et
 		// son châssis sont ceux de l'exemplaire qui vole, pas de l'ancien —
@@ -949,6 +1003,31 @@ function exposeDebugGlobal() {
 	window.__simInput = null;
 }
 
+// Issue #120: lens and link have no UI in the Tab panel any more — applied
+// once from their stored values (see settings.js).
+//
+// Lifted out of finishBoot() because finishBoot() is the BAKED-scene path, and
+// that made the whole video-link picture degradation — going behind a building
+// and losing the picture, one of the signature things this game does — silently
+// absent from LIVE and from the bench, which are the only two paths a fresh
+// clone can fly. lens.js pins uLink at 1 while _linkMode is LINK_OFF, so
+// nothing ever showed and nothing ever complained.
+function applyLensAndLink() {
+	const lensCfg = loadLens();
+	const lensParams = { on: lensCfg.on, lens: lensCfg.lens, vignette: lensCfg.vignette, shutter: lensCfg.shutter / 1000 };
+	lens.setEnabled(lensParams.on);
+	lens.setParams(lensParams);
+	lensShutter = lensParams.shutter;
+
+	const linkCfg = loadLink();
+	link.setSeverity(linkCfg.severity);
+	// Remembered: the crash sequence must be able to force a degradation even if
+	// the player turned the link model off.
+	lensLinkMode = linkCfg.severity === 0 ? LINK_OFF
+		: linkCfg.mode === 'digital' ? LINK_DIGITAL : LINK_ANALOG;
+	lens.setLink({ mode: lensLinkMode, severity: linkCfg.severity });
+}
+
 // `arm` (#122, voir armFlight()) : qui monte le vol — la cible, la caméra de la
 // machine, ses hélices, son OSD — et donc QUAND. Vrai par défaut, sous l'écran
 // de chargement, qui est le seul à couvrir ce moment sur les chemins sans
@@ -1048,6 +1127,7 @@ async function finishBoot(preloading, { arm = true } = {}) {
 		physics,
 		manifest,
 		seed: Math.random().toString(16).slice(2, 12),
+		maxCategory: entryCategoryCap(),
 		...(MODE.bench ? benchEntryRequest(MODE.config) : {}),
 	}));
 
@@ -1163,21 +1243,7 @@ async function finishBoot(preloading, { arm = true } = {}) {
 		music.setVolume(musicVolume);
 	});
 
-	// Issue #120 : lens et link n'ont plus de UI dans le panneau Tab — appliqués
-	// une fois ici depuis leurs valeurs stockées (cf. settings.js).
-	const lensCfg = loadLens();
-	const lensParams = { on: lensCfg.on, lens: lensCfg.lens, vignette: lensCfg.vignette, shutter: lensCfg.shutter / 1000 };
-	lens.setEnabled(lensParams.on);
-	lens.setParams(lensParams);
-	lensShutter = lensParams.shutter;
-
-	const linkCfg = loadLink();
-	link.setSeverity(linkCfg.severity);
-	// Mémorisé : la séquence de crash doit pouvoir forcer une dégradation
-	// même si le joueur a coupé la modélisation du lien.
-	lensLinkMode = linkCfg.severity === 0 ? LINK_OFF
-		: linkCfg.mode === 'digital' ? LINK_DIGITAL : LINK_ANALOG;
-	lens.setLink({ mode: lensLinkMode, severity: linkCfg.severity });
+	applyLensAndLink();
 
 
 	// Armed under the loading screen: the target is resolved, the camera sits on
@@ -1223,6 +1289,10 @@ async function boot(slug) {
 // par défaut d'`add-map` (CLAUDE.md, --zoom 20), donc déjà le niveau que
 // toutes les cartes existantes utilisent couramment.
 const ROCKTREE_LEVEL = 21;
+
+// The attribution the live terrain carries. See the setCredit() call in
+// bootLive() for why this is a literal and not creditText().
+const LIVE_CREDIT = '© Google';
 
 // Boot minimal pour ?live=lat,lon (#168) : pas de manifest, pas de
 // collision.bin, pas de météo. Origine ENU fixée UNE FOIS ici, au point de
@@ -1378,9 +1448,18 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	// sous les yeux du joueur. Plafond : à froid le réseau peut traîner, on
 	// finit par lâcher le drone plutôt que bloquer pour toujours — le sol de
 	// SA colonne, lui, reste exigé (sinon spawn en mer : ancien comportement).
-	const bootDeadline = performance.now() + 45000;
+	const BOOT_DEADLINE_MS = 45000;
+	const bootDeadline = performance.now() + BOOT_DEADLINE_MS;
 	let groundHere = null;
 	let waveDone = false;
+	// 45 s of nothing is indistinguishable from a hung tab. The loading screen
+	// already ticks a clock and names its stage; this wait had no name, so it
+	// read as a freeze on every path where the screen is visible (the bench,
+	// ?live=). On FIELD the hack screen covers this instead, with its own
+	// "searching" phase.
+	hud.startClock();
+	hud.setStage('terrain');
+	hud.progress('WAITING FOR TERRAIN…', 0.5);
 	for (;;) {
 		// La boucle de rendu n'a pas démarré : personne d'autre ne draine les
 		// files de nœuds (#184) — sans cet appel, aucun collider n'apparaîtrait
@@ -1390,13 +1469,27 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 		if (groundHere === null) groundHere = physics.groundBelow(0, 3000, 0, 6000);
 		waveDone = rocktreeWindow.pendingCount() === 0 && liveQueue.idle();
 		if (groundHere !== null && waveDone) break;
+		hud.detail(`${rocktreeWindow.pendingCount()} TILES IN FLIGHT — ${groundHere !== null ? 'GROUND FOUND' : 'NO GROUND YET'}`);
 		if (performance.now() > bootDeadline) {
-			console.warn(`[rocktree] boot lâché au plafond de 45 s — sol ${groundHere !== null ? 'trouvé' : 'ABSENT'}, `
-				+ `${rocktreeWindow.pendingCount()} fetchs et ${liveQueue.builds.size} builds encore en vol`);
+			// No ground under the spawn after 45 s means the flight cannot
+			// happen: it used to carry on anyway, with no colliders at all, and
+			// the anti-hole net then respawned the drone every two seconds into
+			// an empty cyan void, for ever, with nothing on screen ever saying
+			// why. Reject instead, onto the same failure screen as a blocked
+			// tile server — which is the same cause most of the time.
+			if (groundHere === null) {
+				throw terrainEmptyError(`${rocktreeWindow.pendingCount()} fetches still in flight`);
+			}
+			// Ground IS there, only the outer wave is late. That flight is
+			// playable: the entry draw below tightens itself to the one column
+			// whose collision is guaranteed (see liveRadiusM).
+			console.warn(`[rocktree] boot released at the 45 s cap — ground found, `
+				+ `${rocktreeWindow.pendingCount()} fetches and ${liveQueue.builds.size} builds still in flight`);
 			break;
 		}
 		await new Promise((r) => setTimeout(r, 10));
 	}
+	hud.detail('');
 	if (groundHere !== null) {
 		// physics.reset() renvoie au spawn ET re-prime les moteurs — muter
 		// spawn.y d'abord garde ce point correct pour tout ce qui s'y ramène
@@ -1432,6 +1525,7 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 		};
 		generateEntryState({
 			physics, manifest: liveManifest, seed: Math.random().toString(16).slice(2, 12),
+			maxCategory: entryCategoryCap(),
 			...(MODE.bench ? benchEntryRequest(MODE.config) : {}),
 		});
 	} else {
@@ -1483,7 +1577,28 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	// cas ils doivent être posés AVANT l'appel. Sans exemplaire (?live= nu),
 	// `opts.rates` est optionnel dans flightController.js et retombe sur
 	// RATE_PRESETS[this.preset].
-	controller = new FlightController({ profile: PROFILE, rates: benchRates ?? undefined });
+	controller = new FlightController({ profile: PROFILE, rates: benchRates ?? undefined, mode: defaultFlightMode() });
+
+	// LEGAL, not polish. Google requires the copyright of the imagery it serves
+	// to be displayed wherever that imagery is rendered, and the live terrain IS
+	// Google's imagery. finishBoot() sets this from the baked manifest's own
+	// provider block — but the baked path is the one a stranger cannot take: a
+	// fresh clone has no terrain on disk, so LIVE is the ONLY thing it can fly,
+	// and LIVE was showing Google's photogrammetry with no attribution at all.
+	//
+	// The literal rather than creditText(): there is no manifest here, and the
+	// per-node copyrightIds that rocktree-worker.js decodes are still dropped by
+	// the pool (they would need the bulk's copyright string table to become
+	// text). '© Google' is what the imagery is, and it is what has to be on
+	// screen; resolving the per-node ids is a refinement of a credit that is
+	// now correct, not a fix for one that is missing.
+	fpvtpOsd.setCredit(LIVE_CREDIT);
+
+	// The video link's picture degradation, the lens, the shutter (#120). The
+	// baked path applies these in finishBoot(); without this call LIVE and the
+	// bench flew with lens.js's uLink pinned at 1 — no tearing, no dropouts,
+	// none of the thing the whole link model exists to show.
+	applyLensAndLink();
 
 	audio.start();
 	// The camera onto the machine before the first frame (#122), on every path and
@@ -1678,6 +1793,7 @@ function respawn() {
 			physics,
 			manifest: sceneManifest,
 			seed: Math.random().toString(16).slice(2, 12),
+			maxCategory: entryCategoryCap(),
 			...(MODE.bench ? benchEntryRequest(MODE.config) : {}),
 		}));
 	}
@@ -3196,7 +3312,7 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 		PROFILE = build.profile;
 		flightBuild = build;
 		flightBuildSeed = buildSeed;
-		controller = new FlightController({ profile: PROFILE, rates: build.rates });
+		controller = new FlightController({ profile: PROFILE, rates: build.rates, mode: defaultFlightMode() });
 		logBuild(build);
 		// `arm: false` : même règle que le chemin en direct juste au-dessus, le
 		// geste [ JACK IN ] arme le vol (voir le `commit` de runHack()).
@@ -3417,7 +3533,7 @@ startup()
 		// fly a nominal profile — they now keep a portrait all the same.
 		flightBuildSeed = build ? buildSeed : nominalBuildSeed(PROFILE?.family);
 		controller = new FlightController(
-			PROFILE ? { profile: PROFILE, rates: build?.rates } : undefined,
+			{ ...(PROFILE ? { profile: PROFILE, rates: build?.rates } : {}), mode: defaultFlightMode() },
 		);
 		if (build) logBuild(build);
 		else if (PROFILE) console.log(`[target] family ${PROFILE.family} — ${PROFILE.label} (nominal)`);
@@ -3431,18 +3547,11 @@ startup()
 		hud.fail(bootFailureMessage(err));
 	});
 
-// Le message qu'affiche l'écran de chargement quand le boot échoue. Un trap
-// WASM de Rapier (« RuntimeError: unreachable ») n'est pas une exception JS
-// avec un sens lisible : dans les faits (issue #249) c'est une allocation qui a
-// échoué parce que le processus de rendu n'a plus de mémoire — d'autres onglets
-// du jeu, ou plusieurs vols enchaînés dans le même onglet. On le dit, et on dit
-// quoi faire, plutôt que d'afficher « unreachable ».
-function bootFailureMessage(err) {
-	if (err instanceof WebAssembly.RuntimeError) {
-		return 'physics: out of memory — close the game\'s other tabs, then reload';
-	}
-	return err.message;
-}
+// The message the loading screen shows when the boot fails lives in
+// tools/boot-failure-model.mjs: it is pure text mapping, and the failure paths
+// it covers (a blocked tile server, a refused WASM chunk, a dead GPU) are
+// exactly the ones that cannot be reproduced on the machine the game is written
+// on — so they get a selftest rather than a hope.
 
 // THE HANDOVER: what is left to do once the last hack screen has given control
 // back — the drop, and the flight clock. Everything else — the open session

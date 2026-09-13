@@ -116,7 +116,9 @@ function sessionScreen(keyRows) {
 		rows: [
 			['TARGET SCAN', 'THE AREA, THEN THE MACHINE'],
 			['FLIGHT', 'THE LINK LASTS WHAT IT LASTS'],
-			[`HOLD ${cut}`, 'CUT THE LINK'],
+			// `CUT LINK`, exactly as key-map.js names the action and as the flight
+			// OSD writes it: the briefing must teach the label the game shows.
+			[`HOLD ${cut}`, 'CUT LINK'],
 			[view, 'FPV / CHASE VIEW'],
 			[pause, 'PAUSE'],
 			['THE LOG', 'KEEPS WHAT HAPPENED'],

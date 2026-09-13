@@ -195,7 +195,7 @@ try {
 
 	const rejected = await call('PATCH', `/__operator/${id}`, { key: 'notAKey', value: 1 });
 	check('PATCH clé inconnue → 400', rejected.status === 400
-		&& /clé non modifiable/.test(rejected.body.error ?? ''));
+		&& /key is not writable/.test(rejected.body.error ?? ''));
 
 	// `coverage` reste une clé opérateur ; la PISTE, elle, n'en est PAS une
 	// (issue #24) : elle a son fichier et sa route, et OP_WRITABLE_KEYS ne doit

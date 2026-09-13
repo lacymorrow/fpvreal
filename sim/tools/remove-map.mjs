@@ -4,12 +4,12 @@
 //
 //   node tools/remove-map.mjs <slug> [--raw]
 //
-// Le cache brut se résout chez LE FOURNISSEUR de l'entrée, via rawTileDirFor
-// (issue #154). Ce fichier gardait sa propre constante Flyover et ne
-// l'importait pas : supprimer une scène google-earth avec --raw laissait son
-// cache sim/.cache/google-earth/ orphelin, et prétendait pourtant l'avoir
-// cherché. La GUI (DELETE ?raw=1) passait déjà par cette voie ; le CLI la
-// partage désormais au lieu d'en avoir une seconde.
+// The raw cache is resolved at THE PROVIDER of the entry, through
+// rawTileDirFor (issue #154). This file used to keep its own Flyover constant
+// instead of importing it: deleting a google-earth scene with --raw left its
+// sim/.cache/google-earth/ cache orphaned, while claiming it had looked for
+// it. The GUI (DELETE ?raw=1) already went through that path; the CLI now
+// shares it instead of having a second one.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -40,41 +40,41 @@ async function main() {
 	const scenes = fs.existsSync(SCENES_JSON) ? JSON.parse(fs.readFileSync(SCENES_JSON, 'utf8')) : [];
 	const i = scenes.findIndex((s) => s.slug === slug);
 	if (i < 0) {
-		console.error(`Aucune carte avec le slug "${slug}" dans scenes.json. Cartes disponibles : ${scenes.map((s) => s.slug).join(', ')}`);
+		console.error(`No map with slug "${slug}" in scenes.json. Available maps: ${scenes.map((s) => s.slug).join(', ')}`);
 		process.exit(1);
 	}
 	const [entry] = scenes.splice(i, 1);
 	fs.writeFileSync(SCENES_JSON, JSON.stringify(scenes, null, '\t') + '\n');
-	console.log(`Retiré du menu : "${entry.name}" (${slug})`);
+	console.log(`Removed from the menu: "${entry.name}" (${slug})`);
 
 	const outDir = path.join(SCENES_DIR, slug);
 	if (fs.existsSync(outDir)) {
 		fs.rmSync(outDir, { recursive: true, force: true });
-		console.log(`Supprimé : ${outDir}`);
+		console.log(`Deleted: ${outDir}`);
 	}
 
 	if (raw) {
 		const providerId = entry.provider ?? providers.DEFAULT_PROVIDER_ID;
 		let label = providerId;
 		try { label = providerOf(providerId).label; }
-		catch { /* fournisseur inconnu : on le nomme quand même dans le message */ }
+		catch { /* unknown provider: name it in the message anyway */ }
 		try {
 			const dir = await rawTileDirFor(entry);
 			if (fs.existsSync(dir)) {
 				fs.rmSync(dir, { recursive: true, force: true });
-				console.log(`Supprimé (brut, ${label}) : ${dir}`);
+				console.log(`Deleted (raw, ${label}): ${dir}`);
 			} else {
-				console.log(`Aucune tuile brute ${label} à ${dir} (déjà absente).`);
+				console.log(`No raw ${label} tile at ${dir} (already gone).`);
 			}
 		} catch (e) {
-			// Un fournisseur inconnu ne doit pas faire passer la suppression du
-			// cache pour un succès : on le DIT, et on sort en échec.
-			console.error(`Cache brut non résolu (${label}) : ${e.message}`);
+			// An unknown provider must not let the cache deletion pass for a
+			// success: SAY it, and exit in failure.
+			console.error(`Raw cache not resolved (${label}): ${e.message}`);
 			process.exitCode = 1;
 		}
 	}
 
-	console.log(`\n✓ "${entry.name}" retiré.`);
+	console.log(`\n✓ "${entry.name}" removed.`);
 }
 
 main().catch((e) => { console.error(e.message); process.exit(1); });

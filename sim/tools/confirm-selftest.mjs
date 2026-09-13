@@ -1,10 +1,10 @@
-// Selftest du geste de confirmation du terminal (src/confirm-button.js, #213).
+// Selftest of the terminal's confirmation gesture (src/confirm-button.js, #213).
 //
-// Il remplace les deux derniers confirm() de navigateur — REMOVE TERRAIN et
-// RESET SETTINGS. Ce qui compte : la PREMIÈRE pression ne détruit rien, la
-// DEUXIÈME oui, et un bouton armé ne le reste pas indéfiniment.
+// It replaces the last two browser confirm() calls — REMOVE TERRAIN and
+// RESET SETTINGS. What matters: the FIRST press destroys nothing, the SECOND
+// one does, and an armed button does not stay armed forever.
 //
-// Lancer : node tools/confirm-selftest.mjs
+// Run: node tools/confirm-selftest.mjs
 
 import assert from 'node:assert/strict';
 import { installFakeDom } from './lib/fake-dom.mjs';
@@ -14,21 +14,32 @@ let n = 0;
 const t = (name, fn) => { fn(); n++; console.log(`  ok  ${name}`); };
 const ta = async (name, fn) => { await fn(); n++; console.log(`  ok  ${name}`); };
 
-// --- l'automate, sans DOM ----------------------------------------------------
+// --- the state machine, without a DOM ---------------------------------------
 
-t('nextConfirmState : une pression sur un bouton neutre ARME, sans agir', () => {
+t('nextConfirmState: a press on a neutral button ARMS, without acting', () => {
 	assert.deepEqual(nextConfirmState(false), { armed: true, fire: false });
 });
 
-t('nextConfirmState : une pression sur un bouton armé AGIT, et désarme', () => {
+t('nextConfirmState: a press on an armed button ACTS, and disarms', () => {
 	assert.deepEqual(nextConfirmState(true), { armed: false, fire: true });
 });
 
-t('confirmLabel : le libellé armé dit ce qui va se passer', () => {
-	assert.equal(confirmLabel('[ REMOVE TERRAIN ]'), '[ REMOVE TERRAIN ] — CONFIRM');
+t('confirmLabel: the armed label says what is about to happen', () => {
+	assert.equal(confirmLabel('[ REMOVE TERRAIN ]'), '[ REMOVE TERRAIN — CONFIRM ]');
 });
 
-// --- le câblage, sur le faux DOM --------------------------------------------
+t('confirmLabel: CONFIRM stays INSIDE the brackets (screen.js bracket convention)', () => {
+	// `[ X ] — CONFIRM` read as a button followed by a loose word. The brackets
+	// enclose the whole label of a CTA, so they must enclose this one too.
+	assert.equal(confirmLabel('[ RESET SETTINGS ]'), '[ RESET SETTINGS — CONFIRM ]');
+	assert.ok(!confirmLabel('[ RESET SETTINGS ]').includes('] —'));
+});
+
+t('confirmLabel: a bracket-less label — an inline link — just takes the suffix', () => {
+	assert.equal(confirmLabel('REMOVE TERRAIN'), 'REMOVE TERRAIN — CONFIRM');
+});
+
+// --- the wiring, on the fake DOM --------------------------------------------
 
 const dom = installFakeDom();
 const { armConfirm } = await import('../src/confirm-button.js');
@@ -40,72 +51,72 @@ const mkButton = (label) => {
 	return b;
 };
 
-await ta('la première pression ne détruit rien et réétiquette le bouton', async () => {
+await ta('the first press destroys nothing and relabels the button', async () => {
 	let fired = 0;
 	const b = mkButton('[ REMOVE TERRAIN ]');
 	armConfirm(b, () => { fired++; });
 	b.click();
-	assert.equal(fired, 0, 'rien n\'est parti sur la première pression');
-	assert.equal(b.textContent, '[ REMOVE TERRAIN ] — CONFIRM');
+	assert.equal(fired, 0, 'nothing fired on the first press');
+	assert.equal(b.textContent, '[ REMOVE TERRAIN — CONFIRM ]');
 });
 
-await ta('la deuxième pression agit, une seule fois', async () => {
+await ta('the second press acts, exactly once', async () => {
 	let fired = 0;
 	const b = mkButton('[ RESET ]');
 	armConfirm(b, () => { fired++; });
 	b.click();
 	b.click();
-	assert.equal(fired, 1, 'l\'action part exactement une fois');
-	assert.equal(b.textContent, '[ RESET ]', 'et le bouton est revenu au neutre');
+	assert.equal(fired, 1, 'the action fires exactly once');
+	assert.equal(b.textContent, '[ RESET ]', 'and the button is back to neutral');
 });
 
-await ta('une troisième pression réarme au lieu de refaire', async () => {
-	// Sans le retour au neutre, un bouton resté armé transformerait la pression
-	// suivante — venue pour tout autre chose — en seconde destruction.
+await ta('a third press re-arms instead of acting again', async () => {
+	// Without the return to neutral, a button left armed would turn the next
+	// press — arriving for something else entirely — into a second destruction.
 	let fired = 0;
 	const b = mkButton('[ RESET ]');
 	armConfirm(b, () => { fired++; });
 	b.click(); b.click(); b.click();
-	assert.equal(fired, 1, 'toujours une seule action');
-	assert.equal(b.textContent, '[ RESET ] — CONFIRM', 'la troisième réarme');
+	assert.equal(fired, 1, 'still a single action');
+	assert.equal(b.textContent, '[ RESET — CONFIRM ]', 'the third press re-arms');
 });
 
-await ta('quitter le bouton le désarme (souris comme focus)', async () => {
+await ta('leaving the button disarms it (mouse as well as focus)', async () => {
 	let fired = 0;
 	const b = mkButton('[ REMOVE TERRAIN ]');
 	armConfirm(b, () => { fired++; });
 	b.click();
 	b.dispatchEvent({ type: 'mouseleave' });
-	assert.equal(b.textContent, '[ REMOVE TERRAIN ]', 'le curseur parti, le bouton se désarme');
+	assert.equal(b.textContent, '[ REMOVE TERRAIN ]', 'cursor gone, the button disarms');
 	b.click();
-	assert.equal(fired, 0, 'la pression suivante réarme, elle ne détruit pas');
+	assert.equal(fired, 0, 'the next press re-arms, it does not destroy');
 });
 
-await ta('l\'armement retombe tout seul après le délai', async () => {
+await ta('arming lapses on its own after the timeout', async () => {
 	let fired = 0;
 	const b = mkButton('[ REMOVE TERRAIN ]');
 	armConfirm(b, () => { fired++; }, { timeoutMs: 30 });
 	b.click();
-	assert.equal(b.textContent, '[ REMOVE TERRAIN ] — CONFIRM');
+	assert.equal(b.textContent, '[ REMOVE TERRAIN — CONFIRM ]');
 	await new Promise((r) => setTimeout(r, 60));
-	assert.equal(b.textContent, '[ REMOVE TERRAIN ]', 'revenu au neutre sans intervention');
+	assert.equal(b.textContent, '[ REMOVE TERRAIN ]', 'back to neutral with no intervention');
 	b.click();
-	assert.equal(fired, 0, 'et une pression distraite ne détruit rien');
+	assert.equal(fired, 0, 'and a distracted press destroys nothing');
 });
 
-await ta('le délai par défaut laisse le temps de lire, sans être une éternité', async () => {
-	assert.ok(CONFIRM_TIMEOUT_MS >= 2000 && CONFIRM_TIMEOUT_MS <= 10000, `délai déraisonnable : ${CONFIRM_TIMEOUT_MS}`);
+await ta('the default timeout leaves time to read, without being forever', async () => {
+	assert.ok(CONFIRM_TIMEOUT_MS >= 2000 && CONFIRM_TIMEOUT_MS <= 10000, `unreasonable timeout: ${CONFIRM_TIMEOUT_MS}`);
 });
 
-await ta('le détachement rend le bouton inerte', async () => {
+await ta('detaching makes the button inert', async () => {
 	let fired = 0;
 	const b = mkButton('[ RESET ]');
 	const off = armConfirm(b, () => { fired++; });
 	off();
 	b.click(); b.click();
-	assert.equal(fired, 0, 'plus rien ne part');
+	assert.equal(fired, 0, 'nothing fires any more');
 	assert.equal(b.textContent, '[ RESET ]');
 });
 
 dom.restore();
-console.log(`\n${n} tests confirm OK`);
+console.log(`\n${n} confirm tests OK`);
