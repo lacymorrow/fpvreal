@@ -52,15 +52,6 @@ The game is 100% free. If you appreciate my work, please consider helping me cov
 | **Bitcoin** · silent payment | `sp1qq2tuvemuzgu6hudsu7jf2h90gl6xemav67s3x3f34l76qtfl6dzgcq43r30lvckcz4qat2x8ju5a36sdqr2r3fe72cqpudvlqh797agdkcvkvkl4` |
 | **Bitcoin** | `bc1qmwm3rcvzkwaft40yrtynym3yww20t2atfr45yg` |
 
-Crypto only, and not out of enthusiasm: every card rail verifies the identity of
-whoever receives the money, and this project is published under a pseudonym.
-
-These addresses live in `sim/tools/support-model.mjs`, and
-`sim/tools/support-selftest.mjs` re-verifies every one of them by checksum on
-every CI run — bech32 and bech32m for Bitcoin, Keccak-256 for Monero. A typo in
-a caption is embarrassing; a typo in an address sends a stranger's money
-somewhere nobody can spend it.
-
 ## Controls
 
 | | |
@@ -88,10 +79,6 @@ flowchart LR
     LOST --> ARCH["Session archived:<br/>weather, telemetry, photos"]
     ARCH --> TERM
 ```
-
-Terrain is expensive, so it's cached and reused. The drone isn't: it's generated
-for each target and lost on a crash. There is no respawn in FIELD mode, and
-BENCH is the exception where nothing is lost.
 
 ```mermaid
 flowchart LR
