@@ -24,7 +24,55 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
 
 ## [Non publié]
 
+Première version publique. Le jeu existait déjà en 0.3.0 ; ce qui change ici,
+c'est qu'il est fait pour être rencontré par quelqu'un d'autre que son auteur.
+
+- On vole au-dessus d'une vraie ville, dans le navigateur, en photogrammétrie
+  Google Earth diffusée pendant le vol. Aucun terrain à télécharger d'abord :
+  on clique un point sur la carte, on vole quinze secondes plus tard, et les
+  tuiles vont directement de Google au navigateur du joueur sans passer par un
+  serveur.
+- **Le clavier est jouable.** Sans manette, le vol démarre en angle et les axes
+  montent progressivement ; une manette reçoit toujours de l'acro inchangé.
+- Un navigateur sans WebGL2, un serveur de tuiles bloqué, un délai dépassé :
+  les trois disent maintenant ce qui se passe au lieu d'une page noire, d'une
+  impasse ou d'un vide infini.
+- Une passe de sécurité complète, avec exploits reproduits : évasion par lien
+  symbolique, injection HTML stockée, limite d'inscription contournable,
+  routes non bornées, allocation pilotée par le réseau, et deux portes
+  Electron.
+- L'imagerie Google est créditée sur le chemin que tout le monde emprunte.
+  Elle ne l'était pas.
+- Les surfaces publiques — README, workflows, notes de version, manuel,
+  serveur, outils — sont en anglais.
+- 2 700 vérifications automatiques et une passe de fuzzing à graine fixe dans
+  la même chaîne, exécutée avant chaque publication.
+
+Le détail, rubrique par rubrique.
+
 ### Ajouté
+
+- **Un navigateur sans WebGL2 dit pourquoi**, au lieu d'une page noire sans un
+  mot. three r170 demande un contexte `webgl2` et rien d'autre, et
+  `WebGLRenderer` lève au niveau module : `main.js` était interrompu avant même
+  que le Hud qui aurait pu le signaler existe. La sonde vit maintenant dans
+  `index.html`, en script classique, avant le module — sans bundle, sans
+  feuille de style, sans police, styles en ligne : quoi qu'il ait échoué plus
+  bas, ces mots arrivent à l'écran. Elle nomme les quatre choses qui règlent
+  vraiment le problème.
+- L'écran d'échec a une sortie : `[ RELOAD ]`, Échap et Entrée. Il n'en avait
+  aucune, ce qui faisait de tout blocage de `kh.google.com` — un bloqueur de
+  publicité, un VPN, un proxy d'entreprise — la fin de la visite. Le message
+  nomme désormais cette cause au lieu de se taire.
+- Les fichiers qu'un dépôt public doit avoir : `CONTRIBUTING.md`,
+  `SECURITY.md`, `CODE_OF_CONDUCT.md`, un gabarit de pull request, une
+  configuration de gabarits d'issue qui ferme l'issue vide et route les
+  questions vers Discussions et les vulnérabilités vers le formulaire privé,
+  et `dependabot.yml`.
+- Nouveaux selftests : `first-run-selftest.mjs` (18 vérifications, dont
+  l'exécution de la vraie sonde d'`index.html`), `rocktree-unpack-selftest.mjs`
+  et le modèle pur `boot-failure-model.mjs`.
+
 
 - Une passe de **fuzzing**, `npm run fuzz` (`sim/tools/fuzz.mjs` pour les
   modules purs, `sim/tools/fuzz-api.mjs` pour les routes HTTP contre un vrai
@@ -276,6 +324,40 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
 
 ### Modifié
 
+- **Sans manette, le vol démarre en mode angle.** Le clavier était en pratique
+  injouable : acro par défaut, manches binaires — une tape valait 820 °/s — et
+  un état d'entrée qui pouvait larguer le joueur à 40 m/s et 80° d'inclinaison.
+  Les axes clavier montent maintenant sur 150 ms et atteignent toujours la
+  butée si on tient, et le tirage d'entrée est plafonné. Une manette reçoit
+  toujours de l'acro, strictement inchangé. **Aucun gain PID, aucune constante
+  mesurée, aucun rayon de collision n'a bougé** : c'est de la mise en forme
+  d'entrée et un défaut de mode.
+- Le dépôt est public, donc les deux bascules que cela impliquait : le flux de
+  mise à jour passe de `provider: generic` sur un domaine placeholder à
+  `provider: github`, et `deploy/deploy.sh` n'exige plus de jeton — une Release
+  publique se télécharge sans authentification, le jeton ne fait plus que
+  relever la limite d'appels.
+- Les surfaces publiques sont en anglais : les workflows CI (leurs noms
+  s'affichent sur chaque vérification de pull request), le corps des notes de
+  version, `deploy/`, le hook de commit, `docs/manual.md`, `docs/brand.md`,
+  `sim/server/`, les outils en ligne de commande, et `sim/src/main.js` avec ses
+  quelque 1 280 lignes de commentaires.
+- Trois actions destructrices demandaient un seul clic, dont une qui efface
+  des centaines de mégaoctets de terrain. `REMOVE` devient
+  `[ REMOVE TERRAIN ]` — nommé pour ce qu'il détruit — et les trois réclament
+  une seconde pression.
+- Contraste : `--faint` portait de l'information de 11-13 px à 3,04:1, sous le
+  seuil AA. Il passe à 4,98:1 — et à .53 plutôt qu'au .55 que l'audit
+  proposait, parce que .55 donne 5,27:1 et entre en collision avec
+  `--light-grey` à 5,26:1, aplatissant la hiérarchie que ces deux jetons
+  servent à exprimer. `--red` et `--rule-strong` suivent, le second passant le
+  seuil de 3:1 des bordures d'interface.
+- Le panneau RÉGLAGES portait encore les contrôles du système — sélecteurs
+  arrondis, flèches natives, cases à cocher colorées — à côté des contrôles du
+  banc aplatis depuis longtemps. Cinq traitements d'état vide deviennent un
+  seul.
+
+
 - Le `README.md` est réécrit : court, en anglais, et c'est désormais la porte
   d'entrée publique du projet (#96, #97). `docs/manual.md` reste la
   documentation technique.
@@ -488,6 +570,36 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
   de trous par construction ; son gain chiffré est faible.
 
 ### Corrigé
+
+- **L'imagerie Google n'était créditée nulle part sur le seul chemin qu'un
+  inconnu emprunte.** `setCredit()` n'était appelé que depuis le chemin des
+  scènes installées : le vol LIVE — la seule chose qu'un clone frais sache
+  faire — affichait la photogrammétrie de Google sans attribution. C'est une
+  obligation, pas une politesse. Créditée maintenant en vol et sur l'onglet
+  LIVE avant le décollage, avec le même littéral des deux côtés.
+- Un délai silencieux de 45 s finissait dans un vide infini : son expiration
+  partait dans la console, le vol démarrait sans collisionneurs, et la boucle
+  de réapparition tournait pour toujours dans du cyan vide. L'attente est
+  visible pendant qu'elle a lieu, et l'échéance sans sol est une erreur avec un
+  message.
+- La dégradation du lien vidéo ne s'enclenchait pas hors du chemin des scènes
+  installées : LIVE et BENCH perdaient silencieusement une signature de l'image.
+- L'écran du scanner mentait. Sa ligne de touches annonçait
+  `[ESC] OPERATION MODE` pendant le tracé, alors qu'Échap repose l'outil, et
+  pendant un travail, alors qu'Échap ne fait rien. L'audit la croyait absente ;
+  elle était présente et fausse, ce qui est pire.
+- L'avis d'instance partagée disait d'installer le client de bureau pour
+  acquérir du terrain. Electron démarre le serveur en mode `local` et ne pose
+  pas davantage le drapeau d'acquisition : c'était une consigne d'aller là où
+  cela échoue aussi. La ligne FIELD proposait la même chose.
+- Le `README.md` annonçait « ~1 200 vérifications » là où la chaîne en compte
+  2 723, disait que `R` fait réapparaître la machine — c'est faux en FIELD, et
+  volontairement — et invitait aux contributions sans lier quoi que ce soit.
+- La section non publiée de ce fichier avait accumulé quinze titres de
+  rubrique, `Ajouté` quatre fois. `release-notes.mjs` la recopie telle quelle
+  dans le corps de la Release : les notes de la 1.0.0 l'auraient dit quatre
+  fois.
+
 
 - `music/heavy5-4436683e.opus` est restauré (#126). Le manifeste le référençait
   encore : une piste de la famille `heavy5` manquait à l'installation, et le
@@ -759,6 +871,61 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
   l'intro disparaît. Le logo, la plasma et la résolution restent inchangés.
 
 ### Sécurité
+
+- **Passe de sécurité complète avant la 1.0.0.** Un audit du dépôt a produit
+  des exploits reproduits, pas des hypothèses ; ce qui suit est ce qu'il a
+  fermé.
+- Le serveur de fichiers pouvait être quitté par lien symbolique. `safeJoin`
+  était purement lexical : `../` était refusé, un lien ne l'était pas, et un
+  `scenes/<slug>/pwn.json` pointant sur `/etc/passwd` était servi en 200. Le
+  chemin réel est désormais résolu et vérifié dans la racine avant toute
+  ouverture. Les racines sont résolues une fois et mises en cache — ce n'est
+  pas une optimisation : `/opt/fpvtp/current` est lui-même un lien, et une
+  résolution naïve aurait refusé toutes les requêtes légitimes du VPS. Coût
+  mesuré : 6,8 µs sur une requête de 0,86 ms.
+- La limite d'inscription se contournait. `clientIp()` lisait le PREMIER saut
+  de `X-Forwarded-For`, or Caddy AJOUTE l'adresse réelle à ce que le client a
+  envoyé : la première valeur était donc celle du client, changeable à volonté.
+  Sur une instance publique, cette limite est la seule qui existe. C'est le
+  dernier saut qui est lu maintenant, et le `Caddyfile` retire en plus
+  l'en-tête que le client aurait posé.
+- Trois routes de l'API carte étaient du travail non borné, sans verrou ni
+  compteur. `describe`, `plan` et `probe` acceptaient un polygone de 180° sur
+  170° : un degré au zoom 20 coûtait 388 ms et 17 Mo de réponse, quatre degrés
+  7,8 s — et le serveur est mono-processus, donc un appelant bloquait tous les
+  joueurs. Elles refusent maintenant avant d'allouer, avec un plafond tiré de
+  ce que `add-map` demande réellement.
+- Le décodeur rocktree allouait ce que le réseau lui disait d'allouer. Huit
+  octets d'entrée réclamaient 8 Gio et occupaient le fil 73 s — et ce module
+  tourne aussi dans le worker du navigateur sur le chemin `?live=` : la cible
+  était la machine du joueur. Toute longueur lue dans le flux est désormais
+  bornée par ce que le tampon peut contenir.
+- Une injection HTML stockée vivait dans l'origine qui détient la clé
+  d'opérateur. Un commentaire de session et un régime météo entraient sans
+  échappement dans le détail de session, et un nom de scène — rempli
+  automatiquement depuis un `display_name` de Nominatim, donc depuis la
+  réponse HTTP d'un tiers — dans l'écran météo. Sur une instance partagée, le
+  commentaire d'un joueur s'affiche chez un autre opérateur. Les trois passent
+  maintenant par le DOM, et `sanitizeWeatherSnapshot` choisit les clés qu'elle
+  connaît au lieu de recopier ce qui arrive.
+- Aucun en-tête de sécurité n'était envoyé. `sim/server/headers.mjs` les pose
+  au centre, avant que l'API et le serveur de fichiers voient la requête :
+  `nosniff`, refus d'encadrement, aucun référent, isolation d'ouvrant. La CSP
+  est en **Report-Only** volontairement — ses directives sont tirées de ce que
+  le code charge vraiment, mais aucun navigateur n'a pu les confirmer ici, et
+  `index.html` porte un script en ligne délibéré (la sonde WebGL2, dont le
+  métier est justement d'écrire à l'écran quand le bundle échoue). Passer en
+  application est documenté dans le fichier.
+- Electron confiait au système n'importe quelle URI produite par le renderer.
+  `shell.openExternal` n'avait aucune liste blanche de schéma et il n'y avait
+  aucun garde de navigation : `contextIsolation` contient bien un renderer
+  compromis, `openExternal` est un trou qui en sort. Liste blanche https, http
+  et mailto, navigation épinglée à l'origine de l'application, refus
+  d'attacher une webview que le jeu n'embarque pas.
+- `FPVTP_UPDATE_URL` pouvait rétrograder le flux de mise à jour vers n'importe
+  quoi, avec téléchargement automatique et sans signature nulle part. C'était
+  sans conséquence tant que le flux était un placeholder ; le passage à
+  `provider: github` a rendu le mécanisme actif. HTTPS, ou pas de mise à jour.
 
 - L'API du jeu regarde maintenant d'où vient la requête, en `local` comme en
   `shared` (#79). En `local` elle n'a pas de clé — la frontière est le socket
