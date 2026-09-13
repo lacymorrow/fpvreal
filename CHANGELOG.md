@@ -24,6 +24,8 @@ conservés parce qu'ils sont la trace de la décision, pas un lien.
 
 ## [Non publié]
 
+## [1.1.0] - 2026-09-13
+
 Ce que la première mise en ligne réelle a trouvé. La 1.0.0 a été taguée avant
 qu'une instance publique existe : tout ce qui suit a été découvert en la
 déployant pour de bon, et rien de tout cela ne pouvait l'être autrement.
@@ -1662,7 +1664,8 @@ Le détail, rubrique par rubrique.
   selftest borne famille par famille — ce qui est garanti pour les six, c'est
   que la moitié haute du cadre reste libre.
 
-[Non publié]: https://github.com/lionrayonnant/FPVThePlanet/compare/v1.0.0...HEAD
+[Non publié]: https://github.com/lionrayonnant/FPVThePlanet/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/lionrayonnant/FPVThePlanet/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/lionrayonnant/FPVThePlanet/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/lionrayonnant/FPVThePlanet/compare/v0.1.0-beta...v0.3.0
 [0.1.0-beta]: https://github.com/lionrayonnant/FPVThePlanet/releases/tag/v0.1.0-beta
