@@ -378,7 +378,15 @@ const LensShader = {
 			#if LINK_MODE == 2
 				// Digital does not fade, it holds together and then shatters. The
 				// threshold curve is what makes it read as "fine, fine, gone".
-				dfade = smoothstep(0.6, 0.05, uLink);
+				//
+				// The cliff starts at 0.40 rather than 0.60. It was set when only
+				// installed scenes ran this code; LIVE never called setLink() at all,
+				// so nobody flew digital on streamed terrain. Now that they do, 0.60
+				// spent most of an ordinary flight inside the cliff, which turns the
+				// effect from an event into a permanent texture. Later onset, same
+				// shape: the picture is clean while the link is merely mediocre, and
+				// still shatters when it genuinely goes.
+				dfade = smoothstep(0.40, 0.04, uLink);
 				vec2 blockId = floor(gl_FragCoord.xy / BLOCK_PX);
 				// Errors persist for several frames, the way a macroblock error
 				// survives until the next keyframe. Re-rolling them at 60 Hz would
@@ -387,11 +395,17 @@ const LensShader = {
 				// Never quite every block at once: a decoder that has lost
 				// everything freezes instead, and the freeze is handled on the JS
 				// side by simply not rendering the frame.
-				blocky = step(1.0 - dfade * dfade * 0.6375, bn);
+				// 0.40 rather than 0.6375: past about half the blocks failing at
+				// once there is no picture left to read, only mosaic, and the
+				// difference between "losing it" and "lost" stops being legible.
+				blocky = step(1.0 - dfade * dfade * 0.40, bn);
 				// A failed block shows a block from somewhere else — the decoder
 				// following a motion vector it never received a correction for.
+				// 2.5 block widths rather than 5: at five the blocks come from far
+				// enough away to be unrelated to what is under them, which reads as
+				// noise rather than as a decoder guessing wrong.
 				vec2 disp = (vec2(hash12(blockId + 11.0), hash12(blockId + 29.0)) - 0.5)
-					* BLOCK_PX * 5.0 * dfade / uResolution;
+					* BLOCK_PX * 2.5 * dfade / uResolution;
 				// Snapping to the block centre is what flattens the block; the lens
 				// warp is re-added so the macroblocks still sit under the barrel
 				// distortion instead of floating on top of it.
@@ -751,12 +765,14 @@ const LensShader = {
 				// Fewer levels inside a broken block, and a seam around it. Blocking
 				// artifacts are visible precisely because the quantiser lands on
 				// different levels either side of a boundary the picture never had.
-				float levels = mix(64.0, 12.0, dfade);
+				// Floor at 24 levels rather than 12: banding stays visible as
+				// banding instead of posterising the block into flat colour.
+				float levels = mix(64.0, 24.0, dfade);
 				vec3 quant = floor(c * levels + 0.5) / levels;
 				c = mix(c, quant, blocky);
 				vec2 inBlock = fract(gl_FragCoord.xy / BLOCK_PX);
 				float seam = max(step(inBlock.x, 1.0 / BLOCK_PX), step(inBlock.y, 1.0 / BLOCK_PX));
-				c *= 1.0 - seam * blocky * 0.18;
+				c *= 1.0 - seam * blocky * 0.12;
 			#endif
 
 			gl_FragColor = vec4(c, 1.0);
