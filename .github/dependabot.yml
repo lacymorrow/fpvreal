@@ -1,0 +1,33 @@
+# Six runtime dependencies, two of which carry native code (sharp) or a whole
+# browser (electron). A monthly pull request is the right cadence for a
+# one-person project: weekly would be noise, and never is how a CVE in a
+# transitive dependency goes unnoticed for a year.
+#
+# Grouped, because six separate pull requests for one npm audit is six CI runs
+# and six reviews of the same lockfile.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /sim
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+        # three and rapier move together with the rendering and physics code
+        # and are the two most likely to need a real change rather than a bump;
+        # they are worth their own pull request.
+        exclude-patterns:
+          - three
+          - '@dimforge/rapier3d-compat'
+
+  # The workflows pin actions by tag (actions/checkout@v4). Dependabot is what
+  # notices when a tag stops being maintained.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2

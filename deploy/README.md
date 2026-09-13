@@ -218,7 +218,7 @@ npm dependency at all to start — measured on 2026-09-07 on an archive built
 exactly like the CI one, **without `node_modules`**:
 
 ```
-FPVTP! v0.0.0 — mode shared — acquisition fermée — données … — http://127.0.0.1:8299/
+FPVTP! v1.0.0 — mode shared — acquisition closed — data … — http://127.0.0.1:8299/
 GET /                       → 200 text/html
 GET /__map-api/scenes       → 401   (operator key required, shared mode)
 GET /__operator             → 404   (no public directory in shared)
@@ -304,7 +304,7 @@ curl -s  https://updates.fpvtp.example.org/latest-linux.yml   # optional block o
 On start-up, the server writes one line that says everything:
 
 ```
-FPVTP! v1.0.0 — mode shared — acquisition fermée — données /var/lib/fpvtp — http://127.0.0.1:8080/
+FPVTP! v1.0.0 — mode shared — acquisition closed — data /var/lib/fpvtp — http://127.0.0.1:8080/
 ```
 
 If `mode` does not say `shared` there, or if the data directory is not

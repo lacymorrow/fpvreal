@@ -27,6 +27,10 @@ const APP_ROOT = path.dirname(HERE);
 // the player's back. FPVTP_UPDATE_URL replaces the feed without a rebuild.
 const PLACEHOLDER_MARK = '.invalid';
 
+// Schemes `shell.openExternal` may be handed. Everything else — file:, smb:,
+// and every OS-registered handler — is refused.
+const SAFE_EXTERNAL = new Set(['https:', 'http:', 'mailto:']);
+
 let serverHandle = null;
 
 function log(line) {
@@ -46,9 +50,23 @@ function wireUpdater() {
 	// `npm run electron` must not go looking for a release.
 	if (!app.isPackaged) return;
 
+	// FPVTP_UPDATE_URL exists so a self-hoster can point installed clients at
+	// their own feed. It replaces GitHub's TLS with whatever the variable says,
+	// and nothing in this chain is code-signed, so an http: feed would be a
+	// remote-code-execution primitive for anyone on the path. HTTPS or nothing.
 	const override = process.env.FPVTP_UPDATE_URL?.trim();
 	if (override) {
-		autoUpdater.setFeedURL({ provider: 'generic', url: override });
+		let feed = null;
+		try {
+			const u = new URL(override);
+			if (u.protocol === 'https:') feed = u.toString();
+			else log(`updates disabled: FPVTP_UPDATE_URL must be https, got ${u.protocol}`);
+		} catch {
+			log('updates disabled: FPVTP_UPDATE_URL is not a URL');
+		}
+		if (!feed) return;
+		log(`update feed overridden: ${feed}`);
+		autoUpdater.setFeedURL({ provider: 'generic', url: feed });
 	} else {
 		const baked = bakedFeed();
 		if (!baked) return void log('updates disabled: no app-update.yml');
@@ -90,6 +108,10 @@ function createWindow(url) {
 		webPreferences: {
 			contextIsolation: true,
 			nodeIntegration: false,
+			// Both are the current Electron defaults. They are pinned so that a
+			// preload added later cannot silently flip one.
+			sandbox: true,
+			webSecurity: true,
 			// The game runs on requestAnimationFrame; Chromium throttles the
 			// frames of a background window, which would drop the physics on the
 			// first alt-tab.
@@ -111,11 +133,29 @@ function createWindow(url) {
 	wc.on('render-process-gone', (_e, details) => log(`renderer lost: ${details.reason}`));
 	wc.on('unresponsive', () => log('renderer frozen'));
 	// Nothing in the game opens a second window: an external link leaves for the
-	// system browser.
+	// system browser. The scheme allowlist is what keeps that from being a hole
+	// straight out of the sandbox — contextIsolation and nodeIntegration contain
+	// a compromised renderer, but `shell.openExternal` hands the string to the
+	// OS protocol handler, which on Windows will happily take a file:// path, a
+	// UNC share or any registered URI scheme.
 	win.webContents.setWindowOpenHandler(({ url: target }) => {
-		shell.openExternal(target);
+		try {
+			if (SAFE_EXTERNAL.has(new URL(target).protocol)) shell.openExternal(target);
+		} catch { /* unparsable: refuse */ }
 		return { action: 'deny' };
 	});
+
+	// The renderer is the local server and nothing else. Without this the main
+	// window itself can be navigated off-origin, which loses the origin the
+	// whole local-mode security boundary is drawn around.
+	const appOrigin = new URL(url).origin;
+	wc.on('will-navigate', (e, to) => {
+		let sameOrigin = false;
+		try { sameOrigin = new URL(to).origin === appOrigin; } catch { /* refuse */ }
+		if (!sameOrigin) { e.preventDefault(); log(`navigation refused: ${to}`); }
+	});
+	// The game embeds no webview; one appearing means something else did it.
+	wc.on('will-attach-webview', (e) => e.preventDefault());
 
 	win.loadURL(url);
 	return win;
