@@ -3,9 +3,17 @@
   "productName": "FPVTP",
   "version": "0.3.0",
   "private": true,
-  "description": "FPVThePlanet! — simulateur de drone FPV",
+  "description": "FPVThePlanet! — FPV drone flight over real cities, in the browser",
   "author": "lionrayonnant",
   "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/lionrayonnant/FPVThePlanet",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lionrayonnant/FPVThePlanet.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lionrayonnant/FPVThePlanet/issues"
+  },
   "main": "electron/main.js",
   "type": "module",
   "scripts": {

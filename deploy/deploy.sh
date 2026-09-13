@@ -1,84 +1,87 @@
 #!/usr/bin/env bash
 #
-# deploy.sh <tag> — livre une version de FPVTP! sur le VPS.
+# deploy.sh <tag> — ships a version of FPVTP! to the VPS.
 #
-# Tranche T4 du design de déploiement :
+# Slice T4 of the deployment design:
 # sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md
 #
-# Ce script tourne EN ROOT sur une machine de production. Il est écrit pour
-# échouer bruyamment et tôt plutôt que pour deviner.
+# This script runs AS ROOT on a production machine. It is written to fail
+# loudly and early rather than to guess.
 #
-# Usage :
-#     sudo /opt/fpvtp/deploy.sh v0.2.0
+# Usage:
+#     sudo /opt/fpvtp/deploy.sh v1.0.0
 #
-# Ce qu'il fait, dans l'ordre :
-#     a. télécharge l'asset `linux-x64` de la GitHub Release du tag donné
-#        (le dépôt est PRIVÉ : jeton lecture seule attendu dans /etc/fpvtp/token) ;
-#     b. décompresse dans /opt/fpvtp/releases/<tag> ;
-#     c. bascule le lien /opt/fpvtp/current dessus ;
-#     d. systemctl restart fpvtp ;
-#     e. vérifie que le serveur répond sur /__map-api/scenes ;
-#     f. dépose les installeurs de bureau et leurs fichiers de flux dans
-#        /srv/fpvtp-updates (le répertoire que sert le second bloc Caddy).
+# What it does, in order:
+#     a. downloads the `linux-x64` asset of the GitHub Release for the given
+#        tag (the repository is public, so no token is required);
+#     b. unpacks it into /opt/fpvtp/releases/<tag>;
+#     c. points the /opt/fpvtp/current link at it;
+#     d. systemctl restart fpvtp;
+#     e. checks that the server answers on /__map-api/scenes;
+#     f. drops the desktop installers and their feed files into
+#        /srv/fpvtp-updates (the directory the second Caddy block serves).
 #
 # ---------------------------------------------------------------------------
-# REVENIR EN ARRIÈRE (rollback)
+# ROLLING BACK
 # ---------------------------------------------------------------------------
-# Ce script n'efface JAMAIS la release précédente : elle reste entière dans
-# /opt/fpvtp/releases/<tag précédent>. Revenir en arrière est donc deux
-# commandes, et rien d'autre :
+# This script NEVER erases the previous release: it stays whole in
+# /opt/fpvtp/releases/<previous tag>. Rolling back is therefore two commands,
+# and nothing else:
 #
-#     ln -sfn /opt/fpvtp/releases/<tag précédent> /opt/fpvtp/current
+#     ln -sfn /opt/fpvtp/releases/<previous tag> /opt/fpvtp/current
 #     systemctl restart fpvtp
 #
-# Le script affiche le chemin exact de la release précédente au moment de la
-# bascule, et le ré-affiche s'il échoue : gardez cette ligne sous les yeux.
-# Le rollback n'est PAS automatique, à dessein — un rollback automatique qui
-# échoue à son tour laisse la machine dans un état que personne n'a décrit.
-# Les données (/var/lib/fpvtp) ne sont jamais touchées, ni à la livraison ni
-# au rollback.
+# The script prints the exact path of the previous release at the moment it
+# switches, and prints it again if it fails: keep that line in view.
+# The rollback is NOT automatic, deliberately — an automatic rollback that
+# fails in turn leaves the machine in a state nobody has described.
+# The data (/var/lib/fpvtp) is never touched, neither on delivery nor on
+# rollback.
 #
-# Pour faire de la place, effacez à la main les vieilles releases, en gardant
-# au moins celle qui tourne et la précédente :
+# To free space, erase old releases by hand, keeping at least the running one
+# and the previous one:
 #     ls -1t /opt/fpvtp/releases
 # ---------------------------------------------------------------------------
 
 set -euo pipefail
 
-# --- Réglages (les seules choses à relire si la machine change) -------------
+# --- Settings (the only things to re-read if the machine changes) -----------
 REPO="lionrayonnant/FPVThePlanet"
 ROOT="/opt/fpvtp"
 RELEASES_DIR="${ROOT}/releases"
 CURRENT_LINK="${ROOT}/current"
+# Optional since the repository went public: a token is no longer needed to
+# read a Release, it only raises the GitHub API rate limit (60 requests/hour
+# unauthenticated, per IP). A VPS that shares its address with other API
+# callers is the case where this matters.
 TOKEN_FILE="/etc/fpvtp/token"
 SERVICE="fpvtp"
 SERVICE_USER="fpvtp"
 SERVICE_GROUP="fpvtp"
 UPDATES_DIR="/srv/fpvtp-updates"
-# Doit correspondre à FPVTP_HOST/FPVTP_PORT dans deploy/fpvtp.service.
+# Must match FPVTP_HOST/FPVTP_PORT in deploy/fpvtp.service.
 HEALTH_URL="http://127.0.0.1:8080/__map-api/scenes"
 HEALTH_TRIES=30
 
-# --- Petits utilitaires -----------------------------------------------------
+# --- Small helpers ----------------------------------------------------------
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33m/!\\\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[31mERREUR\033[0m %s\n' "$*" >&2; exit 1; }
+die()  { printf '\033[31mERROR\033[0m %s\n' "$*" >&2; exit 1; }
 
-# Efface un répertoire, mais SEULEMENT s'il est non vide comme variable et
-# bien situé sous une racine attendue. `rm -rf "$X"` avec X vide vaut
-# `rm -rf ""` — inoffensif ici, mais `rm -rf "$X"/*` ne l'est pas, et une
-# faute de frappe dans un chemin l'est encore moins. On passe par cette
-# fonction partout.
+# Erases a directory, but ONLY if the variable is non-empty and the path sits
+# under an expected root. `rm -rf "$X"` with X empty is `rm -rf ""` — harmless
+# here, but `rm -rf "$X"/*` is not, and a typo in a path is worse still. Every
+# deletion goes through this function.
 safe_rm_rf() {
-	local victime="${1:-}" racine="${2:-}"
-	[ -n "$victime" ] || die "safe_rm_rf appelée sans chemin (bug du script)"
-	[ -n "$racine" ]  || die "safe_rm_rf appelée sans racine (bug du script)"
-	case "$victime" in
-		"$racine"/?*) ;;
-		*) die "refus d'effacer « $victime » : hors de $racine" ;;
+	local victim="${1:-}" root="${2:-}"
+	[ -n "$victim" ] || die "safe_rm_rf called with no path (script bug)"
+	[ -n "$root" ]   || die "safe_rm_rf called with no root (script bug)"
+	case "$victim" in
+		"$root"/?*) ;;
+		*) die "refusing to erase \"$victim\": outside $root" ;;
 	esac
-	[ -e "$victime" ] || return 0
-	rm -rf -- "$victime"
+	[ -e "$victim" ] || return 0
+	rm -rf -- "$victim"
 }
 
 STAGING=""
@@ -89,172 +92,177 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- 0. Contrôles préalables ------------------------------------------------
+# --- 0. Preflight checks ----------------------------------------------------
 TAG="${1:-}"
-[ -n "$TAG" ] || die "usage: $0 <tag>   (exemple: $0 v0.2.0)"
+[ -n "$TAG" ] || die "usage: $0 <tag>   (example: $0 v1.0.0)"
 case "$TAG" in
 	v[0-9]*) ;;
-	*) die "tag « $TAG » inattendu : on attend la forme vX.Y.Z, celle des tags de release" ;;
+	*) die "unexpected tag \"$TAG\": the form vX.Y.Z is expected, the one release tags use" ;;
 esac
-# Le tag entre dans des chemins : rien d'exotique n'y est admis.
+# The tag ends up in paths: nothing exotic is allowed in it.
 case "$TAG" in
-	*/*|*..*|*' '*) die "tag « $TAG » : caractère interdit dans un nom de release" ;;
+	*/*|*..*|*' '*) die "tag \"$TAG\": forbidden character in a release name" ;;
 esac
 
-[ "$(id -u)" -eq 0 ] || die "à lancer en root (sudo) : bascule de /opt/fpvtp et systemctl restart"
+[ "$(id -u)" -eq 0 ] || die "run as root (sudo): it switches /opt/fpvtp and calls systemctl restart"
 
-for outil in curl jq tar unzip systemctl install; do
-	command -v "$outil" >/dev/null 2>&1 || die "outil manquant : $outil (voir deploy/README.md, « Prérequis »)"
+for tool in curl jq tar unzip systemctl install; do
+	command -v "$tool" >/dev/null 2>&1 || die "missing tool: $tool (see deploy/README.md, \"Prerequisites\")"
 done
 
-# Le jeton : la panne la plus probable, donc le message le plus explicite.
-if [ ! -f "$TOKEN_FILE" ]; then
-	die "jeton absent : $TOKEN_FILE n'existe pas.
-     Le dépôt ${REPO} est privé : le téléchargement de la release demande un
-     jeton GitHub en lecture seule (portée « Contents: read » sur ce dépôt).
-     Créez-le puis :
-         install -d -m 0700 /etc/fpvtp
-         printf '%s' 'ghp_xxxxxxxx' > ${TOKEN_FILE}
-         chmod 0600 ${TOKEN_FILE}"
+# The token is optional since the repository is public. When present it only
+# raises the API rate limit; when absent the anonymous limit (60 requests per
+# hour and per IP) is plenty for one delivery, which spends four or five.
+TOKEN=""
+if [ -f "$TOKEN_FILE" ]; then
+	TOKEN="$(tr -d ' \t\r\n' < "$TOKEN_FILE")"
+	if [ -n "$TOKEN" ]; then
+		say "GitHub token read from ${TOKEN_FILE} (raised rate limit)."
+	else
+		warn "${TOKEN_FILE} exists but is empty: continuing without a token."
+	fi
 fi
-TOKEN="$(tr -d ' \t\r\n' < "$TOKEN_FILE")"
-[ -n "$TOKEN" ] || die "jeton vide : $TOKEN_FILE existe mais ne contient rien d'exploitable."
 
-[ -d "$RELEASES_DIR" ] || die "$RELEASES_DIR n'existe pas — la machine n'a pas été préparée (deploy/README.md)."
+[ -d "$RELEASES_DIR" ] || die "$RELEASES_DIR does not exist — the machine has not been prepared (deploy/README.md)."
 systemctl list-unit-files "${SERVICE}.service" --no-legend | grep -q . \
-	|| die "unité ${SERVICE}.service inconnue de systemd — installez deploy/fpvtp.service (deploy/README.md)."
+	|| die "unit ${SERVICE}.service unknown to systemd — install deploy/fpvtp.service (deploy/README.md)."
 
 STAGING="$(mktemp -d /tmp/fpvtp-deploy.XXXXXXXX)"
 
-# `curl` vers l'API GitHub, avec le jeton passé par en-tête. Le jeton n'apparaît
-# jamais dans une ligne de commande visible par `ps` : il est dans une variable
-# et `curl` la lit par -H, pas dans l'URL.
+# `curl` against the GitHub API. When a token is set it goes through a header,
+# never through a command line visible to `ps`: it lives in a variable and curl
+# reads it with -H, not in the URL.
 gh_api() {
+	local auth=()
+	if [ -n "$TOKEN" ]; then auth=(-H "Authorization: Bearer ${TOKEN}"); fi
+	# ${auth[@]+...}: an empty array under `set -u` is an unbound variable on
+	# bash < 4.4, and this script runs on whatever the distribution ships.
 	curl --fail-with-body --silent --show-error --location \
 		--retry 3 --retry-delay 2 --connect-timeout 15 \
-		-H "Authorization: Bearer ${TOKEN}" \
+		${auth[@]+"${auth[@]}"} \
 		-H "Accept: application/vnd.github+json" \
 		-H "X-GitHub-Api-Version: 2022-11-28" \
 		"$@"
 }
 
-# --- a. La release et ses assets -------------------------------------------
-say "Release ${TAG} du dépôt ${REPO}"
+# --- a. The release and its assets ------------------------------------------
+say "Release ${TAG} of repository ${REPO}"
 RELEASE_JSON="${STAGING}/release.json"
 if ! gh_api -o "$RELEASE_JSON" "https://api.github.com/repos/${REPO}/releases/tags/${TAG}"; then
-	die "release ${TAG} introuvable, ou jeton refusé.
-     Vérifiez que le tag existe (gh release view ${TAG}) et que le jeton de
-     ${TOKEN_FILE} a bien la lecture du contenu de ${REPO}."
+	die "release ${TAG} not found, or the API refused the request.
+     Check that the tag exists (gh release view ${TAG}). If the API answered
+     403, the anonymous rate limit is spent: drop a read-only token in
+     ${TOKEN_FILE} and try again."
 fi
 
-# Un asset = (id, nom). On les liste une fois, on pioche dedans ensuite.
+# An asset is (id, name). They are listed once, then picked from.
 ASSETS="${STAGING}/assets.tsv"
 jq -r '.assets[] | "\(.id)\t\(.name)"' "$RELEASE_JSON" > "$ASSETS"
-[ -s "$ASSETS" ] || die "la release ${TAG} n'a aucun asset attaché."
+[ -s "$ASSETS" ] || die "release ${TAG} has no attached asset."
 
-# Télécharge un asset par son id. L'API sert le binaire quand on demande
-# `application/octet-stream` — c'est la seule voie pour un dépôt privé, l'URL
-# `browser_download_url` n'accepte pas le jeton.
-telecharger_asset() {
+# Downloads an asset by its id. The API serves the binary when
+# `application/octet-stream` is asked for; this works for a public repository
+# just as it did for a private one, so the path stays uniform.
+download_asset() {
 	local id="$1" dest="$2"
-	# `< /dev/null` : cette fonction est appelée depuis une boucle
-	# `while read` qui lit un fichier sur stdin ; curl ne doit pas y toucher.
+	# `< /dev/null`: this function is called from a `while read` loop reading a
+	# file on stdin; curl must not touch it.
 	gh_api -H "Accept: application/octet-stream" -o "$dest" \
 		"https://api.github.com/repos/${REPO}/releases/assets/${id}" < /dev/null
 }
 
-# Le premier asset dont le nom contient « linux-x64 ».
+# The first asset whose name contains "linux-x64".
 SERVER_ID=""; SERVER_NAME=""
-while IFS=$'\t' read -r id nom; do
-	case "$nom" in
-		*linux-x64*) SERVER_ID="$id"; SERVER_NAME="$nom"; break ;;
+while IFS=$'\t' read -r id name; do
+	case "$name" in
+		*linux-x64*) SERVER_ID="$id"; SERVER_NAME="$name"; break ;;
 	esac
 done < "$ASSETS"
 
 if [ -z "$SERVER_ID" ]; then
-	die "aucun asset « linux-x64 » dans la release ${TAG}.
-     Assets présents :
+	die "no \"linux-x64\" asset in release ${TAG}.
+     Assets present:
 $(sed 's/^[0-9]*\t/       - /' "$ASSETS")
-     C'est le prérequis connu et non encore satisfait : au 2026-09-07,
-     .github/workflows/release.yml ne publie qu'un « fpvtp-sim-<tag>.zip »
-     contenant le seul dist/, sans server/, sans tools/ et sans runtime Node.
-     Voir deploy/README.md, section « Le runtime Node »."
+     .github/workflows/release.yml publishes
+     \"fpvtp-server-<tag>-linux-x64.tar.gz\" — the server, the built game, a
+     Node runtime and deploy/. A release that predates that workflow does not
+     carry it. See deploy/README.md, section \"The Node runtime\"."
 fi
 
-say "Asset serveur : ${SERVER_NAME}"
+say "Server asset: ${SERVER_NAME}"
 ARCHIVE="${STAGING}/${SERVER_NAME}"
-telecharger_asset "$SERVER_ID" "$ARCHIVE" || die "échec du téléchargement de ${SERVER_NAME}."
+download_asset "$SERVER_ID" "$ARCHIVE" || die "download of ${SERVER_NAME} failed."
 
-# --- b. Décompression -------------------------------------------------------
-# On décompresse dans un dossier temporaire PUIS on déplace : une release
-# n'apparaît sous son nom définitif que complète.
+# --- b. Unpacking -----------------------------------------------------------
+# Unpack into a temporary folder THEN move: a release only appears under its
+# final name once it is complete.
 EXTRACT="${STAGING}/extract"
 mkdir -p "$EXTRACT"
 case "$SERVER_NAME" in
 	*.zip)              unzip -q "$ARCHIVE" -d "$EXTRACT" ;;
 	*.tar.gz|*.tgz)     tar -xzf "$ARCHIVE" -C "$EXTRACT" ;;
 	*.tar.xz)           tar -xJf "$ARCHIVE" -C "$EXTRACT" ;;
-	*) die "format d'archive non géré : ${SERVER_NAME} (zip, tar.gz ou tar.xz attendus)" ;;
+	*) die "unsupported archive format: ${SERVER_NAME} (zip, tar.gz or tar.xz expected)" ;;
 esac
 
-# Si l'archive a un unique dossier racine, c'est lui la release.
+# If the archive has a single root folder, that folder is the release.
 SOURCE="$EXTRACT"
 if [ "$(find "$EXTRACT" -mindepth 1 -maxdepth 1 | wc -l)" -eq 1 ]; then
-	seul="$(find "$EXTRACT" -mindepth 1 -maxdepth 1)"
-	[ -d "$seul" ] && SOURCE="$seul"
+	only="$(find "$EXTRACT" -mindepth 1 -maxdepth 1)"
+	[ -d "$only" ] && SOURCE="$only"
 fi
 
-# La forme que l'unité systemd exige, vérifiée AVANT de basculer quoi que ce
-# soit : ExecStart pointe /opt/fpvtp/current/node/bin/node et
-# WorkingDirectory /opt/fpvtp/current/app.
+# The shape the systemd unit demands, checked BEFORE anything is switched:
+# ExecStart points at /opt/fpvtp/current/node/bin/node and WorkingDirectory at
+# /opt/fpvtp/current/app.
 [ -f "${SOURCE}/app/server/index.mjs" ] \
-	|| die "archive inattendue : app/server/index.mjs absent.
-     fpvtp.service lance « server/index.mjs » depuis <release>/app.
-     Contenu trouvé à la racine de l'archive :
+	|| die "unexpected archive: app/server/index.mjs is missing.
+     fpvtp.service runs \"server/index.mjs\" from <release>/app.
+     Found at the archive root:
 $(find "$SOURCE" -mindepth 1 -maxdepth 1 -printf '       - %f\n' | sort)"
 [ -x "${SOURCE}/node/bin/node" ] \
-	|| die "archive inattendue : node/bin/node absent ou non exécutable.
-     fpvtp.service lance <release>/node/bin/node : le runtime Node doit
-     voyager dans l'archive (voir deploy/README.md, « Le runtime Node »)."
+	|| die "unexpected archive: node/bin/node missing or not executable.
+     fpvtp.service runs <release>/node/bin/node: the Node runtime must travel
+     inside the archive (see deploy/README.md, \"The Node runtime\")."
 
 DEST="${RELEASES_DIR}/${TAG}"
 if [ -e "$DEST" ]; then
-	warn "${DEST} existe déjà : il est remplacé (re-livraison du même tag)."
+	warn "${DEST} already exists: it is being replaced (re-delivery of the same tag)."
 	safe_rm_rf "$DEST" "$RELEASES_DIR"
 fi
 mv -- "$SOURCE" "$DEST"
 chown -R "${SERVICE_USER}:${SERVICE_GROUP}" "$DEST"
-say "Déployé dans ${DEST}"
+say "Deployed into ${DEST}"
 
-# --- c. Bascule du lien -----------------------------------------------------
-PRECEDENT=""
+# --- c. Switching the link --------------------------------------------------
+PREVIOUS=""
 if [ -L "$CURRENT_LINK" ]; then
-	PRECEDENT="$(readlink -f "$CURRENT_LINK" || true)"
+	PREVIOUS="$(readlink -f "$CURRENT_LINK" || true)"
 elif [ -e "$CURRENT_LINK" ]; then
-	die "${CURRENT_LINK} existe et n'est PAS un lien symbolique.
-     Le script ne touche pas à ça : déplacez-le à la main, puis relancez."
+	die "${CURRENT_LINK} exists and is NOT a symbolic link.
+     The script will not touch that: move it by hand, then run again."
 fi
 
-if [ -n "$PRECEDENT" ]; then
-	say "Release précédente conservée : ${PRECEDENT}"
-	say "Rollback = ln -sfn '${PRECEDENT}' '${CURRENT_LINK}' && systemctl restart ${SERVICE}"
+if [ -n "$PREVIOUS" ]; then
+	say "Previous release kept: ${PREVIOUS}"
+	say "Rollback = ln -sfn '${PREVIOUS}' '${CURRENT_LINK}' && systemctl restart ${SERVICE}"
 else
-	say "Première livraison : aucune release précédente à conserver."
+	say "First delivery: no previous release to keep."
 fi
 
 ln -sfn "$DEST" "$CURRENT_LINK"
 say "${CURRENT_LINK} -> ${DEST}"
 
-# --- d. Redémarrage ---------------------------------------------------------
+# --- d. Restart -------------------------------------------------------------
 say "systemctl restart ${SERVICE}"
 systemctl restart "$SERVICE"
 
-# --- e. Vérification --------------------------------------------------------
-# On accepte 200, mais aussi 401 et 403 : à partir de la tranche T3, le mode
-# `shared` demande une clé d'opérateur sur /__map-api/*, et un refus
-# d'authentification prouve tout autant que le serveur Node est vivant et
-# répond. Ce qui n'est PAS accepté : pas de réponse du tout, ou une 5xx.
-say "Vérification : ${HEALTH_URL}"
+# --- e. Health check --------------------------------------------------------
+# 200 is accepted, but so are 401 and 403: from slice T3 on, `shared` mode
+# demands an operator key on /__map-api/*, and a refused authentication proves
+# just as well that the Node server is alive and answering. What is NOT
+# accepted: no answer at all, or a 5xx.
+say "Checking: ${HEALTH_URL}"
 code=""
 for _ in $(seq 1 "$HEALTH_TRIES"); do
 	code="$(curl --silent --output /dev/null --write-out '%{http_code}' \
@@ -267,55 +275,59 @@ done
 
 case "$code" in
 	200|401|403)
-		say "Le serveur répond (HTTP ${code})."
+		say "The server answers (HTTP ${code})."
 		;;
 	*)
 		printf '\n' >&2
-		warn "Le serveur ne répond pas correctement sur ${HEALTH_URL} (code « ${code:-aucun} »)."
-		warn "Journal des 40 dernières lignes :"
+		warn "The server does not answer correctly on ${HEALTH_URL} (code \"${code:-none}\")."
+		warn "Last 40 log lines:"
 		journalctl -u "$SERVICE" -n 40 --no-pager >&2 || true
-		if [ -n "$PRECEDENT" ]; then
-			die "livraison échouée. Pour revenir en arrière :
-         ln -sfn '${PRECEDENT}' '${CURRENT_LINK}' && systemctl restart ${SERVICE}"
+		if [ -n "$PREVIOUS" ]; then
+			die "delivery failed. To roll back:
+         ln -sfn '${PREVIOUS}' '${CURRENT_LINK}' && systemctl restart ${SERVICE}"
 		fi
-		die "livraison échouée, et aucune release précédente vers laquelle revenir."
+		die "delivery failed, and there is no previous release to fall back to."
 		;;
 esac
 
-# --- f. Les installeurs de bureau (Electron, D3) ----------------------------
-# Sans authentification, publics, servis par le second bloc du Caddyfile.
-# Ils ne conditionnent PAS le succès de la livraison du serveur : si la
-# release n'en contient pas encore (tranche T2 non livrée), on prévient et on
-# s'arrête là, le serveur tourne déjà.
-say "Artefacts de bureau -> ${UPDATES_DIR}"
+# --- f. The desktop installers (Electron, D3) -------------------------------
+# Unauthenticated, public, served by the second block of the Caddyfile.
+#
+# Since the repository went public the auto-updater reads the GitHub Releases
+# API directly (electron-builder.yml, `provider: github`), so this mirror is no
+# longer what keeps installed apps up to date. It stays useful as a download
+# page of your own, and as the feed an FPVTP_UPDATE_URL build would point at.
+#
+# It does NOT gate the success of the server delivery: if the release carries
+# none, a warning is printed and the script stops there, the server already
+# running.
+say "Desktop artifacts -> ${UPDATES_DIR}"
 if [ ! -d "$UPDATES_DIR" ]; then
-	warn "${UPDATES_DIR} n'existe pas : rien n'est déposé. Créez-le (deploy/README.md)."
+	warn "${UPDATES_DIR} does not exist: nothing is dropped. Create it (deploy/README.md)."
 	exit 0
 fi
 
-deposes=0
-while IFS=$'\t' read -r id nom; do
-	case "$nom" in
+dropped=0
+while IFS=$'\t' read -r id name; do
+	case "$name" in
 		*.exe|*.AppImage|*.blockmap|latest.yml|latest-linux.yml)
-			tmp="${STAGING}/desktop-${nom}"
-			if ! telecharger_asset "$id" "$tmp"; then
-				warn "échec du téléchargement de ${nom} — ignoré."
+			tmp="${STAGING}/desktop-${name}"
+			if ! download_asset "$id" "$tmp"; then
+				warn "download of ${name} failed — skipped."
 				continue
 			fi
-			# install(1) écrit dans un fichier temporaire puis renomme : le
-			# fichier servi par Caddy n'est jamais vu à moitié écrit.
-			install -m 0644 -- "$tmp" "${UPDATES_DIR}/${nom}"
-			say "  ${nom}"
-			deposes=$((deposes + 1))
+			# install(1) writes to a temporary file then renames: the file Caddy
+			# serves is never seen half-written.
+			install -m 0644 -- "$tmp" "${UPDATES_DIR}/${name}"
+			say "  ${name}"
+			dropped=$((dropped + 1))
 			;;
 	esac
 done < "$ASSETS"
 
-if [ "$deposes" -eq 0 ]; then
-	warn "Aucun installeur ni fichier de flux dans la release ${TAG}."
-	warn "Attendu à partir de la tranche T2 : *.exe, *.AppImage, latest.yml, latest-linux.yml."
+if [ "$dropped" -eq 0 ]; then
+	warn "No installer and no feed file in release ${TAG}."
+	warn "Expected: *.exe, *.AppImage, latest.yml, latest-linux.yml."
 else
-	say "${deposes} artefact(s) de bureau déposé(s)."
+	say "${dropped} desktop artifact(s) dropped."
 fi
-
-say "Livraison de ${TAG} terminée."

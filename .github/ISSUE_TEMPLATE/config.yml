@@ -1,0 +1,14 @@
+# A blank issue is almost always a bug report or a feature request that skipped
+# the questions those forms ask, so the forms are the only way in and the rest
+# is routed somewhere it will get a better answer.
+blank_issues_enabled: false
+contact_links:
+  - name: Question, flight feel, or an idea you want to talk through
+    url: https://github.com/lionrayonnant/FPVThePlanet/discussions
+    about: Tuning, handling, art direction and "is this supposed to work like that" belong in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/lionrayonnant/FPVThePlanet/security/advisories/new
+    about: Never a public issue. This opens a private thread with the maintainer — see SECURITY.md.
+  - name: Terrain missing or wrong somewhere
+    url: https://github.com/lionrayonnant/FPVThePlanet/discussions
+    about: Google Earth does not cover every place at every zoom. Post the coordinates in Discussions before filing it as a bug.

@@ -1,58 +1,57 @@
-# Empaquetage de l'app installée (issue #259, tranche T2).
+# Packaging the installed app (issue #259, slice T2).
 #
-# Windows et Linux seulement — macOS est explicitement hors périmètre (décision
-# utilisateur, 2026-09-07). Aucune signature de code : sans certificat, Windows
-# SmartScreen affiche un avertissement au premier lancement, et c'est accepté.
+# Windows and Linux only — macOS is explicitly out of scope (user decision,
+# 2026-09-07). No code signing: without a certificate, Windows SmartScreen
+# shows a warning on first launch, and that is accepted.
 appId: com.lionrayonnant.fpvtp
 copyright: FPVThePlanet!
-# productName vit dans package.json, pas ici : Electron le lit aussi, et c'est
-# lui qui nomme le répertoire de données (app.getName()). Pas de « ! » dedans —
-# il sert de nom de dossier et de fichier d'installeur ; le titre affiché reste
-# celui de index.html.
+# productName lives in package.json, not here: Electron reads it too, and it is
+# what names the data directory (app.getName()). No "!" in it — it serves as a
+# folder name and an installer filename; the displayed title stays the one in
+# index.html.
 
 directories:
   output: release
   buildResources: electron/build
 
-# Sans espace : ces noms de fichiers traversent une URL de téléchargement et une
-# ligne de commande avant d'arriver chez le joueur.
+# No spaces: these filenames travel through a download URL and a command line
+# before they reach the player.
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 
-# node_modules de production est copié automatiquement par electron-builder ;
-# ces motifs ne décrivent que le reste du dépôt, plus les exclusions.
+# Production node_modules is copied automatically by electron-builder; these
+# patterns only describe the rest of the repository, plus the exclusions.
 files:
   - electron/**
   - server/**
   - tools/**
-  # server/api.mjs → add-map-core → src/geofence.js : le pipeline de carte
-  # partage sa géométrie avec le jeu.
+  # server/api.mjs -> add-map-core -> src/geofence.js: the map pipeline shares
+  # its geometry with the game.
   - src/**
   - package.json
   - dist/**
-  # `npm run build` recopie tout public/ dans dist/, scenes/ compris (issue
-  # #290) : potentiellement plusieurs gigaoctets de terrain. Les scènes vivent
-  # dans le répertoire de données de l'installation, jamais dans l'installeur —
-  # une installation neuve démarre avec un catalogue vide, c'est le contrat de
-  # server/static.mjs.
+  # `npm run build` copies all of public/ into dist/, scenes/ included (issue
+  # #290): potentially several gigabytes of terrain. Scenes live in the
+  # installation's data directory, never in the installer — a fresh install
+  # starts with an empty catalogue, which is server/static.mjs's contract.
   - '!dist/scenes/**'
   - '!dist/scenes.json'
-  # three, leaflet et geoman ne sont utilisés que par le renderer, où Vite les a
-  # déjà inlinés dans dist/ : les embarquer une seconde fois en source coûte
-  # ~36 Mo pour rien. Rapier et sharp restent, eux : tools/prep.mjs les charge
-  # côté Node.
+  # three, leaflet and geoman are only used by the renderer, where Vite has
+  # already inlined them into dist/: shipping them a second time as sources
+  # costs ~36 MB for nothing. Rapier and sharp stay: tools/prep.mjs loads them
+  # on the Node side.
   - '!node_modules/three/**'
   - '!node_modules/leaflet/**'
   - '!node_modules/@geoman-io/**'
 
-# sharp charge libvips par un binding natif : il ne peut pas être lu depuis
-# l'archive asar.
+# sharp loads libvips through a native binding: it cannot be read from the asar
+# archive.
 asarUnpack:
   - '**/node_modules/sharp/**'
   - '**/node_modules/@img/**'
 
-# La licence voyage avec l'application. L'AGPL demande qu'elle accompagne le
-# programme distribué ; elle vit à la racine du dépôt, un cran au-dessus du
-# contexte de build (sim/), d'où le chemin relatif.
+# The licence travels with the application. The AGPL requires it to accompany
+# the distributed program; it lives at the repository root, one level above the
+# build context (sim/), hence the relative path.
 extraResources:
   - from: ../LICENSE
     to: LICENSE
@@ -64,8 +63,8 @@ win:
   icon: electron/build/icon.png
 
 nsis:
-  # Un vrai installeur, pas un exécutable portable : entrée Menu Démarrer,
-  # désinstalleur, choix du répertoire.
+  # A real installer, not a portable executable: Start Menu entry, uninstaller,
+  # choice of directory.
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -74,24 +73,29 @@ nsis:
   shortcutName: FPVThePlanet!
 
 linux:
-  # AppImage seul : le plus proche d'un « télécharge et double-clique ». Pas de
-  # .deb, qui demanderait de maintenir un dépôt APT.
+  # AppImage alone: the closest thing to "download and double-click". No .deb,
+  # which would mean maintaining an APT repository.
   target:
     - target: AppImage
       arch: [x64]
   category: Game
   icon: electron/build/icon.png
-  # Sinon l'exécutable hérite du `name` de package.json (fpvtp-sim).
+  # Otherwise the executable inherits package.json's `name` (fpvtp-sim).
   executableName: fpvtp
 
-# TODO (tranche T4) : remplacer par le domaine réel du VPS qui hébergera
-# latest.yml / latest-linux.yml et les installeurs. `.invalid` est réservé par
-# la RFC 2606 et ne résoudra jamais ; electron/main.js reconnaît ce placeholder
-# et saute la vérification de mise à jour au lieu d'échouer en boucle. Le dépôt
-# étant privé, `provider: github` demanderait un jeton à chaque téléchargement —
-# d'où le provider générique. Il redeviendra `github` en une ligne le jour où le
-# dépôt sera public.
+# The repository is public, so electron-updater reads the GitHub Releases API
+# without a token and `provider: github` is the whole distribution: the release
+# workflow attaches the installers and the latest*.yml feeds to the Release,
+# and the updater reads them straight from there. No server to run.
+#
+# owner/repo are explicit rather than inferred: electron-builder derives them
+# from package.json's `repository` field or from the git remote, and a CI
+# checkout is exactly where that inference is most likely to surprise.
+#
+# A self-hosted feed stays possible without rebuilding: FPVTP_UPDATE_URL
+# overrides the baked feed at runtime (see electron/main.js).
 publish:
-  - provider: generic
-    url: https://updates.fpvtp.invalid/
-    channel: latest
+  - provider: github
+    owner: lionrayonnant
+    repo: FPVThePlanet
+    releaseType: release

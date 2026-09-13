@@ -1,12 +1,11 @@
-// Le process principal d'Electron : il EST le serveur du jeu (issue #259,
-// tranche T2).
+// Electron's main process: it IS the game server (issue #259, slice T2).
 //
-// Electron embarque déjà Node et Chromium dans un seul binaire : pas de second
-// runtime à côté, pas de sous-processus. `server/index.mjs` (tranche T1) est
-// importé ici et démarré dans ce contexte Node, sur 127.0.0.1 port 0 — un port
-// éphémère ne peut entrer en collision avec rien, et la boucle locale reste la
-// frontière de sécurité du mode `local`. Une fois le serveur en écoute, une
-// BrowserWindow charge l'URL résolue ; le renderer est le `dist/` inchangé.
+// Electron already bundles Node and Chromium in a single binary: no second
+// runtime alongside, no subprocess. `server/index.mjs` (slice T1) is imported
+// here and started in this Node context, on 127.0.0.1 port 0 — an ephemeral
+// port cannot collide with anything, and the loopback stays the security
+// boundary of `local` mode. Once the server listens, a BrowserWindow loads the
+// resolved URL; the renderer is the unchanged `dist/`.
 
 import path from 'node:path';
 import fs from 'node:fs';
@@ -21,11 +20,11 @@ const { autoUpdater } = electronUpdater;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.dirname(HERE);
 
-// Le VPS qui hébergera les flux de mise à jour n'existe pas encore (tranche
-// T4) : l'URL d'`electron-builder.yml` est un point d'ancrage, pas un domaine.
-// `.invalid` est réservé par la RFC 2606 et ne résoudra jamais — tant qu'elle
-// est en place, la vérification est sautée plutôt que d'échouer en boucle dans
-// le dos du joueur. FPVTP_UPDATE_URL la remplace sans reconstruire l'app.
+// The repository is public, so the baked feed is `provider: github` and needs
+// no server of ours. This guard survives for a fork that points the feed at a
+// host it has not stood up yet: `.invalid` is reserved by RFC 2606 and will
+// never resolve, so the check is skipped rather than failing in a loop behind
+// the player's back. FPVTP_UPDATE_URL replaces the feed without a rebuild.
 const PLACEHOLDER_MARK = '.invalid';
 
 let serverHandle = null;
@@ -34,8 +33,8 @@ function log(line) {
 	console.log(`fpvtp: ${line}`);
 }
 
-// electron-builder écrit app-update.yml à côté des ressources ; c'est lui qui
-// porte le provider et l'URL bakés au build.
+// electron-builder writes app-update.yml next to the resources; that file
+// carries the provider and the URL baked at build time.
 function bakedFeed() {
 	try {
 		return fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8');
@@ -43,8 +42,8 @@ function bakedFeed() {
 }
 
 function wireUpdater() {
-	// electron-updater refuse de tourner hors d'une app packagée, et c'est bien :
-	// `npm run electron` ne doit pas aller chercher une release.
+	// electron-updater refuses to run outside a packaged app, and rightly so:
+	// `npm run electron` must not go looking for a release.
 	if (!app.isPackaged) return;
 
 	const override = process.env.FPVTP_UPDATE_URL?.trim();
@@ -52,29 +51,29 @@ function wireUpdater() {
 		autoUpdater.setFeedURL({ provider: 'generic', url: override });
 	} else {
 		const baked = bakedFeed();
-		if (!baked) return void log('mise à jour désactivée : pas de app-update.yml');
+		if (!baked) return void log('updates disabled: no app-update.yml');
 		if (baked.includes(PLACEHOLDER_MARK)) {
-			return void log('mise à jour désactivée : le flux est encore le placeholder (tranche T4)');
+			return void log('updates disabled: the feed is still a placeholder host');
 		}
 	}
 
 	autoUpdater.autoDownload = true;
 	autoUpdater.autoInstallOnAppQuit = true;
-	autoUpdater.on('error', (e) => log(`mise à jour : ${e?.message ?? e}`));
-	autoUpdater.on('update-available', (i) => log(`mise à jour ${i?.version} disponible, téléchargement`));
+	autoUpdater.on('error', (e) => log(`update: ${e?.message ?? e}`));
+	autoUpdater.on('update-available', (i) => log(`update ${i?.version} available, downloading`));
 	autoUpdater.on('update-downloaded', async (info) => {
 		const { response } = await dialog.showMessageBox({
 			type: 'info',
-			buttons: ['Redémarrer maintenant', 'Plus tard'],
+			buttons: ['Restart now', 'Later'],
 			defaultId: 0,
 			cancelId: 1,
-			title: 'Mise à jour prête',
-			message: `FPVTP! ${info?.version ?? ''} est téléchargée.`,
-			detail: 'Elle s\'installera au prochain démarrage.',
+			title: 'Update ready',
+			message: `FPVTP! ${info?.version ?? ''} has been downloaded.`,
+			detail: 'It will install on the next start.',
 		});
 		if (response === 0) autoUpdater.quitAndInstall();
 	});
-	autoUpdater.checkForUpdates().catch((e) => log(`mise à jour : ${e?.message ?? e}`));
+	autoUpdater.checkForUpdates().catch((e) => log(`update: ${e?.message ?? e}`));
 }
 
 function createWindow(url) {
@@ -85,34 +84,34 @@ function createWindow(url) {
 		minHeight: 600,
 		show: false,
 		autoHideMenuBar: true,
-		// Le fond du terminal opérateur : sans lui la fenêtre flashe en blanc
-		// avant le premier rendu.
+		// The operator terminal's background: without it the window flashes
+		// white before the first frame.
 		backgroundColor: '#121110',
 		webPreferences: {
 			contextIsolation: true,
 			nodeIntegration: false,
-			// Le jeu tourne sur requestAnimationFrame ; Chromium étrangle les
-			// frames d'une fenêtre en arrière-plan, ce qui ferait décrocher la
-			// physique au premier alt-tab.
+			// The game runs on requestAnimationFrame; Chromium throttles the
+			// frames of a background window, which would drop the physics on the
+			// first alt-tab.
 			backgroundThrottling: false,
 		},
 	});
 
 	win.once('ready-to-show', () => win.show());
 
-	// Une fenêtre noire ne dit rien par elle-même : sans ces relais, l'échec du
-	// bundle, d'un worker ou du contexte WebGL reste dans une console que
-	// personne n'ouvre. Tout remonte donc sur la sortie du process principal.
+	// A black window says nothing by itself: without these relays, a failure of
+	// the bundle, of a worker or of the WebGL context stays in a console nobody
+	// opens. Everything therefore surfaces on the main process's output.
 	const wc = win.webContents;
 	// Electron >= 36 passes a single event object; `level` is a string.
 	wc.on('console-message', (e) => {
 		if (e.level === 'warning' || e.level === 'error') log(`renderer: ${e.message} (${e.sourceId}:${e.lineNumber})`);
 	});
-	wc.on('did-fail-load', (_e, code, desc, url) => log(`chargement échoué ${code} ${desc} — ${url}`));
-	wc.on('render-process-gone', (_e, details) => log(`renderer perdu : ${details.reason}`));
-	wc.on('unresponsive', () => log('renderer figé'));
-	// Rien du jeu ne s'ouvre dans une seconde fenêtre : un lien externe part
-	// dans le navigateur du système.
+	wc.on('did-fail-load', (_e, code, desc, url) => log(`load failed ${code} ${desc} — ${url}`));
+	wc.on('render-process-gone', (_e, details) => log(`renderer lost: ${details.reason}`));
+	wc.on('unresponsive', () => log('renderer frozen'));
+	// Nothing in the game opens a second window: an external link leaves for the
+	// system browser.
 	win.webContents.setWindowOpenHandler(({ url: target }) => {
 		shell.openExternal(target);
 		return { action: 'deny' };
@@ -123,9 +122,9 @@ function createWindow(url) {
 }
 
 async function boot() {
-	// Le répertoire de données est celui de la plateforme, hors du dossier du
-	// programme : une mise à jour remplace l'app et ne touche à rien des scènes,
-	// des sessions ni de l'état opérateur.
+	// The data directory is the platform's own, outside the program folder: an
+	// update replaces the app and touches none of the scenes, the sessions or
+	// the operator state.
 	const dataDir = app.getPath('userData');
 
 	try {
@@ -137,26 +136,26 @@ async function boot() {
 			distDir: path.join(APP_ROOT, 'dist'),
 		});
 	} catch (e) {
-		dialog.showErrorBox('FPVTP! n\'a pas pu démarrer', String(e?.stack ?? e));
+		dialog.showErrorBox('FPVTP! could not start', String(e?.stack ?? e));
 		app.exit(1);
 		return;
 	}
 
-	log(`v${app.getVersion()} — données ${dataDir} — ${serverHandle.url}`);
+	log(`v${app.getVersion()} — data ${dataDir} — ${serverHandle.url}`);
 	createWindow(serverHandle.url);
 	wireUpdater();
 }
 
-// Sous Windows, `userData` tombe par défaut dans %APPDATA% — le profil
-// itinérant, que certains domaines synchronisent sur le réseau. Une scène pèse
-// des centaines de mégaoctets : la spec (#259, D3) nomme %LOCALAPPDATA%\FPVTP,
-// et c'est là que ça doit vivre.
+// On Windows, `userData` falls by default into %APPDATA% — the roaming
+// profile, which some domains synchronise over the network. A scene weighs
+// hundreds of megabytes: the spec (#259, D3) names %LOCALAPPDATA%\FPVTP, and
+// that is where this must live.
 if (process.platform === 'win32' && process.env.LOCALAPPDATA) {
 	app.setPath('userData', path.join(process.env.LOCALAPPDATA, app.getName()));
 }
 
-// Un joueur double-clique deux fois sur l'icône : la seconde instance rend la
-// main à la première au lieu d'ouvrir un second serveur.
+// A player double-clicks the icon twice: the second instance hands over to the
+// first instead of opening a second server.
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
@@ -173,11 +172,11 @@ if (!app.requestSingleInstanceLock()) {
 
 	app.on('window-all-closed', () => app.quit());
 
-	// Fermer le socket avant de rendre la main. server.close() attend la fin des
-	// connexions en cours : une keep-alive laissée par le renderer, ou le
-	// téléchargement d'un chunk de scène de 40 Mo, tiendrait le process en vie
-	// indéfiniment. On coupe donc les connexions, et un délai de garde assure
-	// que fermer la fenêtre ferme toujours l'app.
+	// Close the socket before handing back. server.close() waits for in-flight
+	// connections to end: a keep-alive left by the renderer, or the download of
+	// a 40 MB scene chunk, would hold the process alive indefinitely. So the
+	// connections are cut, and a guard delay makes sure that closing the window
+	// always closes the app.
 	app.on('will-quit', (e) => {
 		if (!serverHandle) return;
 		const handle = serverHandle;

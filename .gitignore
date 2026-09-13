@@ -35,3 +35,7 @@ flyover-reverse-engineering/
 # auth token, which must never reach a public repo. Register servers with
 # `claude mcp add --scope local` instead, which keeps them in ~/.claude.json.
 .mcp.json
+
+# Audit reports produced during a review pass. They name unfixed defects, so
+# they stay out of a public repository until what they describe is fixed.
+.audit/
