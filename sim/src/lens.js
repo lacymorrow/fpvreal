@@ -379,14 +379,13 @@ const LensShader = {
 				// Digital does not fade, it holds together and then shatters. The
 				// threshold curve is what makes it read as "fine, fine, gone".
 				//
-				// The cliff starts at 0.40 rather than 0.60. It was set when only
-				// installed scenes ran this code; LIVE never called setLink() at all,
-				// so nobody flew digital on streamed terrain. Now that they do, 0.60
-				// spent most of an ordinary flight inside the cliff, which turns the
-				// effect from an event into a permanent texture. Later onset, same
-				// shape: the picture is clean while the link is merely mediocre, and
-				// still shatters when it genuinely goes.
-				dfade = smoothstep(0.40, 0.04, uLink);
+				// Back at 0.60, where it started. Moving it to 0.40 was the wrong
+				// lever: digital spent whole flights inside the cliff because link.js
+				// handed it a quality that was too low everywhere, and that is fixed
+				// at the source now. With the floor raised, 0.60 engages behind real
+				// obstruction and nowhere else. What stays nerfed is what happens
+				// PAST the cliff — the four constants below.
+				dfade = smoothstep(0.60, 0.04, uLink);
 				vec2 blockId = floor(gl_FragCoord.xy / BLOCK_PX);
 				// Errors persist for several frames, the way a macroblock error
 				// survives until the next keyframe. Re-rolling them at 60 Hz would

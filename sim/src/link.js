@@ -23,7 +23,7 @@ const D0 = 10;
 // large steps — you round a corner and a whole building appears on the path — a
 // narrow fade turns those steps into an on/off switch.
 //
-// The band starts at 24 dB, up from 18. Note what it is a band OVER: since the
+// The band starts at 22 dB, up from 18. Note what it is a band OVER: since the
 // playability work removed distance from the quality calculation, the only
 // things that feed it are obstruction and the target's own advertised signal.
 // Distance is cosmetic now, so the old comment here — "18 dB, which is about
@@ -40,8 +40,8 @@ const D0 = 10;
 // quality to 0 when you leave the zone, and a different span would leave it
 // short. Change one of these and you must change the other by the same amount,
 // or change FENCE_SPAN with them.
-const LOSS_CLEAN = 24;
-const LOSS_DEAD = 82;
+const LOSS_CLEAN = 22;
+const LOSS_DEAD = 80;
 
 // Blocked at all, before any depth is counted. A ridge line or a thin roof is
 // a single sheet of geometry with no far face, so its measured depth is
@@ -50,7 +50,7 @@ const LOSS_DEAD = 82;
 // 6 dB rather than 8: over a city almost every metre of flight has something on
 // the path, so this term is paid nearly all the time, and it was setting a floor
 // of permanent degradation rather than marking an event.
-const KNIFE_EDGE_DB = 6;
+const KNIFE_EDGE_DB = 7;
 
 // Depth of material, saturating rather than linear. A flat dB-per-metre was the
 // single biggest source of "fine, fine, gone": rounding a corner takes the span
@@ -59,11 +59,11 @@ const KNIFE_EDGE_DB = 6;
 // thin. Saturating means the first few metres carry most of the cost, which is
 // also closer to the truth: the signal is already deep in the noise after one
 // wall, and the ninth wall cannot take much more away than the second did.
-// The asymptote is 26 dB rather than 38. Behind a whole building at 150 m that
-// is the difference between quality ~0.19 — frozen in digital, unflyable in
-// analog — and ~0.55, which reads as a link in trouble that you can still fly
-// out of. The saturating shape is unchanged; only how much it can ever cost is.
-const OBSTRUCTION_DB = 26;    // asymptote, for a span much deeper than the scale
+// The asymptote is 34 dB rather than 38. This landed at 26 first and that was
+// too far: the analog artifacts scale as fade SQUARED, so cutting the fade in
+// half quarters what you see, and the jamming vanished instead of softening.
+// The saturating shape is unchanged; only how much it can ever cost is.
+const OBSTRUCTION_DB = 34;    // asymptote, for a span much deeper than the scale
 const OBSTRUCTION_SCALE = 14; // metres at which 63% of it has been paid
 
 // Received power at D0 with nothing in the way. Only used to report a number
@@ -81,16 +81,17 @@ const RSSI_REF_DBM = -35;
 // building took it to quality 0: dead picture, from geometry the pilot could
 // not have avoided.
 //
-// Halving it keeps the fiction intact — the target list still advertises the
+// Weighting it keeps the fiction intact — the target list still advertises the
 // same dBm, and a weak target is still visibly worse to fly — while making the
-// worst draw survivable. Worst case now: clean in the open, about 0.60 behind
-// a 30 m building, which is degraded and flyable rather than gone.
+// worst draw survivable. 0.6, not the 0.5 tried first: at 0.5 nothing was ever
+// degraded enough to read. Worst case now: clean in the open, about 0.36 behind
+// a 30 m building, which is heavily degraded and still flyable.
 //
 // Halved here rather than by narrowing the generator's range, because that
 // range is PHASE 08 fiction with golden fixtures pinned in
 // tools/target-selftest.mjs, and the number a player reads on the target list
 // should stay the number the designer chose.
-const BASE_LOSS_WEIGHT = 0.5;
+const BASE_LOSS_WEIGHT = 0.6;
 
 // Asymmetric, because that is what a diversity receiver does: it loses lock
 // almost immediately and takes its time coming back. Symmetric smoothing makes
