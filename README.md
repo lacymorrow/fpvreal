@@ -2,6 +2,8 @@
 
 <img src="docs/brand/fpvtp-readme-1280x320.png" alt="FPVThePlanet! — point at a city, fly it" width="100%">
 
+https://github.com/user-attachments/assets/d18df585-a85d-484f-8743-3dce02777d50
+
 **FPV drone flying over real cities, in the browser.**<br>
 Photogrammetry from Google Earth, a Betaflight quad, and a radio that works without setup.
 
