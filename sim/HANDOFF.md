@@ -1,55 +1,80 @@
-# Handoff — POC simulateur de drone FPV (Paris / Tour Eiffel)
+# HANDOFF — maintainer's working state
 
-État au 2026-09-06, réorganisé le 2026-08-29. Écrit pour reprendre le travail
-sans redériver le contexte.
+State as of 2026-09-13. This file records what is **verified**, what is **not**,
+and what was **measured**, so the next person to pick the work up does not have
+to re-derive it.
 
-Ce fichier ne garde que **l'état courant**. Les récits de session détaillés —
-pourquoi chaque sous-système est comme il est, ce qui a été mesuré, les pièges
-rencontrés — sont dans `docs/handoff-archive/`. Les y lire seulement quand on
-touche au sous-système concerné.
+Read this first:
 
-| fichier | contenu |
+- **It is an internal engineering log, not user documentation.** If you want to
+  install, build, run or fly FPVThePlanet!, you want [`README.md`](../README.md)
+  and [`docs/manual.md`](../docs/manual.md) instead. Nothing here is addressed
+  to a player; every line is a note to whoever maintains the code.
+- **It is largely in French.** The repository migrates to English per file — a
+  file leaves in English when it is touched for another reason (`CLAUDE.md`,
+  *Language*). This header and the passages revised on 2026-09-13 are English;
+  the body below mostly is not. Translating ~3,700 lines in one pass was
+  rejected: it buys a stranger little and would conflict with every open branch.
+- **Where it disagrees with the code, the code wins.** Entries are dated and
+  carry issue numbers so a claim can be traced. Those numbers predate this
+  public repository and do not resolve against it (`CLAUDE.md`, *GitHub
+  workflow*).
+
+The date above is the date of the last audit pass over the whole file: header
+rewritten, the last absolute local path removed, references to deleted modules
+cut or marked. Entries below keep their own dates — they were true when written
+and were **not** all re-checked on 2026-09-13. A block marked
+`> Unverified as of 2026-09-13.` is one the audit could not confirm either way
+and deliberately left standing: losing a real measurement is worse than
+carrying a stale line.
+
+This file is supposed to hold the **current state** only. The detailed session
+narratives — why each subsystem is the way it is, what was measured, the traps
+hit along the way — live in `docs/handoff-archive/`. Read one only when touching
+that subsystem.
+
+| file | contents |
 |---|---|
-| [map-pipeline.md](docs/handoff-archive/map-pipeline.md) | GUI d'ajout de cartes, prep d'origine, passage au multi-cartes, support HEIC |
-| [flight-model.md](docs/handoff-archive/flight-model.md) | `quad.js` / `flightController.js`, le banc `tune-pid` |
-| [sound.md](docs/handoff-archive/sound.md) | synthèse Web Audio depuis les quatre moteurs, fatigue auditive |
-| [fpv-rendering.md](docs/handoff-archive/fpv-rendering.md) | `lens.js` (optique), lien vidéo RSSI par raycast |
-| [weather.md](docs/handoff-archive/weather.md) | vent, pluie, gouttes sur la lentille, brouillard |
-| [bugs.md](docs/handoff-archive/bugs.md) | les 10 bugs du POC et la méthode qui les a trouvés |
-| [swarm.md](docs/handoff-archive/swarm.md) | l'essaim de drones (#29) : le sillage, le budget de rayons, les éclaireurs, les cinq axes d'échantillonnage |
-| [fuzzing.md](docs/handoff-archive/fuzzing.md) | le fuzzing (`npm run fuzz`) : les cibles, leur modèle de menace, ce qu'il a trouvé |
+| [map-pipeline.md](docs/handoff-archive/map-pipeline.md) | map-add GUI, the original prep, the move to multi-map, HEIC support |
+| [flight-model.md](docs/handoff-archive/flight-model.md) | `quad.js` / `flightController.js`, the `tune-pid` bench |
+| [sound.md](docs/handoff-archive/sound.md) | Web Audio synthesis driven by the four motors, listening fatigue |
+| [fpv-rendering.md](docs/handoff-archive/fpv-rendering.md) | `lens.js` (optics), RSSI video link by raycast |
+| [weather.md](docs/handoff-archive/weather.md) | wind, rain, droplets on the lens, fog |
+| [bugs.md](docs/handoff-archive/bugs.md) | the 10 POC bugs and the method that found them |
+| [swarm.md](docs/handoff-archive/swarm.md) | the drone swarm (#29): the wake, the ray budget, the scouts, the five sampling axes |
+| [fuzzing.md](docs/handoff-archive/fuzzing.md) | fuzzing (`npm run fuzz`): the targets, their threat model, what it found |
 
-## Statut : ça vole
+At ~3,700 lines this file plainly does not honour that split any more. Moving
+the remaining narrative into `docs/handoff-archive/` is outstanding work; it is
+not a sign the rule changed.
 
-Le POC fonctionne de bout en bout, vérifié à la fois en headless (SwiftShader)
-et sur le vrai GPU de l'utilisateur (AMD RX 9060 XT) via MCP chrome-devtools,
-manette EdgeTX réelle branchée et détectée.
+## Status: it flies
 
-Les textures étaient fausses (motifs retournés, larges plaques grises) : c'était
-un seul bug, l'axe V des UV, corrigé — voir [handoff-archive/bugs.md](docs/handoff-archive/bugs.md) n°9. **La « limite connue » sur
-les façades grises que décrivait une version précédente de ce document n'existe
-pas** ; c'était ce bug.
+The simulator runs end to end, checked both headless (SwiftShader) and on the
+maintainer's real GPU (AMD RX 9060 XT) through the chrome-devtools MCP, with a
+real EdgeTX transmitter plugged in and detected.
 
+Textures used to be wrong (mirrored patterns, large grey patches): that was a
+single bug, the UV V axis, fixed — see
+[handoff-archive/bugs.md](docs/handoff-archive/bugs.md) no. 9. **The "known
+limitation" about grey facades described by an earlier version of this document
+does not exist**; it was that bug.
 
-## Comment reprendre
+## Picking the work back up
 
 ```bash
 cd sim
-npm install          # si node_modules absent
-npm run dev           # http://localhost:5173 — terminal opérateur (PHASE 02), puis vol
-                      #   ?scene=<slug> saute le terminal (dev)
-npm run selftest      # 15 vérifications sans navigateur (scène tour-eiffel par défaut)
-npm run selftest:operator  # état opérateur, terminal, météo du monde — pur, sans réseau
+npm install                # if node_modules is missing
+npm run dev                # http://localhost:5173 — operator terminal, then flight
+                           #   ?scene=<slug> skips the terminal (dev)
+npm run selftest           # browser-free checks against an installed scene
+npm run selftest:operator  # operator state, terminal, world weather — pure, no network
 ```
 
-Deux cartes prêtes à l'emploi dans `public/scenes/` (gitignored, ~900 Mo à
-deux) : `tour-eiffel` et `ile-de-la-cite-et-ile-saint-louis`. Pour en ajouter
-une autre : `npm run add-map -- "Nom" <lat> <lon>` — voir `docs/manual.md` section
-« Ajouter une carte » pour le détail des options et le dimensionnement de
-`--radius`.
-
-Plan d'origine (contexte de la décision d'architecture) :
-`/home/user/.claude/plans/j-ai-une-carte-de-flickering-cat.md`
+Two maps are ready to use under `public/scenes/` (gitignored, ~900 MB for the
+pair): `tour-eiffel` and `ile-de-la-cite-et-ile-saint-louis`. To add another:
+`npm run add-map -- "Name" <lat> <lon>` — see `docs/manual.md`, section
+"Adding a map", for the options and for sizing `--radius`.
 
 
 ## Vérifié
@@ -206,6 +231,15 @@ Plan d'origine (contexte de la décision d'architecture) :
     #101) : la culmination, `src/culmination.js`, entre l'invite et
     `CONTROL ACQUIRED`.
 - **PHASE 15 — Session Complete (issue #52)**, branche `phase-15-post-flight`.
+  > Historical as of 2026-09-13 — the `POST-FLIGHT ANALYSIS` screen was removed
+  > on 2026-09-08 with landing (#10, pre-release polish). `src/post-flight.js`,
+  > `tools/post-flight-model.mjs` and `tools/post-flight-selftest.mjs` no longer
+  > exist (`src/main.js` records the removal in a comment). What survives from
+  > this block and is still live code: `sanitizeComment` / `annotateSession` in
+  > `tools/session-model.mjs` and the `PATCH .../sessions/:id/comment` route.
+  > The rest is kept for the reasoning — physical exclusion by rate ceiling, the
+  > 30 s / 3 s estimation thresholds, FOV as an avowed narrative table — not as
+  > a description of code that runs.
   - `tools/post-flight-model.mjs` (`analyzeFlight()`) : logique pure de
     déduction, dont l'entrée est le `flightTelemetry` OBSERVÉ pendant la
     session (PHASE 06) — **jamais** `session.target.family` (règle de
@@ -330,6 +364,10 @@ Plan d'origine (contexte de la décision d'architecture) :
     angulaire/gaz, seuils dans `LANDING`), sortie manuelle (`disarm()`, qui ne
     ferme la session que si la pose est reconnue — désarmer en l'air reste
     permis et donne une chute).
+  > Note 2026-09-13 — `tools/landing-selftest.mjs` was deleted on 2026-09-08
+  > with landing and is in no chain any more. The thresholds, the slope figures
+  > and the seven-pose/nine-skim matrix below are kept as measurements; nothing
+  > in the tree reads them today.
   - Seuils de pose mesurés (`tools/landing-selftest.mjs`, tour-eiffel,
     2026-08-29) : `H_ON=0.2`, `H_OFF=0.4`, `V_ON=0.06`, `V_OFF=0.18`,
     `W_ON=0.07`, `THR_IDLE=0.06`, `T_HOLD=0.25`. Le commentaire du code détaille
@@ -526,7 +564,9 @@ Plan d'origine (contexte de la décision d'architecture) :
     `scenes.json` côté serveur (le client n'envoie que le slug), rejette un slug
     inconnu (404), écrit dans `terrainCache` de l'opérateur ; `DELETE
     /__map-api/scenes/:slug?raw=1` (REMOVE TERRAIN) réutilisé tel quel ;
-  - non fait dans cette phase : les logs RTC (`tools/rtc-model.mjs`) et le
+  - non fait dans cette phase : les logs RTC (then `tools/rtc-model.mjs`; that
+    file no longer exists — the RTC block lives in `src/dialogue.js`, covered by
+    `tools/dialogue-selftest.mjs`) et le
     bouton `LEAVE` (quitter l'écran d'acquisition sans l'annuler, le job
     continue côté serveur) sont écrits et couverts par selftest, mais jamais
     vus dans le navigateur — voir « Non vérifié » ci-dessous ;
@@ -647,8 +687,12 @@ Plan d'origine (contexte de la décision d'architecture) :
     le bloc polygone de `tools/lib/tiles.mjs`. Les deux nomment le dossier de
     cache : une divergence coûterait un re-téléchargement silencieux de
     plusieurs gigaoctets. `flyover-reverse-engineering/testdata/poly-cases.json`
-    est lu des deux côtés (`go test ./pkg/mth/`, `node tools/map-poly-selftest.mjs`),
-    10 cas, 15 872 décisions de tuile, hash compris. Les deux ports s'accordent.
+    était lu des deux côtés (`go test ./pkg/mth/`, `node tools/map-poly-selftest.mjs`),
+    10 cas, 15 872 décisions de tuile, hash compris. Les deux ports s'accordaient.
+    > 2026-09-13 — `flyover-reverse-engineering/` went with Apple Flyover on
+    > 2026-09-07 and is gitignored: it is not in a clone and not on this disk.
+    > Only the JS port and `tools/map-poly-selftest.mjs` remain; the agreement
+    > recorded here is a past measurement, not something you can re-run.
   - **Vérifié à travers le vrai binaire Go** (`--plan`, aucune requête de tuile) :
     sur le corridor en diagonale de la fixture, `columns 123`, `masked 717`,
     `pruned 0`, et `exportDir` nommé `poly-4b6f9117e786-20-20` — exactement le
@@ -796,10 +840,13 @@ Plan d'origine (contexte de la décision d'architecture) :
       API. Un `provider` inconnu est refusé en 400 (« fournisseur inconnu :
       bidon (connus : flyover, google-earth) »).
     - **À savoir pour tester dans un worktree** : `flyover-reverse-engineering/
-      config.json` (jeton Apple, gitignoré) n'existe QUE dans la copie
-      principale — sans lui la sonde Apple échoue, et c'est exactement ce que
-      le nouveau `SOURCE UNAVAILABLE` sert à ne plus confondre avec « pas de
-      couverture ». Le copier dans le worktree suffit.
+      config.json` (jeton Apple, gitignoré) n'existait QUE dans la copie
+      principale — sans lui la sonde Apple échouait, et c'est exactement ce que
+      le `SOURCE UNAVAILABLE` sert à ne plus confondre avec « pas de
+      couverture ».
+      > 2026-09-13 — moot: the Apple Flyover provider and that whole tree were
+      > removed on 2026-09-07. `SOURCE UNAVAILABLE` still earns its keep for the
+      > next provider.
   - **Découvertes wire, mesurées (pas dans la doc de protocole tierce)** :
     - le globe rocktree est une **sphère** de rayon moyen terrestre
       (6 371 010 m), pas l'ellipsoïde WGS84 — `sphereToWgs84Ecef()` dans le
@@ -975,7 +1022,7 @@ Plan d'origine (contexte de la décision d'architecture) :
     #33), session
     log/détail/target log, target scan (liste + fiche), scanner (panneau seul,
     pas les contrôles Leaflet), settings, bootstrap (hardware/name/registered/
-    retry), post-flight (note + terrain). Intro : n'importe quel bouton manette
+    retry), post-flight (note + terrain — screen removed 2026-09-08). Intro : n'importe quel bouton manette
     passe le gate puis saute le cracktro (limite : un bouton manette n'est pas
     un geste utilisateur AudioContext — intro muette jusqu'au premier vrai
     clic/touche). Fin de vol : `[ESC] DISCONNECT` répond aussi à n'importe quel
@@ -1004,7 +1051,7 @@ Plan d'origine (contexte de la décision d'architecture) :
     pure : index circulaire, pas de slider borné, classement saisie de texte),
     chaîné dans `selftest:operator` ; toute la chaîne `selftest:operator`
     verte (hors `landing-selftest`/`selftest`, qui exigent la scène
-    tour-eiffel absente de l'environnement de la session) ; `npm run build`
+    tour-eiffel absente de l'environnement de la session (`landing-selftest` was deleted on 2026-09-08; it no longer exists.)) ; `npm run build`
     vert ; `palette-selftest` vert (aucun littéral de couleur ajouté).
   - **Vérifié navigateur** (Chromium headless + Playwright, serveur de dev,
     1366×768) : parcours intro → bootstrap complet → Home **au clavier seul**
@@ -1092,6 +1139,9 @@ Plan d'origine (contexte de la décision d'architecture) :
     objet de cette tentative.
   - Rapport complet (5ᵉ tentative, remplace celui de la 4ᵉ) :
     `sim/.superpowers/sdd/2026-09-01-rocktree-streaming-window-plan/task-11-report.md`.
+    > 2026-09-13 — `.superpowers/` is SDD scratch space, gitignored and absent
+    > from this checkout: that report is not in a clone. The numbers that
+    > mattered were copied into the bullets above.
 - **Curseur « View range » + spawn calé sur le sol réel** (#182) vérifiés en
   navigateur le 2026-09-01 : curseur Settings 100–600 m (défaut 300, persisté
   `fpvtp.viewRange`), appliqué en vol via `setFloorRadiusM()` (selftest
@@ -1566,7 +1616,8 @@ elle est inchangée.
   sortait à 1,83 m/s. Ce n'était ni une dérive de profil ni un mauvais seuil :
   `simulate()` de `tools/selftest.mjs` n'appliquait pas la règle de pose de
   `main.js` (gaz coupés + < 0,6 m sol → moteurs à zéro et `setGroundHold`), que
-  `tools/landing-selftest.mjs` applique pourtant déjà. Le banc simulait donc un
+  `tools/landing-selftest.mjs` appliquait pourtant déjà (that bench has since
+  been deleted, 2026-09-08). Le banc simulait donc un
   monde d'avant le groundHold : la sphère de 0,15 m descendait la pente du spawn
   sans jamais s'arrêter, et la vitesse lue à 2 s ne mesurait que la pente
   (toothpick passait par 3,02 m/s à t=1,2 s avant de rebondir sous le seuil).
@@ -1578,7 +1629,10 @@ elle est inchangée.
   les six familles montent de 1,6 à 4,3 m en 2 s : le contrôle est falsifiable).
 - **#196** — `npm run selftest:operator` **s'arrête net** au milieu de la chaîne
   quand `public/scenes/tour-eiffel` n'est pas sur le disque, et la trentaine de
-  selftests qui suivent `landing-selftest` ne tournent jamais. On croit la suite
+  selftests qui suivent `landing-selftest` ne tournent jamais.
+  > Stale as of 2026-09-13 — `landing-selftest` is gone and `selftest:operator`
+  > no longer chains any scene-reading selftest, so the failure described here
+  > cannot happen as written. Check #196 before acting on the advice below. On croit la suite
   verte alors qu'elle n'a pas tourné. Sur cette machine il n'y a que `paristest`,
   et `public/scenes/` est gitignored.
 
@@ -1610,11 +1664,12 @@ SCANNER ]` a disparu — il n'y a plus d'ailleurs où aller.
 - `archive-render-selftest` : **5/5** (nouveau). Les écrans froids que la Home
   range derrière ARCHIVE, convertis en `createElement` et donc montables sur le
   faux DOM pour la première fois.
+  > Renamed 2026-09-09 (#28): this selftest is now `tools/data-render-selftest.mjs`.
 - `scanner-selftest` : 29 → **36**, dont `acquireStep()`, l'enchaînement
   sonde → acquisition en pur.
 - `session-log-selftest` : 17 → **20**, dont `fit()`.
 - Chaîne `selftest:operator` : **845 assertions, 0 échec** — hors
-  `landing-selftest`, qui reste rouge tant que #196 n'est pas corrigée.
+  `landing-selftest`, qui reste rouge tant que #196 n'est pas corrigée. (`landing-selftest` was deleted on 2026-09-08; it no longer exists.)
 
 ### Vérifié à l'œil — Chromium headless piloté en CDP
 
@@ -1739,7 +1794,7 @@ recherche (commune), deux onglets, corps, pied.
 Vérifié dans Chrome (MCP) : recherche « Saint Cloud », onglet LIVE → épingle →
 vol en direct lancé, DRAW BOX → rail → source + nom avec espace → ACQUIRE
 ouvert, Échap repose l'outil. `selftest:operator` passe hors `landing-selftest`
-(rouge sur `main` aussi, scène absente).
+(rouge sur `main` aussi, scène absente). (`landing-selftest` was deleted on 2026-09-08; it no longer exists.)
 
 Non vérifié : une acquisition complète depuis le nouveau rail (le job et
 KEEP/REMOVE n'ont pas changé) ; le pied du rail après `done(undefined)` (BACK
@@ -1779,10 +1834,11 @@ Vérifié dans Chrome (MCP) : mode → FIELD, délais tamponnés dans l'ordre
 `key-flash` au clic sur SETTINGS, compteur du pied roulé de 0 à sa valeur
 (avec un `requestAnimationFrame` simulé : l'onglet piloté est masqué et ne
 rend pas de frame). `tools/motion-selftest.mjs` (12 tests) dans
-`selftest:operator`, qui passe hors `landing-selftest` (rouge sur `main` aussi).
+`selftest:operator`, qui passe hors `landing-selftest` (rouge sur `main` aussi). (`landing-selftest` was deleted on 2026-09-08; it no longer exists.)
 
 Non vérifié à l'œil : la cascade elle-même (200 ms, hors capture), Session Log,
-Target Log, post-flight, bootstrap — ils passent par le même `screen()`.
+Target Log, post-flight (removed 2026-09-08), bootstrap — ils passent par le
+même `screen()`.
 
 ## Fin de vol : plus de retour à l'intro (issue #226)
 
@@ -2494,14 +2550,15 @@ dessiner. Commits `f5077b6..87c8c73`.
   qui coupe l'animation, le dessin qui change d'une frame à l'autre sans lui,
   une famille inconnue qui ne casse pas la fiche, une session sans graine qui
   rend un blanc et non un jeton.
-- `tools/archive-render-selftest.mjs` et `tools/flight-end-selftest.mjs`
+- `tools/archive-render-selftest.mjs` (renamed `tools/data-render-selftest.mjs`
+  on 2026-09-09, #28) et `tools/flight-end-selftest.mjs`
   (étendus) : le portrait au `TARGET LOG` (sans graine, aucun `<svg>`), et la
   **place** du jeton `[PORTRAIT]` dans la timeline — après `SESSION TERMINATED`,
   avant qu'on rende la main, `TIMELINE.exitAt` toujours à 4,6 s.
 - Les cinq nouveaux fichiers sont chaînés en queue de `npm run
   selftest:operator`, dans l'ordre du plan. La chaîne est verte (hors
   `landing-selftest.mjs`, qui échoue sur cette machine par `ENOENT` faute de
-  `public/scenes/tour-eiffel` — échec d'environnement pré-existant).
+  `public/scenes/tour-eiffel` — échec d'environnement pré-existant). (`landing-selftest` was deleted on 2026-09-08; it no longer exists.)
 
 ### La borne DA a été révisée à la mesure
 
@@ -3273,8 +3330,10 @@ SemVer dans `sim/package.json`, entrées dans `CHANGELOG.md` à la racine, tag
   (1 009 en 58 s) ne comptait que les `ok`, sur une chaîne plus courte.
   Les trois selftests `onboard-*` de #266 pèsent les 70 `PASS` de plus.
 - `tools/landing-selftest.mjs` — le seul de la chaîne qui lisait une scène —
-  se retire maintenant en `SKIP` quand `public/scenes/tour-eiffel` est absente.
-  C'est le modèle pour tout selftest qui aurait besoin de données de scène.
+  se retirait en `SKIP` quand `public/scenes/tour-eiffel` était absente.
+  > 2026-09-13 — that file was deleted on 2026-09-08. The rule it established
+  > still holds and `CLAUDE.md` now points at `tools/entry-state-selftest.mjs`
+  > as the exemplar: a selftest needing scene data must SKIP loudly, not fail.
 - Côté Go : `go build ./...`, `go vet ./...`, `go test ./...` passent
   (1 paquet testé, `pkg/mth`) sans `config.json`, qui n'est lu qu'à l'exécution.
 - `npm run selftest` et `npm run selftest:scenes` restent **hors CI** par

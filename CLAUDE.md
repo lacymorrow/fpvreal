@@ -15,7 +15,7 @@ From `sim/`:
 npm install
 npm run dev
 npm run build
-node server/index.mjs --data <dir> --dist dist   # le jeu sans Vite (#259)
+node server/index.mjs --data <dir> --dist dist   # the game without Vite
 npm run add-map -- "Name" <lat> <lon> [--zoom 20] [--radius 25] [--altitude 20] [--cell 256]
 npm run selftest [sceneDir]
 npm run tune

@@ -39,3 +39,7 @@ flyover-reverse-engineering/
 # Audit reports produced during a review pass. They name unfixed defects, so
 # they stay out of a public repository until what they describe is fixed.
 .audit/
+
+# The launch plan and its drafts: kept locally, never pushed. A public repo
+# containing its own promotion strategy reads badly.
+launch/

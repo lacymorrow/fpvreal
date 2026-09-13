@@ -1,9 +1,9 @@
-# Publication d'une version (issue #257).
+# Publishing a version.
 #
-# Déclenché par le push d'un tag `vX.Y.Z` (suffixe pre-release optionnel,
-# `vX.Y.Z-beta`) — celui que `npm run release` a créé.
-# Le job refuse de publier si le tag et sim/package.json ne disent pas le même
-# numéro : c'est le garde-fou contre un tag posé à la main sur le mauvais commit.
+# Triggered by pushing a `vX.Y.Z` tag (optional pre-release suffix,
+# `vX.Y.Z-beta`) — the one `npm run release` created.
+# The job refuses to publish if the tag and sim/package.json do not say the same
+# number: that is the guard against a tag placed by hand on the wrong commit.
 name: Release
 
 on:
@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   release:
+    name: release — selftests, archive and GitHub Release
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,37 +31,37 @@ jobs:
           cache: npm
           cache-dependency-path: sim/package-lock.json
 
-      - name: Le tag et sim/package.json disent la même version
+      - name: The tag and sim/package.json say the same version
         run: |
           tag="${GITHUB_REF_NAME#v}"
           pkg="$(node -p "require('./package.json').version")"
           if [ "$tag" != "$pkg" ]; then
-            echo "::error::tag ${GITHUB_REF_NAME} contre version ${pkg} dans sim/package.json"
+            echo "::error::tag ${GITHUB_REF_NAME} against version ${pkg} in sim/package.json"
             exit 1
           fi
 
       - run: npm ci
 
-      - name: Selftests, les mêmes qu'en CI
+      - name: Selftests (no browser, no scene, no network)
         run: npm run selftest:ci
 
-      - name: Build du sim
+      - name: Build
         run: npm run build
 
-      - name: Notes de version, reprises du CHANGELOG
+      - name: Release notes, taken from the CHANGELOG
         run: node tools/release-notes.mjs "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/notes.md"
 
-      # L'archive que deploy/deploy.sh installe sur le VPS. `dist` seul ne
-      # démarre pas : server/api.mjs importe tools/lib/*, tools/*.mjs et
-      # src/geofence.js. Le serveur n'a en revanche besoin d'AUCUN paquet npm
-      # (vérifié : il boote sans node_modules), donc rien n'est installé sur le
-      # VPS — d'où l'absence de node_modules ici, volontaire.
+      # The archive deploy/deploy.sh installs on the VPS. `dist` alone does not
+      # start: server/api.mjs imports tools/lib/*, tools/*.mjs and
+      # src/geofence.js. The server, on the other hand, needs NO npm package at
+      # all (checked: it boots without node_modules), so nothing is installed on
+      # the VPS — hence the deliberate absence of node_modules here.
       #
-      # Le runtime Node voyage avec : fpvtp.service lance
-      # /opt/fpvtp/current/node/bin/node, et une unité ProtectSystem=strict ne
-      # doit pas dépendre de la version que la distribution du jour propose. On
-      # prend EXACTEMENT celle qui vient de faire passer les selftests.
-      - name: Archive du serveur, pour héberger une instance
+      # The Node runtime travels with it: fpvtp.service runs
+      # /opt/fpvtp/current/node/bin/node, and a ProtectSystem=strict unit must
+      # not depend on whichever version the distribution offers that day. We
+      # take EXACTLY the one that just passed the selftests.
+      - name: Server archive, for self-hosting
         run: |
           set -euo pipefail
           v="$(node -p 'process.version')"
@@ -68,48 +69,53 @@ jobs:
           mkdir -p "${stage}/app" "${stage}/node"
           cp -r server tools src package.json "${stage}/app/"
           cp -r dist "${stage}/app/"
-          # Tout ce qu'il faut pour installer la chose sans revenir au dépôt :
-          # l'unité systemd, le Caddyfile, deploy.sh et sa checklist humaine.
+          # Everything needed to install the thing without coming back to the
+          # repository: the systemd unit, the Caddyfile, deploy.sh and its
+          # human checklist.
           cp -r ../deploy "${stage}/deploy"
-          # L'AGPL demande que la licence accompagne le programme qu'on
-          # distribue. Ce n'est pas décoratif : sans elle l'archive n'est pas
-          # conforme.
+          # The AGPL requires the licence to accompany the program being
+          # distributed. This is not decorative: without it the archive is not
+          # compliant.
           cp ../LICENSE "${stage}/LICENSE"
           curl -fsSL "https://nodejs.org/dist/${v}/node-${v}-linux-x64.tar.xz" -o "${RUNNER_TEMP}/node.tar.xz"
           tar -xJf "${RUNNER_TEMP}/node.tar.xz" -C "${stage}/node" --strip-components=1
-          # Le runtime embarqué doit démarrer LE serveur, pas seulement
-          # s'annoncer : on lui fait résoudre les chemins avant de sceller
-          # l'archive. Une archive qui ne démarre pas ne doit pas être publiée.
+          # The embedded runtime must start THE server, not merely announce
+          # itself: we make it resolve the paths before sealing the archive. An
+          # archive that does not start must not be published.
           "${stage}/node/bin/node" --version
           "${stage}/node/bin/node" "${stage}/app/server/index.mjs" --help > /dev/null
           tar -czf "${RUNNER_TEMP}/fpvtp-server-${GITHUB_REF_NAME}-linux-x64.tar.gz" -C "${stage}" app node deploy LICENSE
 
-      # Ce que la Release contient, écrit dans son corps : sans ça personne ne
-      # sait lequel des quatre fichiers télécharger.
-      - name: Ajouter l'inventaire des fichiers aux notes
+      # What the Release contains, written into its body: without this nobody
+      # knows which of the files to download.
+      - name: Append the file inventory to the notes
         run: |
           cat >> "${RUNNER_TEMP}/notes.md" <<'NOTES'
 
           ---
 
-          ## Quel fichier télécharger
+          ## Which file do I download?
 
-          | Fichier | Pour qui |
+          | File | For whom |
           |---|---|
-          | `FPVTP-*-win-x64.exe` | **Jouer sous Windows.** Installeur : entrée Menu Démarrer, désinstalleur, mise à jour automatique. |
-          | `FPVTP-*-linux-x86_64.AppImage` | **Jouer sous Linux.** Rendre exécutable, double-cliquer. |
-          | `fpvtp-server-*-linux-x64.tar.gz` | **Héberger une instance.** Le serveur, le jeu construit, un runtime Node, et `deploy/` (unité systemd, Caddyfile, script de livraison, checklist). Aucun `npm install` à faire. |
-          | `latest.yml` / `latest-linux.yml` | Les flux de mise à jour automatique. Ne pas télécharger à la main. |
+          | `FPVTP-*-win-x64.exe` | **Play on Windows.** Installer: Start Menu entry, uninstaller, automatic updates. It is not code-signed, so SmartScreen warns on first launch. |
+          | `FPVTP-*-linux-x86_64.AppImage` | **Play on Linux.** Make it executable, double-click. Automatic updates. |
+          | `fpvtp-server-*-linux-x64.tar.gz` | **Host an instance.** The server, the built game, a Node runtime and `deploy/` (systemd unit, Caddyfile, delivery script, checklist). No `npm install` to run. |
+          | `latest.yml`, `latest-linux.yml`, `*.blockmap` | Update plumbing, read by the installed app. Not meant to be downloaded by hand. |
 
-          Héberger : décompresser, puis suivre `deploy/README.md`. Le serveur
-          écoute sur `127.0.0.1` et refuse d'aller plus loin sans `--mode shared`,
-          qui réclame alors une clé d'opérateur à chaque requête.
+          There is no macOS build.
 
-          Le jeu est sous [AGPL-3.0](LICENSE) : si vous en hébergez une version
-          modifiée pour d'autres personnes, vous devez leur en publier les sources.
+          To play: take the one file for your system, that is the whole install.
+
+          To host: unpack, then follow `deploy/README.md`. The server listens on
+          `127.0.0.1` and refuses to listen wider without `--mode shared`, which
+          then demands an operator key on every API request.
+
+          The game is under [AGPL-3.0](LICENSE): if you host a modified version
+          for other people, you must publish its sources to them.
           NOTES
 
-      - name: Créer la GitHub Release
+      - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -119,16 +125,18 @@ jobs:
             --notes-file "${RUNNER_TEMP}/notes.md" \
             "${RUNNER_TEMP}/fpvtp-server-${GITHUB_REF_NAME}-linux-x64.tar.gz"
 
-  # L'app installée (issue #259, tranche T2). Chaque plateforme se construit sur
-  # son propre runner : les binaires natifs (sharp/libvips) sont ceux du
-  # système qui les installe, une compilation croisée depuis Linux embarquerait
-  # les .so de Linux dans l'installeur Windows.
+  # The installed app. Each platform builds on its own runner: the native
+  # binaries (sharp/libvips) are those of the system that installs them, and
+  # cross-compiling from Linux would embed Linux .so files in the Windows
+  # installer.
   #
-  # Rien n'est déposé sur un serveur ici : héberger latest.yml et les
-  # installeurs est la tranche T4. Les fichiers de flux sont attachés à la
-  # Release pour que ce serveur n'ait plus qu'à les recopier.
+  # Nothing is pushed to a server of ours here, and nothing needs to be: since
+  # the repository is public, electron-builder.yml uses `provider: github` and
+  # electron-updater reads the installers and the latest*.yml feeds straight
+  # from this Release. A self-hosted mirror stays possible (deploy/README.md),
+  # it is just no longer what keeps installed apps up to date.
   electron:
-    name: app installée (${{ matrix.os }})
+    name: electron — installers (${{ matrix.os }})
     needs: release
     runs-on: ${{ matrix.os }}
     strategy:
@@ -149,29 +157,31 @@ jobs:
 
       - run: npm ci
 
-      - name: Build du sim
+      - name: Build
         run: npm run build
 
-      # `--publish never` : electron-builder écrit bien latest.yml /
-      # latest-linux.yml (la configuration `publish` de electron-builder.yml
-      # suffit à les générer) mais ne tente aucun envoi. La distribution est
-      # celle de la Release, plus tard celle du VPS.
+      # `--publish never`: electron-builder does write latest.yml /
+      # latest-linux.yml (electron-builder.yml's `publish` configuration is
+      # enough to generate them) but attempts no upload. The upload is the
+      # explicit `gh release upload` step below — one code path for every
+      # asset, rather than two tools racing to attach files to the same
+      # Release.
       - name: electron-builder
         run: npx electron-builder --publish never
 
-      - name: Attacher les installeurs à la Release
+      - name: Attach the installers to the Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
-          # `latest.yml` (Windows) et `latest-linux.yml` (Linux) : chaque OS n'en
-          # produit qu'un des deux. Un glob (pas un nom littéral) est nécessaire
-          # pour que nullglob élide celui qui manque au lieu de le passer tel
-          # quel à `gh release upload`, qui échouerait à l'ouvrir.
+          # `latest.yml` (Windows) and `latest-linux.yml` (Linux): each OS only
+          # produces one of the two. A glob (not a literal name) is needed so
+          # that nullglob elides the missing one instead of passing it verbatim
+          # to `gh release upload`, which would fail to open it.
           files=(release/*.AppImage release/*.exe release/*.blockmap release/latest*.yml)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "::error::electron-builder n'a produit aucun installeur"
+            echo "::error::electron-builder produced no installer"
             exit 1
           fi
           printf '%s\n' "${files[@]}"

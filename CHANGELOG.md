@@ -16,6 +16,12 @@ Note : les numéros de build de l'écran `BUILD NOTES`
 (`sim/tools/buildnotes-model.mjs`) sont du lore diégétique et n'ont aucun
 rapport avec les versions ci-dessous.
 
+Note : ce dépôt porte un historique réécrit et n'est pas celui contre lequel
+une partie de ces entrées a été rédigée. Les numéros `(#N)` antérieurs à la
+réécriture désignent des issues du dépôt qui l'a précédé : ils ne résolvent pas
+ici, et les plus petits résolvent vers une issue sans rapport. Ils sont
+conservés parce qu'ils sont la trace de la décision, pas un lien.
+
 ## [Non publié]
 
 ### Ajouté
@@ -61,183 +67,6 @@ rapport avec les versions ci-dessous.
   couple est plafonné à ce que deux moteurs de l'appareil peuvent réellement
   produire, et il s'arrête seul — assiette rétablie, ou délai dépassé.
 
-### Modifié
-
-- `tools/dialogue/generate.mjs` écrit les shards en tabulations, comme le corpus
-  depuis sa réindentation : une génération ne réécrit plus tout le fichier.
-- `[T] TURTLE` et `[HOLD K] CUT LINK` s'affichent après 1,5 s d'immobilité au
-  lieu de 4 (#114). Les deux lisent le même `stuck` : une machine coincée
-  proposait sa sortie trop tard pour qu'on croie encore qu'il y en avait une.
-
-- Le moteur est baissé de 9 dB au total par rapport à la musique (#110, #112).
-  Le trim moteur passe de 0.55 à 0.39 puis à 0.20 : après #122, le bruit du
-  drone écrasait encore les morceaux, et -3 dB n'ont pas suffi. On baisse le
-  moteur plutôt que de remonter la musique, dont le calibrage -14 LUFS est la
-  référence de toute la bibliothèque.
-
-- Les deux clôtures — la muraille du bord de carte (`geofence-dome.js`) et le
-  dôme de fenêtre live (`fence-dome.js`) — partagent désormais un champ commun
-  (`src/fence-field.js`) : une masse organique cyan/magenta à la place des
-  lignes de scan (#107). Signalé au jeu : « les rayons se voient un peu trop ».
-  Les bandes horizontales se projetaient en éventail depuis le point de fuite
-  dès qu'on longeait le mur ; le motif est maintenant un fbm à domaine déformé,
-  ses veines suivent les lignes de niveau du champ et n'ont donc aucune
-  direction privilégiée. S'y ajoutent un Fresnel (discrète de face, franche en
-  rasant), une bande qui suit la hauteur d'œil, une dominante qui glisse du
-  cyan vers le magenta en approchant du bord, et un anneau qui part du point
-  le plus proche du drone à cadence croissante — silence complet au centre.
-- En mode `?live=`, le terrain lointain ne se dissout plus dans un cyan plat
-  mais dans ce même champ (#107) : la brume prend ses paquets et ses filaments
-  magenta, et la masse éclaircit sa densité par endroits, si bien que le
-  terrain reparaît dans les trouées — jamais l'inverse : la brume n'est au pire
-  jamais plus épaisse qu'avant. La nappe est échantillonnée à la position monde du
-  fragment — pas projetée sur le dôme, ce qui recréait un éventail de rayons —
-  et à deux octaves plutôt que trois, le détail fin n'étant jamais résolu sur
-  une brume vue en enfilade.
-
-- **Une passe de cohérence visuelle sur tout le jeu** (#133 à #140). Le système
-  était sain — `tokens.css` fait autorité et `palette-selftest` tenait — mais
-  presque toute la dérive vivait hors de sa portée : dans le JS, dans le HTML,
-  dans les valeurs non-couleur et dans les chaînes affichées.
-
-  L'écran de chargement **parle anglais** : neuf étapes, l'unité `Mo`, les trois
-  erreurs de `loader.js` qui s'affichent telles quelles, et `lang`. Le preset de
-  rates que l'OSD annonce à chaque vol s'appelait « cinéma ».
-
-  La **marque n'a plus qu'une composition** (`src/brand-lockup.js`) : le boot
-  écrivait le nom long en Departure Mono capitalisée, soit « FPVTHEPLANET! »,
-  que `docs/brand.md` n'autorise nulle part.
-
-  Les **états** cessent de changer de sens d'un écran à l'autre : une seule
-  opacité désactivée au lieu de trois, un bouton de panneau qui s'inverse comme
-  le même bouton ailleurs, un focus qui est le marqueur ▌ et rien d'autre, et le
-  périphérique actif qui ne porte plus exactement l'encre du survol.
-
-  Le **mouvement** rentre dans les trois durées, deux cadences entretenues
-  rejoignent les jetons, et le mouvement réduit couvre enfin les trois
-  animations infinies et l'impression ligne à ligne du bootstrap et du BRIEFING.
-
-  Les **crochets** ne veulent plus dire trois choses : `[ LABEL ]` un bouton,
-  `[LABEL]` une touche, et c'est tout. Les infobulles natives disparaissent, et
-  les symboles SI passent en minuscules.
-
-  **Toute valeur typographique sort de l'échelle** : le corps du jeu était à
-  14px, quinze tailles et cinq interlettrages étaient écrits en clair, une
-  trentaine d'espacements étaient magiques.
-
-  Un **seul montage d'écran** (`src/screen.js`) au lieu de deux, dont un seul
-  avait gagné l'impression inverse de #67 ; cinq plans d'empilement nommés ; et
-  le CSS mort s'en va.
-
-  Enfin, `palette-selftest` **voit ses angles morts** : la palette demo atteinte
-  par `token()`, les échelles écrites en pixels, et le français dans une chaîne
-  affichée.
-
-### Corrigé
-
-- **La télémétrie n'avait aucune borne supérieure : une session pouvait être
-  stockée sans jamais pouvoir être close** (#83). `validateSession()` ne
-  demandait que « fini et >= 0 », et la valeur vient du navigateur : un
-  `durationS` de 1e308 passait, puis `1e308 + 1e308` débordait à `Infinity` à la
-  fusion — le verdict était refusé et le vol restait `PENDING` pour toujours ;
-  l'écran DATA, lui, annonçait une carrière d'`Infinity` secondes. Chaque champ
-  a désormais son plafond (`sim/tools/lib/telemetry-bounds.mjs`), la fusion
-  sature au lieu de déborder, et l'écran DATA applique les mêmes bornes à la
-  lecture — le fichier d'opérateur reste éditable à la main.
-- **Un corps de requête trop gros recevait une coupure de connexion au lieu
-  d'une réponse** (#84). `readBody()` détruisait la socket dès le dépassement du
-  plafond, donc le 400 que la route envoyait ensuite partait dans le vide : le
-  client lisait `ECONNRESET` et la GUI affichait « erreur réseau » là où le
-  serveur voulait dire « corps trop gros ». Il répond maintenant 413 puis
-  continue de lire et de jeter le reste quelques instants — une socket détruite
-  alors que des octets sont encore en vol envoie un RST, et le client jette la
-  réponse qu'il avait déjà reçue. C'est le `lingering_close` de nginx, borné en
-  octets et en temps ; le corps n'est toujours jamais analysé.
-- **Le GLOBAL SCANNER mourait sur une réponse de fournisseur mal formée**
-  (#85). `String(v)` n'est pas total et `Math.round(v)` non plus : sept appels
-  passent par `asText()`/`asNumber()`, `areaAnalysis()` ne déréférence plus une
-  réponse `/describe` tronquée, `DENSITY['__proto__']` ne rend plus
-  « ~NaN–NaN DRONES », et un panic Go du sous-processus n'arrive plus entier
-  sur le rail. Une cible `scanner` a été ajoutée à `npm run fuzz`.
-- **Une seule frame invalide tuait le contrôleur de vol pour de bon.** Les
-  filtres de `AxisPid` sont des moyennes glissantes : un manche non fini — un
-  calibrage cassé — ou un état physique parti en NaN les empoisonnait
-  définitivement, et les moteurs restaient à NaN bien après le retour à la
-  normale. En mode `altitude`, `holdAltitude` faisait la même chose. Les manches
-  sont désormais bornés à l'entrée, un pas de PID non fini réinitialise ses
-  propres filtres, et le mixer refuse un gaz non fini (`clamp()` ne retient pas
-  un NaN : toute comparaison avec NaN est fausse).
-
-- **Une piste pouvait être écrite sans pouvoir être relue.** La quantification
-  multiplie (`lat × 1e5`) : une valeur absurde mais finie débordait à l'infini
-  et `validateTrack()` refusait alors le fichier que `encodeTrack()` venait
-  d'écrire. Le vol était perdu à la lecture.
-
-- **`String(v)` n'est pas total, et six endroits le supposaient.**
-  `{"area": {"toString": null}}` est du JSON valide et fait lever `String()` :
-  le journal des sessions mourait en affichant un vol stocké, et
-  `validateSession` répondait un message du moteur au lieu de nommer le champ.
-  Nouveau `sim/tools/lib/as-text.mjs`, utilisé par `slugify`, `areaLabel`,
-  `fit`, `familyLabel`, les validateurs de session et de piste.
-
-- **`keyLabel()` rendait des propriétés héritées.** Une touche stockée valant
-  `constructor` faisait afficher `function Object() { [native code] }` dans les
-  réglages. Lecture en propriété propre, comme `PROFILES[family]`.
-
-- **Un `deadband` stocké à 1 rendait NaN manche en butée** :
-  `normalizeChannel()` divise par `1 - deadband`. `isValidCalibration()`, la
-  porte entre le fichier et les moteurs, exige maintenant `0 <= deadband < 1`.
-
-- **Un couloir de largeur nulle divisait par zéro** dans `progress()`
-  (`geofence.js`), et `main.js` fait monter la perte d'image sur ce nombre.
-
-- **`normalizeBenchConfig()` promettait de ne jamais lever, et levait** :
-  `Number()` lève sur un symbole, un bigint, et sur un objet sans chemin vers
-  une primitive.
-
-- **`mergeTelemetry(null, …)` était un TypeError** : un paramètre par défaut ne
-  couvre que `undefined`, et `"flightTelemetry": null` tient dans un fichier
-  JSON — `closeSession()` mourait dessus au lieu de fermer le vol.
-
-- **`MAX SPEED Infinity m/s` sur le détail d'une session.** JSON n'a pas de
-  littéral Infinity, mais `1e400` en produit un, et `(v ?? 0).toFixed(1)`
-  l'imprimait. Une télémétrie non finie s'affiche maintenant `—`.
-
-- Le randomart rend la main au drone, et à rien d'autre (#122). Signalé au jeu :
-  après l'empreinte de `CONTROL ACQUIRED`, l'écran montrait la carte — vue de
-  DESSOUS en reconnaissance FIELD — puis le drone apparaissait un battement plus
-  tard. Tout ce qui se voit d'un vol était monté APRÈS la résolution du hack,
-  donc après le fondu qui emmène son fond noir : la caméra de la cible, les
-  hélices dans le cadre, la disposition de l'OSD et son allumage attendaient un
-  `session.open()` — un aller-retour serveur. Et `bootLive()` ne posait jamais sa
-  caméra, restée à l'origine ENU, soit l'altitude 0 de l'ellipsoïde : sous le
-  terrain, d'où la carte vue de dessous. Le vol s'arme désormais pendant que
-  quelque chose le couvre encore : au geste `[ JACK IN ]` sur FIELD — jamais au
-  boot, parce que tous les écrans d'avant le geste peuvent encore renoncer et que
-  renoncer ne doit rien laisser derrière, pas même une session `PENDING` —, sous
-  l'écran de chargement partout ailleurs. La caméra se pose sur la machine,
-  assiette d'entrée comprise, dans les deux moitiés de boot.
-
-- Le flapback de #91 rendait l'appareil impilotable, il est retiré (#103).
-  Signalé au jeu : le drone part en vrille et ne se rattrape pas. Sur un banc
-  6 DOF headless, plein manche de roulis ou de lacet à 26-36 m/s, l'écart
-  hors-axe passait de 1-2 °/s avant #91 à **115-222 °/s**. Les coupables sont
-  les deux MOMENTS en plan — le moment de moyeu (`FLAP_K`) et le bras du plan
-  d'hélice (`ROTOR_PLANE_Y_REF`) — et non la portance de translation (2 °/s) ni
-  la précession (3 °/s), qui restent. Dès que l'appareil ne vole pas le long de
-  son axe de roulis, un moment proportionnel à la vitesse air balaie tangage et
-  roulis à la fréquence de l'entrée, et la boucle de taux ne peut pas le
-  rejeter.
-  La porte qui manquait est en place : la section 4 de `tools/aero-selftest.mjs`
-  tenait l'appareil **en air calme**, où tout #91 vaut identiquement zéro ; elle
-  le tient désormais **en vol**, à deux fois la vitesse de croisière de chaque
-  famille. Elle mesurait 79 % du taux commandé avant le correctif, 1,9 % après.
-  `npm run tune` reste identique au bit près, le banc tournant à vitesse nulle.
-  L'issue #91 rouvre sur la seule question du flapback, dont le double comptage
-  probable — image battante pour la force, image rigide pour le moment — reste à
-  trancher.
-
-### Ajouté
 
 - La culmination du hack est de retour (#101). Le retrait du CONTROL VECTOR
   (#33) avait supprimé `src/ritual.js` en entier, alors que le problème tenait
@@ -291,84 +120,6 @@ rapport avec les versions ci-dessous.
   le plant n'a pas bougé — `npm run tune` est identique au bit près — donc le
   tune reste exactement aussi mesuré qu'avant.
 
-### Modifié
-
-- Le soleil ne mange plus l'image (#94). Face à lui on ne voyait presque plus
-  rien, et la raison n'était pas « c'était trop fort » : trois termes
-  s'empilaient sur les mêmes pixels et **deux d'entre eux se combattaient**. Le
-  halo et le voile sont peints APRÈS le gain d'exposition — il le faut, sinon la
-  caméra s'auto-atténuerait son propre soleil — donc l'AGC ne pouvait pas les
-  reprendre : il ne pouvait qu'assombrir tout le reste en essayant. Les noirs
-  montaient à 0,27 près du soleil pendant que l'image tombait à 60 % de sa
-  luminance, et le contraste utile disparaissait exactement là où le pilote
-  regarde. Un premier passage (#11) avait rogné les deux sans voir qu'ils
-  tiraient en sens inverse.
-  Seul le terme additif pouvait trancher, puisqu'il est celui que rien ne
-  rattrape : halo 0,9 → 0,12, voile 0,14 → 0,03, disque ×1,6 → ×0,8. Et le
-  posemètre desserré en face (poids du disque 1,5 → 0,11) — moins de lumière
-  parasite à compenser, donc moins besoin de fermer. C'est ce poids qui bouge et
-  non `E_MIN`, parce que `E_MIN` a un autre métier (il normalise un ciel très
-  lumineux) et parce qu'une butée écrase la rampe : la fermeture reste
-  progressive sur toute la traversée du cadre, elle ne va simplement plus aussi
-  loin. Le soleil reste un événement optique — un disque net, un reste de halo —
-  mais il ne fait plus mur. Contraste près du soleil ×3, image loin de lui 50 %
-  plus claire.
-
-### Sécurité
-
-- L'API du jeu regarde maintenant d'où vient la requête, en `local` comme en
-  `shared` (#79). En `local` elle n'a pas de clé — la frontière est le socket
-  local — et n'importe quelle page visitée pendant un `npm run dev` pouvait
-  donc écrire dedans (requête simple, sans preflight), voire tout lire par
-  rebinding DNS : profils, sessions, captures, catalogue de scènes, et
-  jusqu'à la suppression d'un terrain de plusieurs heures. `/__operator` et
-  `/__map-api` exigent désormais un `Host` de boucle locale en `local`, et
-  refusent toute méthode écrivante qui se présente cross-site (`Origin`,
-  `Sec-Fetch-Site`) ; un corps qui n'est pas `application/json` est refusé
-  avec.
-- En `shared`, une clé d'opérateur ne suffit plus à supprimer une scène pour
-  tout le monde (#78). L'inscription étant libre et sans rôle ni propriétaire,
-  n'importe quel joueur inscrit pouvait effacer un terrain de l'instance —
-  sans moyen de le reconstruire, l'acquisition étant fermée en `shared`.
-  `DELETE /__map-api/scenes/:slug` et `DELETE /__map-api/jobs/:id` rendent
-  maintenant 403 en `shared`, comme `POST /jobs` : une instance partagée sert
-  le LIVE, elle ne se fait pas défaire par ses visiteurs.
-- Le paramètre `?scene=` n'atteint plus l'écran de chargement tel quel. Un
-  slug inconnu était repris dans le message « carte inconnue », que
-  `hud.fail()` écrivait via `innerHTML` : un lien forgé exécutait du balisage
-  dans l'origine du jeu pour tout joueur déjà inscrit, avec la clé d'opérateur
-  lisible depuis `localStorage`. Le slug est maintenant validé au chargement
-  (`[a-z0-9-]+`, la règle du serveur), et l'écran de chargement n'écrit plus
-  que du texte.
-
-### Modifié
-
-- L'acquisition se joue maintenant en trois écrans au lieu d'un seul qui change
-  de contenu : l'analyse automatique, puis `MANUAL OVERRIDE REQUIRED` et
-  `[ JACK IN ]` seuls au milieu de l'écran, puis `CONTROL ACQUIRED` et
-  l'empreinte de la machine qui se trace. Le geste ne partage plus son image
-  avec le log qui le précède ni avec le résultat qui le suit. `[ JACK IN ]`
-  passe au niveau DISPLAY, prend le focus et respire en pas pour se lire comme
-  une invite en attente (#67).
-
-- Les écrans s'enchaînent au lieu de se remplacer : un écran qui s'en va
-  s'imprime à l'envers — les deux mêmes pas que l'impression d'entrée, sur la
-  durée la plus courte — et le suivant n'est monté qu'ensuite. La cascade du
-  second ne commence plus dans la frame où le premier disparaît. Entre deux
-  écrans de terminal, seul le CONTENU s'en va — le fond noir tient jusqu'au
-  démontage, sinon la scène 3D déjà chargée apparaissait le temps de la
-  transition. Seul le dernier écran, celui qui donne sur le vol, emmène son
-  fond avec lui. `screen()` gagne un `close()` pour ça ; `remove()` reste
-  synchrone partout où l'on quitte simplement un menu. `[ JACK IN ]` récupère au passage la cascade d'impression
-  dont sa propre animation le privait (#67).
-
-- Au crash, l'empreinte de la machine perdue passe d'à côté de l'aperçu 3D à
-  SOUS lui : la même machine vue de deux façons, l'une sous l'autre. Elle garde
-  le corps de 22 px du reste de l'écran de fin, et ne redescend à 11 px — l'autre
-  taille nette de Departure Mono — que sous 820 px de hauteur de fenêtre, où la
-  colonne repousserait `[ENTER] DISCONNECT` hors de l'écran (#67).
-
-### Ajouté
 
 - La marque entre dans le jeu (#73). `docs/brand.md` réservait depuis toujours
   le verrouillage empilé — le symbole, puis `F P V T P !` dessous — au « splash,
@@ -393,39 +144,6 @@ rapport avec les versions ci-dessous.
   `public/brand/fpvtp-mark.svg` et le motif de `docs/brand.md`, et exige que
   les trois décrivent la même marque.
 
-### Modifié
-
-- Le nom, sur le cracktro, passe de la display à `--font-ui` interlettré
-  `--track-ui` : c'est la composition que `docs/brand.md` impose au
-  verrouillage empilé, et la marque n'a qu'une composition (#73).
-
-### Corrigé
-
-- L'écran de fin nommait `[ESC] DISCONNECT`, c'est-à-dire la seule touche que le
-  navigateur peut confisquer : en pointer lock, et a fortiori en plein écran, il
-  garde Échap pour rendre le curseur et ne délivre aucun `keydown` à la page. Sur
-  l'écran dont la seule raison d'être est qu'on en sorte, la ligne promettait donc
-  une touche qui pouvait ne jamais arriver — mesuré par `__sim.endState()`, toutes
-  gardes propres, la sortie armée et le geste sans effet. Les trois tables (crash,
-  sortie de zone, coupure du lien) nomment maintenant `[ENTER] DISCONNECT`. Échap
-  reste acceptée en doublon silencieux, comme le clic et n'importe quel bouton de
-  manette (#71).
-- En vol live, le terrain se rechargeait à vue et se trouait à chaque recentrage
-  de fenêtre (tous les 50 m). Mesuré à 24 m/s au Champ de Mars : jusqu'à 7 % du
-  sol absent à chaque vague, par trois chemins — les nœuds « couverts » par un
-  autre niveau étaient libérés une frame après le recentrage (la file de builds
-  est vide à cet instant, les fetchs de la vague n'ayant pas encore répondu), un
-  nœud dont le refetch était encore en vol tombait dans la libération sèche s'il
-  changeait de niveau, et un nœud grossier rebâti avec un octant en moins
-  arrivait du cache avant l'enfant fin qui redessine cet octant. Règle unique
-  maintenant (`src/live-node-queue.js`) : l'ancienne image reste intacte jusqu'à
-  ce que la nouvelle soit complète — plus rien en vol ni en file — puis on
-  échange ; soupape à 15 s si le réseau ne suit pas. Un refetch qui échoue
-  garde le mesh périmé au lieu de le retirer. Mesuré après : 0 trou sur 239
-  échantillons et 1,3 km, pour ~30 % de meshes en plus en pointe pendant une
-  vague — moins optimisé, jamais troué (#75).
-
-### Ajouté
 
 - Le randomart devient l'empreinte de la cible : une machine, un art, le même à
   chaque fois qu'on la retrouve. Il se trace sous les yeux de l'opérateur après
@@ -558,6 +276,142 @@ rapport avec les versions ci-dessous.
 
 ### Modifié
 
+- Le `README.md` est réécrit : court, en anglais, et c'est désormais la porte
+  d'entrée publique du projet (#96, #97). `docs/manual.md` reste la
+  documentation technique.
+- Les fichiers de documentation prennent des noms anglais, et la règle
+  « anglais » devient **per-fichier** (#88) : un fichier qu'on touche pour une
+  autre raison en ressort en anglais. La passe unique avait été écartée — elle
+  serait entrée en conflit avec toutes les branches ouvertes.
+- `npm run add-music` passe par `uv run` au lieu de deviner un chemin `.venv`
+  (#64) : la génération ne dépendait plus de l'endroit où l'environnement Python
+  s'était installé.
+- Les PNG de `sim/docs/diagrams/` sont régénérés (#98), en accord avec les blocs
+  mermaid qui les accompagnent.
+- `tools/dialogue/generate.mjs` écrit les shards en tabulations, comme le corpus
+  depuis sa réindentation : une génération ne réécrit plus tout le fichier.
+- `[T] TURTLE` et `[HOLD K] CUT LINK` s'affichent après 1,5 s d'immobilité au
+  lieu de 4 (#114). Les deux lisent le même `stuck` : une machine coincée
+  proposait sa sortie trop tard pour qu'on croie encore qu'il y en avait une.
+
+- Le moteur est baissé de 9 dB au total par rapport à la musique (#110, #112).
+  Le trim moteur passe de 0.55 à 0.39 puis à 0.20 : après #122, le bruit du
+  drone écrasait encore les morceaux, et -3 dB n'ont pas suffi. On baisse le
+  moteur plutôt que de remonter la musique, dont le calibrage -14 LUFS est la
+  référence de toute la bibliothèque.
+
+- Les deux clôtures — la muraille du bord de carte (`geofence-dome.js`) et le
+  dôme de fenêtre live (`fence-dome.js`) — partagent désormais un champ commun
+  (`src/fence-field.js`) : une masse organique cyan/magenta à la place des
+  lignes de scan (#107). Signalé au jeu : « les rayons se voient un peu trop ».
+  Les bandes horizontales se projetaient en éventail depuis le point de fuite
+  dès qu'on longeait le mur ; le motif est maintenant un fbm à domaine déformé,
+  ses veines suivent les lignes de niveau du champ et n'ont donc aucune
+  direction privilégiée. S'y ajoutent un Fresnel (discrète de face, franche en
+  rasant), une bande qui suit la hauteur d'œil, une dominante qui glisse du
+  cyan vers le magenta en approchant du bord, et un anneau qui part du point
+  le plus proche du drone à cadence croissante — silence complet au centre.
+- En mode `?live=`, le terrain lointain ne se dissout plus dans un cyan plat
+  mais dans ce même champ (#107) : la brume prend ses paquets et ses filaments
+  magenta, et la masse éclaircit sa densité par endroits, si bien que le
+  terrain reparaît dans les trouées — jamais l'inverse : la brume n'est au pire
+  jamais plus épaisse qu'avant. La nappe est échantillonnée à la position monde du
+  fragment — pas projetée sur le dôme, ce qui recréait un éventail de rayons —
+  et à deux octaves plutôt que trois, le détail fin n'étant jamais résolu sur
+  une brume vue en enfilade.
+
+- **Une passe de cohérence visuelle sur tout le jeu** (#133 à #140). Le système
+  était sain — `tokens.css` fait autorité et `palette-selftest` tenait — mais
+  presque toute la dérive vivait hors de sa portée : dans le JS, dans le HTML,
+  dans les valeurs non-couleur et dans les chaînes affichées.
+
+  L'écran de chargement **parle anglais** : neuf étapes, l'unité `Mo`, les trois
+  erreurs de `loader.js` qui s'affichent telles quelles, et `lang`. Le preset de
+  rates que l'OSD annonce à chaque vol s'appelait « cinéma ».
+
+  La **marque n'a plus qu'une composition** (`src/brand-lockup.js`) : le boot
+  écrivait le nom long en Departure Mono capitalisée, soit « FPVTHEPLANET! »,
+  que `docs/brand.md` n'autorise nulle part.
+
+  Les **états** cessent de changer de sens d'un écran à l'autre : une seule
+  opacité désactivée au lieu de trois, un bouton de panneau qui s'inverse comme
+  le même bouton ailleurs, un focus qui est le marqueur ▌ et rien d'autre, et le
+  périphérique actif qui ne porte plus exactement l'encre du survol.
+
+  Le **mouvement** rentre dans les trois durées, deux cadences entretenues
+  rejoignent les jetons, et le mouvement réduit couvre enfin les trois
+  animations infinies et l'impression ligne à ligne du bootstrap et du BRIEFING.
+
+  Les **crochets** ne veulent plus dire trois choses : `[ LABEL ]` un bouton,
+  `[LABEL]` une touche, et c'est tout. Les infobulles natives disparaissent, et
+  les symboles SI passent en minuscules.
+
+  **Toute valeur typographique sort de l'échelle** : le corps du jeu était à
+  14px, quinze tailles et cinq interlettrages étaient écrits en clair, une
+  trentaine d'espacements étaient magiques.
+
+  Un **seul montage d'écran** (`src/screen.js`) au lieu de deux, dont un seul
+  avait gagné l'impression inverse de #67 ; cinq plans d'empilement nommés ; et
+  le CSS mort s'en va.
+
+  Enfin, `palette-selftest` **voit ses angles morts** : la palette demo atteinte
+  par `token()`, les échelles écrites en pixels, et le français dans une chaîne
+  affichée.
+
+
+- Le soleil ne mange plus l'image (#94). Face à lui on ne voyait presque plus
+  rien, et la raison n'était pas « c'était trop fort » : trois termes
+  s'empilaient sur les mêmes pixels et **deux d'entre eux se combattaient**. Le
+  halo et le voile sont peints APRÈS le gain d'exposition — il le faut, sinon la
+  caméra s'auto-atténuerait son propre soleil — donc l'AGC ne pouvait pas les
+  reprendre : il ne pouvait qu'assombrir tout le reste en essayant. Les noirs
+  montaient à 0,27 près du soleil pendant que l'image tombait à 60 % de sa
+  luminance, et le contraste utile disparaissait exactement là où le pilote
+  regarde. Un premier passage (#11) avait rogné les deux sans voir qu'ils
+  tiraient en sens inverse.
+  Seul le terme additif pouvait trancher, puisqu'il est celui que rien ne
+  rattrape : halo 0,9 → 0,12, voile 0,14 → 0,03, disque ×1,6 → ×0,8. Et le
+  posemètre desserré en face (poids du disque 1,5 → 0,11) — moins de lumière
+  parasite à compenser, donc moins besoin de fermer. C'est ce poids qui bouge et
+  non `E_MIN`, parce que `E_MIN` a un autre métier (il normalise un ciel très
+  lumineux) et parce qu'une butée écrase la rampe : la fermeture reste
+  progressive sur toute la traversée du cadre, elle ne va simplement plus aussi
+  loin. Le soleil reste un événement optique — un disque net, un reste de halo —
+  mais il ne fait plus mur. Contraste près du soleil ×3, image loin de lui 50 %
+  plus claire.
+
+
+- L'acquisition se joue maintenant en trois écrans au lieu d'un seul qui change
+  de contenu : l'analyse automatique, puis `MANUAL OVERRIDE REQUIRED` et
+  `[ JACK IN ]` seuls au milieu de l'écran, puis `CONTROL ACQUIRED` et
+  l'empreinte de la machine qui se trace. Le geste ne partage plus son image
+  avec le log qui le précède ni avec le résultat qui le suit. `[ JACK IN ]`
+  passe au niveau DISPLAY, prend le focus et respire en pas pour se lire comme
+  une invite en attente (#67).
+
+- Les écrans s'enchaînent au lieu de se remplacer : un écran qui s'en va
+  s'imprime à l'envers — les deux mêmes pas que l'impression d'entrée, sur la
+  durée la plus courte — et le suivant n'est monté qu'ensuite. La cascade du
+  second ne commence plus dans la frame où le premier disparaît. Entre deux
+  écrans de terminal, seul le CONTENU s'en va — le fond noir tient jusqu'au
+  démontage, sinon la scène 3D déjà chargée apparaissait le temps de la
+  transition. Seul le dernier écran, celui qui donne sur le vol, emmène son
+  fond avec lui. `screen()` gagne un `close()` pour ça ; `remove()` reste
+  synchrone partout où l'on quitte simplement un menu. `[ JACK IN ]` récupère au passage la cascade d'impression
+  dont sa propre animation le privait (#67).
+
+- Au crash, l'empreinte de la machine perdue passe d'à côté de l'aperçu 3D à
+  SOUS lui : la même machine vue de deux façons, l'une sous l'autre. Elle garde
+  le corps de 22 px du reste de l'écran de fin, et ne redescend à 11 px — l'autre
+  taille nette de Departure Mono — que sous 820 px de hauteur de fenêtre, où la
+  colonne repousserait `[ENTER] DISCONNECT` hors de l'écran (#67).
+
+
+- Le nom, sur le cracktro, passe de la display à `--font-ui` interlettré
+  `--track-ui` : c'est la composition que `docs/brand.md` impose au
+  verrouillage empilé, et la marque n'a qu'une composition (#73).
+
+
 - Le randomart de session (un art différent par vol) est remplacé par celui de
   la cible. Les sessions déjà écrites gardent le leur (#57).
 
@@ -633,15 +487,138 @@ rapport avec les versions ci-dessous.
   le bruit (1,21/1,67 % contre 1,48/0,99 %). Le mécanisme supprime une classe
   de trous par construction ; son gain chiffré est faible.
 
-### Retiré
-
-- `faviconDataURI()` de `src/pixel-icons.js` : le favicon ne vient plus du drone
-  pixel art. L'option `background` d'`iconSVG()` part avec lui — elle n'existait
-  que pour ce data URI, qui ne voyait pas les `var(--…)` de la page. Les neuf
-  icônes elles-mêmes restent, `drone-portrait.js` et `drone-wire-svg.js` les
-  utilisent (#58).
-
 ### Corrigé
+
+- `music/heavy5-4436683e.opus` est restauré (#126). Le manifeste le référençait
+  encore : une piste de la famille `heavy5` manquait à l'installation, et le
+  tirage qui tombait dessus jouait dans le vide.
+- **La télémétrie n'avait aucune borne supérieure : une session pouvait être
+  stockée sans jamais pouvoir être close** (#83). `validateSession()` ne
+  demandait que « fini et >= 0 », et la valeur vient du navigateur : un
+  `durationS` de 1e308 passait, puis `1e308 + 1e308` débordait à `Infinity` à la
+  fusion — le verdict était refusé et le vol restait `PENDING` pour toujours ;
+  l'écran DATA, lui, annonçait une carrière d'`Infinity` secondes. Chaque champ
+  a désormais son plafond (`sim/tools/lib/telemetry-bounds.mjs`), la fusion
+  sature au lieu de déborder, et l'écran DATA applique les mêmes bornes à la
+  lecture — le fichier d'opérateur reste éditable à la main.
+- **Un corps de requête trop gros recevait une coupure de connexion au lieu
+  d'une réponse** (#84). `readBody()` détruisait la socket dès le dépassement du
+  plafond, donc le 400 que la route envoyait ensuite partait dans le vide : le
+  client lisait `ECONNRESET` et la GUI affichait « erreur réseau » là où le
+  serveur voulait dire « corps trop gros ». Il répond maintenant 413 puis
+  continue de lire et de jeter le reste quelques instants — une socket détruite
+  alors que des octets sont encore en vol envoie un RST, et le client jette la
+  réponse qu'il avait déjà reçue. C'est le `lingering_close` de nginx, borné en
+  octets et en temps ; le corps n'est toujours jamais analysé.
+- **Le GLOBAL SCANNER mourait sur une réponse de fournisseur mal formée**
+  (#85). `String(v)` n'est pas total et `Math.round(v)` non plus : sept appels
+  passent par `asText()`/`asNumber()`, `areaAnalysis()` ne déréférence plus une
+  réponse `/describe` tronquée, `DENSITY['__proto__']` ne rend plus
+  « ~NaN–NaN DRONES », et un panic Go du sous-processus n'arrive plus entier
+  sur le rail. Une cible `scanner` a été ajoutée à `npm run fuzz`.
+- **Une seule frame invalide tuait le contrôleur de vol pour de bon.** Les
+  filtres de `AxisPid` sont des moyennes glissantes : un manche non fini — un
+  calibrage cassé — ou un état physique parti en NaN les empoisonnait
+  définitivement, et les moteurs restaient à NaN bien après le retour à la
+  normale. En mode `altitude`, `holdAltitude` faisait la même chose. Les manches
+  sont désormais bornés à l'entrée, un pas de PID non fini réinitialise ses
+  propres filtres, et le mixer refuse un gaz non fini (`clamp()` ne retient pas
+  un NaN : toute comparaison avec NaN est fausse).
+
+- **Une piste pouvait être écrite sans pouvoir être relue.** La quantification
+  multiplie (`lat × 1e5`) : une valeur absurde mais finie débordait à l'infini
+  et `validateTrack()` refusait alors le fichier que `encodeTrack()` venait
+  d'écrire. Le vol était perdu à la lecture.
+
+- **`String(v)` n'est pas total, et six endroits le supposaient.**
+  `{"area": {"toString": null}}` est du JSON valide et fait lever `String()` :
+  le journal des sessions mourait en affichant un vol stocké, et
+  `validateSession` répondait un message du moteur au lieu de nommer le champ.
+  Nouveau `sim/tools/lib/as-text.mjs`, utilisé par `slugify`, `areaLabel`,
+  `fit`, `familyLabel`, les validateurs de session et de piste.
+
+- **`keyLabel()` rendait des propriétés héritées.** Une touche stockée valant
+  `constructor` faisait afficher `function Object() { [native code] }` dans les
+  réglages. Lecture en propriété propre, comme `PROFILES[family]`.
+
+- **Un `deadband` stocké à 1 rendait NaN manche en butée** :
+  `normalizeChannel()` divise par `1 - deadband`. `isValidCalibration()`, la
+  porte entre le fichier et les moteurs, exige maintenant `0 <= deadband < 1`.
+
+- **Un couloir de largeur nulle divisait par zéro** dans `progress()`
+  (`geofence.js`), et `main.js` fait monter la perte d'image sur ce nombre.
+
+- **`normalizeBenchConfig()` promettait de ne jamais lever, et levait** :
+  `Number()` lève sur un symbole, un bigint, et sur un objet sans chemin vers
+  une primitive.
+
+- **`mergeTelemetry(null, …)` était un TypeError** : un paramètre par défaut ne
+  couvre que `undefined`, et `"flightTelemetry": null` tient dans un fichier
+  JSON — `closeSession()` mourait dessus au lieu de fermer le vol.
+
+- **`MAX SPEED Infinity m/s` sur le détail d'une session.** JSON n'a pas de
+  littéral Infinity, mais `1e400` en produit un, et `(v ?? 0).toFixed(1)`
+  l'imprimait. Une télémétrie non finie s'affiche maintenant `—`.
+
+- Le randomart rend la main au drone, et à rien d'autre (#122). Signalé au jeu :
+  après l'empreinte de `CONTROL ACQUIRED`, l'écran montrait la carte — vue de
+  DESSOUS en reconnaissance FIELD — puis le drone apparaissait un battement plus
+  tard. Tout ce qui se voit d'un vol était monté APRÈS la résolution du hack,
+  donc après le fondu qui emmène son fond noir : la caméra de la cible, les
+  hélices dans le cadre, la disposition de l'OSD et son allumage attendaient un
+  `session.open()` — un aller-retour serveur. Et `bootLive()` ne posait jamais sa
+  caméra, restée à l'origine ENU, soit l'altitude 0 de l'ellipsoïde : sous le
+  terrain, d'où la carte vue de dessous. Le vol s'arme désormais pendant que
+  quelque chose le couvre encore : au geste `[ JACK IN ]` sur FIELD — jamais au
+  boot, parce que tous les écrans d'avant le geste peuvent encore renoncer et que
+  renoncer ne doit rien laisser derrière, pas même une session `PENDING` —, sous
+  l'écran de chargement partout ailleurs. La caméra se pose sur la machine,
+  assiette d'entrée comprise, dans les deux moitiés de boot.
+
+- Le flapback de #91 rendait l'appareil impilotable, il est retiré (#103).
+  Signalé au jeu : le drone part en vrille et ne se rattrape pas. Sur un banc
+  6 DOF headless, plein manche de roulis ou de lacet à 26-36 m/s, l'écart
+  hors-axe passait de 1-2 °/s avant #91 à **115-222 °/s**. Les coupables sont
+  les deux MOMENTS en plan — le moment de moyeu (`FLAP_K`) et le bras du plan
+  d'hélice (`ROTOR_PLANE_Y_REF`) — et non la portance de translation (2 °/s) ni
+  la précession (3 °/s), qui restent. Dès que l'appareil ne vole pas le long de
+  son axe de roulis, un moment proportionnel à la vitesse air balaie tangage et
+  roulis à la fréquence de l'entrée, et la boucle de taux ne peut pas le
+  rejeter.
+  La porte qui manquait est en place : la section 4 de `tools/aero-selftest.mjs`
+  tenait l'appareil **en air calme**, où tout #91 vaut identiquement zéro ; elle
+  le tient désormais **en vol**, à deux fois la vitesse de croisière de chaque
+  famille. Elle mesurait 79 % du taux commandé avant le correctif, 1,9 % après.
+  `npm run tune` reste identique au bit près, le banc tournant à vitesse nulle.
+  L'issue #91 rouvre sur la seule question du flapback, dont le double comptage
+  probable — image battante pour la force, image rigide pour le moment — reste à
+  trancher.
+
+
+- L'écran de fin nommait `[ESC] DISCONNECT`, c'est-à-dire la seule touche que le
+  navigateur peut confisquer : en pointer lock, et a fortiori en plein écran, il
+  garde Échap pour rendre le curseur et ne délivre aucun `keydown` à la page. Sur
+  l'écran dont la seule raison d'être est qu'on en sorte, la ligne promettait donc
+  une touche qui pouvait ne jamais arriver — mesuré par `__sim.endState()`, toutes
+  gardes propres, la sortie armée et le geste sans effet. Les trois tables (crash,
+  sortie de zone, coupure du lien) nomment maintenant `[ENTER] DISCONNECT`. Échap
+  reste acceptée en doublon silencieux, comme le clic et n'importe quel bouton de
+  manette (#71).
+- En vol live, le terrain se rechargeait à vue et se trouait à chaque recentrage
+  de fenêtre (tous les 50 m). Mesuré à 24 m/s au Champ de Mars : jusqu'à 7 % du
+  sol absent à chaque vague, par trois chemins — les nœuds « couverts » par un
+  autre niveau étaient libérés une frame après le recentrage (la file de builds
+  est vide à cet instant, les fetchs de la vague n'ayant pas encore répondu), un
+  nœud dont le refetch était encore en vol tombait dans la libération sèche s'il
+  changeait de niveau, et un nœud grossier rebâti avec un octant en moins
+  arrivait du cache avant l'enfant fin qui redessine cet octant. Règle unique
+  maintenant (`src/live-node-queue.js`) : l'ancienne image reste intacte jusqu'à
+  ce que la nouvelle soit complète — plus rien en vol ni en file — puis on
+  échange ; soupape à 15 s si le réseau ne suit pas. Un refetch qui échoue
+  garde le mesh périmé au lieu de le retirer. Mesuré après : 0 trou sur 239
+  échantillons et 1,3 km, pour ~30 % de meshes en plus en pointe pendant une
+  vague — moins optimisé, jamais troué (#75).
+
 
 - `main` était rouge : le retrait du CONTROL VECTOR (#33) a renommé
   `tools/ritual-selftest.mjs` et `tools/ritual-bench.mjs` en
@@ -739,6 +716,13 @@ rapport avec les versions ci-dessous.
 
 ### Retiré
 
+- `faviconDataURI()` de `src/pixel-icons.js` : le favicon ne vient plus du drone
+  pixel art. L'option `background` d'`iconSVG()` part avec lui — elle n'existait
+  que pour ce data URI, qui ne voyait pas les `var(--…)` de la page. Les neuf
+  icônes elles-mêmes restent, `drone-portrait.js` et `drone-wire-svg.js` les
+  utilisent (#58).
+
+
 - Le CONTROL VECTOR (issue #33) : une suite de 4 à 8 flèches que le joueur
   définissait au premier lancement et devait retaper de mémoire à **chaque**
   acquisition de cible pour terminer le hack. Le rapport qui a ouvert #33
@@ -773,6 +757,33 @@ rapport avec les versions ci-dessous.
 
 - Le **scrolltext du cracktro** : la ligne de greetings qui défilait en bas de
   l'intro disparaît. Le logo, la plasma et la résolution restent inchangés.
+
+### Sécurité
+
+- L'API du jeu regarde maintenant d'où vient la requête, en `local` comme en
+  `shared` (#79). En `local` elle n'a pas de clé — la frontière est le socket
+  local — et n'importe quelle page visitée pendant un `npm run dev` pouvait
+  donc écrire dedans (requête simple, sans preflight), voire tout lire par
+  rebinding DNS : profils, sessions, captures, catalogue de scènes, et
+  jusqu'à la suppression d'un terrain de plusieurs heures. `/__operator` et
+  `/__map-api` exigent désormais un `Host` de boucle locale en `local`, et
+  refusent toute méthode écrivante qui se présente cross-site (`Origin`,
+  `Sec-Fetch-Site`) ; un corps qui n'est pas `application/json` est refusé
+  avec.
+- En `shared`, une clé d'opérateur ne suffit plus à supprimer une scène pour
+  tout le monde (#78). L'inscription étant libre et sans rôle ni propriétaire,
+  n'importe quel joueur inscrit pouvait effacer un terrain de l'instance —
+  sans moyen de le reconstruire, l'acquisition étant fermée en `shared`.
+  `DELETE /__map-api/scenes/:slug` et `DELETE /__map-api/jobs/:id` rendent
+  maintenant 403 en `shared`, comme `POST /jobs` : une instance partagée sert
+  le LIVE, elle ne se fait pas défaire par ses visiteurs.
+- Le paramètre `?scene=` n'atteint plus l'écran de chargement tel quel. Un
+  slug inconnu était repris dans le message « carte inconnue », que
+  `hud.fail()` écrivait via `innerHTML` : un lien forgé exécutait du balisage
+  dans l'origine du jeu pour tout joueur déjà inscrit, avec la clé d'opérateur
+  lisible depuis `localStorage`. Le slug est maintenant validé au chargement
+  (`[a-z0-9-]+`, la règle du serveur), et l'écran de chargement n'écrit plus
+  que du texte.
 
 ## [0.3.0] - 2026-09-08
 

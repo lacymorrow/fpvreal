@@ -1,26 +1,25 @@
-# Unité systemd du serveur de jeu FPVTP! sur le VPS (mode `shared`).
+# systemd unit for the FPVTP! game server on the VPS (`shared` mode).
 #
-# Tranche T4 du design de déploiement :
+# Slice T4 of the deployment design:
 # sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md
 #
-# Installation : voir deploy/README.md (checklist humaine, à faire une fois).
+# Installation: see deploy/README.md (human checklist, done once).
 #   cp deploy/fpvtp.service /etc/systemd/system/fpvtp.service
 #   systemctl daemon-reload && systemctl enable --now fpvtp
 #
-# Arborescence attendue sur la machine (posée par deploy/deploy.sh) :
-#   /opt/fpvtp/releases/<tag>/app/     ← le programme (server/, tools/, src/, dist/)
-#   /opt/fpvtp/releases/<tag>/node/    ← le runtime Node embarqué dans l'archive
-#   /opt/fpvtp/current -> releases/<tag>   (lien symbolique, la bascule)
-#   /var/lib/fpvtp/                    ← les données (FPVTP_DATA_DIR)
+# Layout expected on the machine (laid down by deploy/deploy.sh):
+#   /opt/fpvtp/releases/<tag>/app/     ← the program (server/, tools/, src/, dist/)
+#   /opt/fpvtp/releases/<tag>/node/    ← the Node runtime embedded in the archive
+#   /opt/fpvtp/current -> releases/<tag>   (symbolic link, the switch)
+#   /var/lib/fpvtp/                    ← the data (FPVTP_DATA_DIR)
 #
-# ATTENTION, prérequis non encore satisfait au 2026-09-07 : l'archive publiée
-# aujourd'hui par .github/workflows/release.yml ne contient QUE `dist/` — ni
-# `server/`, ni `tools/`, ni `src/`, ni un runtime Node. Cette unité ne
-# démarrera donc pas tant que la release ne produit pas l'archive `linux-x64`
-# décrite ci-dessus. Voir deploy/README.md, section « Le runtime Node ».
+# That shape is what .github/workflows/release.yml publishes as the
+# `fpvtp-server-<tag>-linux-x64.tar.gz` asset. A release older than that
+# workflow only carries `dist/` and this unit will not start on it — see
+# deploy/README.md, section "The Node runtime".
 
 [Unit]
-Description=FPVTP! — serveur de jeu (mode shared)
+Description=FPVTP! — game server (shared mode)
 Documentation=https://github.com/lionrayonnant/FPVThePlanet
 After=network-online.target
 Wants=network-online.target
@@ -33,43 +32,43 @@ Group=fpvtp
 WorkingDirectory=/opt/fpvtp/current/app
 ExecStart=/opt/fpvtp/current/node/bin/node server/index.mjs
 
-# Les quatre variables ci-dessous sont celles que sim/server/index.mjs lit
-# réellement (resolveOptions(), lignes 51-58) : FPVTP_DATA_DIR, FPVTP_PORT,
-# FPVTP_HOST, FPVTP_MODE. Vérifié en démarrant le serveur avec, le 2026-09-07.
+# The four variables below are the ones sim/server/index.mjs actually reads
+# (resolveOptions(), lines 51-58): FPVTP_DATA_DIR, FPVTP_PORT, FPVTP_HOST,
+# FPVTP_MODE. Verified by starting the server with them, on 2026-09-07.
 #
-# `shared` est le mode du VPS : c'est lui qui autorise une écoute hors boucle
-# locale et qui portera l'authentification par clé d'opérateur (tranche T3).
+# `shared` is the VPS mode: it is what allows listening outside the loopback
+# and what carries operator-key authentication.
 Environment=FPVTP_MODE=shared
-# Les données sortent du dossier du programme : une mise à jour écrase
-# /opt/fpvtp/current, jamais /var/lib/fpvtp.
+# The data lives outside the program directory: an update overwrites
+# /opt/fpvtp/current, never /var/lib/fpvtp.
 Environment=FPVTP_DATA_DIR=/var/lib/fpvtp
-# On n'écoute QUE sur la boucle locale : c'est Caddy qui expose le service au
-# monde, avec le TLS. Rien ne doit joindre le port 8080 depuis l'extérieur.
+# We listen ONLY on the loopback: Caddy is what exposes the service to the
+# world, with the TLS. Nothing must reach port 8080 from outside.
 Environment=FPVTP_HOST=127.0.0.1
 Environment=FPVTP_PORT=8080
 #
-# FPVTP_ACQUIRE N'EST DÉLIBÉRÉMENT PAS POSÉE, ET NE DOIT JAMAIS L'ÊTRE ICI.
-# C'est le drapeau qui ouvre `ACQUIRE AREA` (naissance d'une scène sur disque,
-# appels à kh.google.com depuis le serveur). Le design (D2) le veut fermé sur
-# le VPS sans exception : rien n'acquiert jamais de terrain sur cette machine,
-# elle ne sert que du LIVE. Ne l'ajoutez pas « pour tester ».
+# FPVTP_ACQUIRE IS DELIBERATELY NOT SET, AND MUST NEVER BE SET HERE.
+# It is the flag that opens `ACQUIRE AREA` (a scene being born on disk, calls
+# to kh.google.com from the server). The design (D2) wants it closed on the VPS
+# without exception: nothing ever acquires terrain on this machine, it only
+# serves LIVE flight. Do not add it "just to test".
 #
-# Le design cite aussi une variable FPVTP_SCENES_MAX_GB : elle N'EXISTE PAS
-# dans le code (aucune occurrence dans sim/, vérifié par grep le 2026-09-07).
-# Elle n'est donc pas posée ici — une variable inventée aurait été silencieuse
-# et inutile. Sans acquisition, il n'y a de toute façon aucune scène à plafonner.
+# The design also mentions an FPVTP_SCENES_MAX_GB variable: it DOES NOT EXIST
+# in the code (no occurrence anywhere in sim/, checked by grep on 2026-09-07).
+# It is therefore not set here — an invented variable would have been silent
+# and useless. Without acquisition there is no scene to cap anyway.
 
 Restart=on-failure
 RestartSec=2
 
-# Journal : tout part dans journalctl -u fpvtp.
+# Logging: everything goes to journalctl -u fpvtp.
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=fpvtp
 
-# --- Durcissement ---------------------------------------------------------
-# Le serveur n'a besoin que de lire son propre répertoire de programme et
-# d'écrire dans son répertoire de données.
+# --- Hardening -------------------------------------------------------------
+# The server only needs to read its own program directory and to write into its
+# data directory.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/fpvtp
@@ -88,11 +87,11 @@ RestrictRealtime=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=no
-# Rapier est du WASM : V8 a besoin de pages exécutables inscriptibles, donc
-# MemoryDenyWriteExecute reste à `no`. C'est le seul durcissement courant
-# volontairement écarté, et il l'est pour une raison précise.
+# Rapier is WASM: V8 needs writable executable pages, so MemoryDenyWriteExecute
+# stays at `no`. It is the only common hardening switch deliberately left out,
+# and it is left out for a precise reason.
 RemoveIPC=yes
-# IPv4/IPv6 et sockets Unix : rien d'autre.
+# IPv4/IPv6 and Unix sockets: nothing else.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 SystemCallArchitectures=native
 SystemCallFilter=@system-service

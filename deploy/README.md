@@ -1,87 +1,96 @@
-# Préparer un VPS pour FPVTP!
+# Preparing a VPS for FPVTP!
 
-Checklist **humaine**, à suivre **une seule fois** sur une machine neuve.
-Ce n'est pas un script de provisionnement : chaque étape se tape à la main,
-dans l'ordre, en root. Elle est écrite pour quelqu'un qui ne connaît pas le
-projet — rien n'y est laissé à deviner.
+A **human** checklist, to be followed **once** on a fresh machine.
+This is not a provisioning script: every step is typed by hand, in order, as
+root. It is written for someone who does not know the project — nothing here is
+left to be guessed.
 
-Ensuite, chaque nouvelle version se livre en une commande :
-`sudo /opt/fpvtp/deploy.sh v0.2.0`.
+After that, each new version ships in one command:
+`sudo /opt/fpvtp/deploy.sh v1.0.0`.
 
-Le design de référence est
+The reference design lives in the repository, at
 `sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md`
-(section « D4 »).
+(section "D4").
 
-## Ce que la machine fait tourner
+## What the machine runs
 
-| quoi | où |
+| what | where |
 |---|---|
-| le serveur de jeu (Node) | `fpvtp.service`, écoute sur `127.0.0.1:8080` |
-| le frontal TLS | Caddy, `fpvtp.example.org` → le port 8080 |
-| les installeurs de bureau | Caddy, `updates.fpvtp.example.org` → `/srv/fpvtp-updates` |
-| le programme | `/opt/fpvtp/releases/<tag>`, avec `/opt/fpvtp/current` qui pointe la version active |
-| les données | `/var/lib/fpvtp` (jamais écrasées par une mise à jour) |
-| le jeton GitHub | `/etc/fpvtp/token` |
+| the game server (Node) | `fpvtp.service`, listening on `127.0.0.1:8080` |
+| the TLS front end | Caddy, `fpvtp.example.org` → port 8080 |
+| the program | `/opt/fpvtp/releases/<tag>`, with `/opt/fpvtp/current` pointing at the active version |
+| the data | `/var/lib/fpvtp` (never overwritten by an update) |
+| *(optional)* a download page for the desktop installers | Caddy, `updates.fpvtp.example.org` → `/srv/fpvtp-updates` |
+| *(optional)* a GitHub token | `/etc/fpvtp/token`, only to raise the API rate limit |
 
-Le serveur tourne en **mode `shared`**. Deux conséquences à connaître :
+The two optional rows are optional in the strict sense: skip them and
+everything else still works. See "The desktop installers" below for why the
+download page is no longer required.
 
-- il n'acquiert **jamais** de terrain. `FPVTP_ACQUIRE` n'est pas posée dans
-  l'unité systemd et ne doit jamais l'être : le VPS ne sert que du vol LIVE,
-  dont la géométrie et les textures sont téléchargées par le navigateur du
-  joueur, sans passer par cette machine ;
-- il ne stocke donc aucune scène. `/var/lib/fpvtp/scenes` reste vide en
-  permanence.
+The server runs in **`shared` mode**. Two consequences worth knowing:
 
-## Prérequis
+- it **never** acquires terrain. `FPVTP_ACQUIRE` is not set in the systemd unit
+  and must never be: the VPS only serves LIVE flight, whose geometry and
+  textures are downloaded by the player's browser, without going through this
+  machine;
+- it therefore stores no scene. `/var/lib/fpvtp/scenes` stays empty forever.
 
-- Debian ou Ubuntu récente (les commandes ci-dessous sont pour `apt`).
-- Deux noms DNS pointant sur l'IP de la machine, par exemple
-  `fpvtp.example.org` et `updates.fpvtp.example.org`.
-- Les ports 80 et 443 ouverts (Caddy en a besoin pour obtenir les
-  certificats). Le port 8080 doit rester **fermé** vers l'extérieur.
-- Un jeton GitHub en lecture seule sur `lionrayonnant/FPVThePlanet`, tant que
-  le dépôt est privé. Une fois public, l'API des releases répond sans
-  authentification : le jeton devient inutile, mais `deploy.sh` le réclame
-  encore — poser un jeton vide ne suffira pas, il faudra retirer le contrôle
-  (fine-grained token, permission « Contents: Read »).
+## Prerequisites
 
-Outils utilisés par `deploy.sh` : `curl`, `jq`, `tar`, `unzip`, `systemctl`,
-`install`. Installez ce qui manque :
+- A recent Debian or Ubuntu (the commands below are for `apt`).
+- One DNS name pointing at the machine's IP, for example `fpvtp.example.org`.
+  A second one (`updates.fpvtp.example.org`) only if you want the optional
+  download page.
+- Ports 80 and 443 open (Caddy needs them to obtain the certificates). Port
+  8080 must stay **closed** to the outside.
+- No GitHub token is required: the repository is public, so the Releases API
+  answers without authentication. A read-only token is only worth setting if
+  the anonymous rate limit (60 requests per hour and per IP) is a problem on
+  this machine — see step 3.
+
+Tools used by `deploy.sh`: `curl`, `jq`, `tar`, `unzip`, `systemctl`,
+`install`. Install what is missing:
 
 ```sh
 apt update
 apt install -y curl jq tar unzip
 ```
 
-## 1. L'utilisateur système
+## 1. The system user
 
-Un compte sans shell ni maison : il ne sert qu'à faire tourner le service.
+An account with no shell and no home: it exists only to run the service.
 
 ```sh
 adduser --system --group --no-create-home --shell /usr/sbin/nologin fpvtp
 ```
 
-## 2. Les répertoires
+## 2. The directories
 
 ```sh
-# Le programme. Il appartient à root : le service le lit, il ne l'écrit pas.
+# The program. It belongs to root: the service reads it, it does not write it.
 install -d -o root  -m 0755 /opt/fpvtp
 install -d -o root  -m 0755 /opt/fpvtp/releases
 
-# Les données. C'est le seul endroit où le service écrit.
+# The data. This is the only place the service writes to.
 install -d -o fpvtp -g fpvtp -m 0750 /var/lib/fpvtp
 
-# Les installeurs de bureau, servis publiquement par Caddy.
+# Optional: the desktop installers, served publicly by Caddy. Skip this line
+# if you are not standing up the download page (see below).
 install -d -o root -m 0755 /srv/fpvtp-updates
 
-# Les journaux de Caddy.
-install -d -o caddy -g caddy -m 0750 /var/log/caddy   # après l'étape 4
+# Caddy's logs.
+install -d -o caddy -g caddy -m 0750 /var/log/caddy   # after step 4
 ```
 
-## 3. Le jeton GitHub
+## 3. The GitHub token (optional)
 
-Le dépôt est privé : sans ce fichier, `deploy.sh` ne peut rien télécharger.
-Il s'arrête alors avec un message explicite, il ne plante pas de façon opaque.
+The repository is public: `deploy.sh` downloads a Release without any
+credentials, and this step can be skipped entirely. A token only raises the
+GitHub API rate limit, which matters when the machine shares its IP with other
+API callers — one delivery spends four or five requests against an anonymous
+budget of 60 per hour. If the API answers `403`, that budget is what ran out.
+
+A fine-grained token with "Contents: Read" is enough:
 
 ```sh
 install -d -o root -g root -m 0700 /etc/fpvtp
@@ -90,8 +99,8 @@ chmod 0600 /etc/fpvtp/token
 chown root:root /etc/fpvtp/token
 ```
 
-Le fichier est lu par `deploy.sh`, qui tourne en root : le compte `fpvtp`
-n'y a pas accès, et c'est voulu.
+The file is read by `deploy.sh`, which runs as root: the `fpvtp` account has no
+access to it, and that is intended.
 
 ## 4. Caddy
 
@@ -104,146 +113,166 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
 apt update && apt install -y caddy
 ```
 
-Puis installez la configuration de ce répertoire, en remplaçant les deux
-`example.org` par le vrai domaine :
+Then install this directory's configuration, replacing the `example.org`
+occurrences with the real domain. If you are not standing up the optional
+download page, delete the second block (`updates.`) rather than pointing it at
+a name that does not resolve.
 
 ```sh
 cp deploy/Caddyfile /etc/caddy/Caddyfile
-$EDITOR /etc/caddy/Caddyfile          # les deux noms de domaine
+$EDITOR /etc/caddy/Caddyfile          # the domain names
 caddy validate --config /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-`caddy validate` doit dire `Valid configuration` avant d'aller plus loin.
+`caddy validate` must say `Valid configuration` before going any further.
 
-## 5. Le service
+## 5. The service
 
 ```sh
 cp deploy/fpvtp.service /etc/systemd/system/fpvtp.service
 systemctl daemon-reload
-systemctl enable fpvtp        # au démarrage de la machine
+systemctl enable fpvtp        # at machine boot
 ```
 
-Ne le démarrez pas encore : `/opt/fpvtp/current` n'existe pas tant qu'aucune
-version n'a été livrée. C'est `deploy.sh` qui s'en charge.
+Do not start it yet: `/opt/fpvtp/current` does not exist until a version has
+been shipped. That is `deploy.sh`'s job.
 
-## 6. Le script de livraison
+## 6. The delivery script
 
 ```sh
 cp deploy/deploy.sh /opt/fpvtp/deploy.sh
 chmod 0755 /opt/fpvtp/deploy.sh
 ```
 
-## 7. La première livraison
+## 7. The first delivery
 
 ```sh
-sudo /opt/fpvtp/deploy.sh v0.2.0
+sudo /opt/fpvtp/deploy.sh v1.0.0
 ```
 
-Le script télécharge la release, la décompresse, bascule
-`/opt/fpvtp/current`, redémarre le service, vérifie qu'il répond, puis dépose
-les installeurs de bureau dans `/srv/fpvtp-updates`.
+The script downloads the release, unpacks it, switches
+`/opt/fpvtp/current`, restarts the service, checks that it answers, then — if
+`/srv/fpvtp-updates` exists — mirrors the desktop installers into it.
 
-Il affiche, au moment de la bascule, le chemin de la release précédente :
-revenir en arrière est toujours
+At the moment it switches, it prints the path of the previous release: rolling
+back is always
 
 ```sh
-ln -sfn /opt/fpvtp/releases/<tag précédent> /opt/fpvtp/current
+ln -sfn /opt/fpvtp/releases/<previous tag> /opt/fpvtp/current
 systemctl restart fpvtp
 ```
 
-Le déclenchement reste **manuel** pour l'instant : on lance `deploy.sh` en
-SSH, à la main. Une étape `deploy` automatique dans
-`.github/workflows/release.yml` (conditionnée à des secrets `DEPLOY_HOST` /
-`DEPLOY_KEY`) viendra **après** qu'une première livraison manuelle aura
-réussi — pas avant, parce que `release.yml` lui-même n'a encore jamais tourné
-sur un runner.
+Triggering stays **manual** for now: you run `deploy.sh` over SSH, by hand.
+`.github/workflows/release.yml` builds and publishes, it does not deploy. An
+automatic `deploy` step there (gated on `DEPLOY_HOST` / `DEPLOY_KEY` secrets)
+will come **after** a first manual delivery has succeeded — not before.
 
-## 8. Les opérateurs existants (facultatif)
+## 8. Existing operators (optional)
 
-Pour reprendre des sessions déjà jouées en local, copiez leur état :
+To carry over sessions already played locally, copy their state:
 
 ```sh
 rsync -a sim/operator-state/ root@vps:/var/lib/fpvtp/operator-state/
 chown -R fpvtp:fpvtp /var/lib/fpvtp/operator-state
 ```
 
-En mode `shared`, un opérateur sans clé est inutilisable tant qu'on ne lui en
-a pas généré une — c'est le cas de tous les fichiers d'avant la tranche T3.
-Depuis le répertoire du programme :
+In `shared` mode, an operator with no key is unusable until one has been
+generated — which is the case for every file created before operator keys
+existed. From the program directory:
 
 ```sh
 sudo -u fpvtp /opt/fpvtp/current/node/bin/node \
   /opt/fpvtp/current/app/server/index.mjs key <operatorId>
 ```
 
-La clé s'affiche **une seule fois** : transmettez-la à la personne concernée,
-elle la saisira sur l'écran `OPERATOR KEY`. Relancer la commande en délivre
-une neuve et invalide la précédente. C'est aussi la seule voie de
-récupération quand quelqu'un perd la sienne : il n'y a ni mot de passe, ni
-adresse e-mail, ni réinitialisation en libre service.
+The key is shown **once**: pass it to the person concerned, who will type it on
+the `OPERATOR KEY` screen. Running the command again issues a new one and
+invalidates the previous. It is also the only recovery path when somebody loses
+theirs: there is no password, no e-mail address, and no self-service reset.
 
 ---
 
-## Le runtime Node, et la forme de l'archive
+## The Node runtime, and the shape of the archive
 
-`fpvtp.service` lance `/opt/fpvtp/current/node/bin/node` avec
-`/opt/fpvtp/current/app` comme répertoire de travail. L'asset `linux-x64`
-attendu par `deploy.sh` a donc cette forme :
+`fpvtp.service` runs `/opt/fpvtp/current/node/bin/node` with
+`/opt/fpvtp/current/app` as its working directory. The `linux-x64` asset
+`deploy.sh` expects therefore has this shape:
 
 ```
 <archive>/
   app/          server/ tools/ src/ dist/ package.json
   node/bin/node
+  deploy/       this directory
+  LICENSE
 ```
 
-**C'est ce que `.github/workflows/release.yml` produit** depuis l'intégration
-des tranches T2-T4 : l'étape « Archive du serveur pour le VPS » copie
-`server/ tools/ src/ dist/ package.json` dans `app/`, télécharge le tarball
-officiel de la version de Node qui vient de faire passer les selftests, et
-publie le tout sous le nom `fpvtp-server-<tag>-linux-x64.tar.gz`. L'ancien
-`fpvtp-sim-<tag>.zip` (le `dist/` seul) reste attaché à la Release, mais ce
-n'est pas lui que `deploy.sh` installe.
+**This is what `.github/workflows/release.yml` produces**: the "Server archive,
+for self-hosting" step copies `server/ tools/ src/ dist/ package.json` into
+`app/`, downloads the official tarball of the very Node version that just
+passed the selftests, and publishes the whole thing as
+`fpvtp-server-<tag>-linux-x64.tar.gz`.
 
-**Aucun `npm install` sur le VPS, et c'est voulu** : le serveur n'a besoin
-d'aucune dépendance npm pour démarrer — mesuré le 2026-09-07 sur une archive
-construite exactement comme celle de la CI, **sans `node_modules`** :
+**No `npm install` on the VPS, and that is deliberate**: the server needs no
+npm dependency at all to start — measured on 2026-09-07 on an archive built
+exactly like the CI one, **without `node_modules`**:
 
 ```
 FPVTP! v0.0.0 — mode shared — acquisition fermée — données … — http://127.0.0.1:8299/
 GET /                       → 200 text/html
-GET /__map-api/scenes       → 401   (clé d'opérateur requise, mode shared)
-GET /__operator             → 404   (pas d'annuaire public en shared)
+GET /__map-api/scenes       → 401   (operator key required, shared mode)
+GET /__operator             → 404   (no public directory in shared)
 POST /__map-api/jobs        → 401
 ```
 
-L'archive ne contient donc PAS `node_modules`. Les modules natifs (`sharp`,
-Rapier) ne servent qu'à l'acquisition de terrain, fermée sur le VPS.
+So the archive does NOT contain `node_modules`. The native modules (`sharp`,
+Rapier) only serve terrain acquisition, which is closed on the VPS.
 
-Note sur le contrôle de santé : le `401` ci-dessus est la réponse NORMALE de
-`/__map-api/scenes` en mode `shared` une fois la clé d'opérateur en place.
-`deploy.sh` accepte 200, 401 et 403 — ce qu'il vérifie, c'est que Node répond,
-pas qu'il ouvre la porte.
+A note on the health check: the `401` above is the NORMAL answer of
+`/__map-api/scenes` in `shared` mode once operator keys are in place.
+`deploy.sh` accepts 200, 401 and 403 — what it verifies is that Node answers,
+not that it opens the door.
 
-Note sur ce que `shared` refuse en plus (#78) : `DELETE /__map-api/scenes/:slug`
-et `DELETE /__map-api/jobs/:id` rendent `403`, clé d'opérateur valide ou non.
-L'inscription est libre et il n'y a ni rôle ni propriétaire : sans ce refus,
-n'importe quel joueur inscrit effacerait un terrain pour toute l'instance, sans
-moyen de le reconstruire (l'acquisition est fermée en `shared`). Une scène ne se
-retire donc que depuis le shell de la machine.
+A note on what `shared` additionally refuses: `DELETE /__map-api/scenes/:slug`
+and `DELETE /__map-api/jobs/:id` return `403`, valid operator key or not.
+Sign-up is open and there is neither a role nor an owner: without that refusal,
+any registered player could erase a terrain for the whole instance, with no way
+to rebuild it (acquisition is closed in `shared`). A scene is therefore only
+removed from the machine's shell.
 
-Variante possible si l'on préfère : installer Node sur la machine (`apt` ou
-NodeSource) et changer l'`ExecStart` en `/usr/bin/node`. Ce répertoire suit
-la forme décrite par le design (runtime embarqué), parce qu'elle rend la
-version de Node solidaire de la version du jeu — mais le choix reste ouvert
-tant que la première livraison n'a pas eu lieu.
+A possible variant, if you prefer: install Node on the machine (`apt` or
+NodeSource) and change `ExecStart` to `/usr/bin/node`. This directory follows
+the shape described by the design (embedded runtime), because it makes the Node
+version travel with the game version — but the choice stays open.
 
-## Sauvegardes
+## The desktop installers
 
-Une seule chose est à sauvegarder : `/var/lib/fpvtp/operator-state`. C'est
-petit (de l'ordre de 174 Ko par opérateur sans les captures, quelques Mo
-avec). Un `tar` quotidien suffit largement — par exemple dans
-`/etc/cron.daily/fpvtp-backup` :
+The Windows and Linux installers are attached to each GitHub Release, together
+with the `latest.yml` / `latest-linux.yml` feed files. **That is where
+electron-updater reads them from**: `sim/electron-builder.yml` uses
+`provider: github`, so an installed app updates itself straight from the
+Releases API, with no server of yours involved.
+
+The `updates.fpvtp.example.org` block of the `Caddyfile` and the
+`/srv/fpvtp-updates` directory are therefore **optional**. They are worth
+standing up in two cases:
+
+- you want a download page under your own domain, instead of sending people to
+  GitHub;
+- you distribute a fork or a private build and want your own update feed. Point
+  the app at it with the `FPVTP_UPDATE_URL` environment variable, which
+  overrides the baked feed at runtime, without rebuilding.
+
+The last step of `deploy.sh` fills that directory from the Release assets, and
+skips it with a warning when it does not exist. It never fails the delivery of
+the server.
+
+## Backups
+
+There is a single thing to back up: `/var/lib/fpvtp/operator-state`. It is
+small (on the order of 174 KB per operator without the screenshots, a few MB
+with them). A daily `tar` is plenty — for instance in
+`/etc/cron.daily/fpvtp-backup`:
 
 ```sh
 #!/bin/sh
@@ -254,51 +283,50 @@ tar -czf "$dest/operator-state-$(date +%F).tar.gz" -C /var/lib/fpvtp operator-st
 find "$dest" -name 'operator-state-*.tar.gz' -mtime +30 -delete
 ```
 
-Rien d'autre n'est à sauvegarder :
+Nothing else needs backing up:
 
-- `/opt/fpvtp` se reconstruit avec `deploy.sh` depuis une release GitHub ;
-- **aucune scène n'est jamais écrite sur le VPS** (l'acquisition y est fermée,
-  cf. plus haut), donc `/var/lib/fpvtp/scenes` reste vide et il n'y a pas de
-  surveillance d'espace disque particulière à mettre en place ;
-- le cache météo (`/var/lib/fpvtp/…`) se reconstruit tout seul.
+- `/opt/fpvtp` is rebuilt by `deploy.sh` from a GitHub release;
+- **no scene is ever written on the VPS** (acquisition is closed there, see
+  above), so `/var/lib/fpvtp/scenes` stays empty and there is no particular
+  disk-space monitoring to set up;
+- the weather cache (`/var/lib/fpvtp/…`) rebuilds itself.
 
-## Vérifier que ça tourne
+## Checking that it runs
 
 ```sh
 systemctl status fpvtp
 journalctl -u fpvtp -f
-curl -s localhost:8080/__map-api/scenes        # doit répondre du JSON
-curl -sI https://fpvtp.example.org/            # doit répondre en HTTPS
-curl -s  https://updates.fpvtp.example.org/latest-linux.yml
+curl -s localhost:8080/__map-api/scenes        # must answer JSON
+curl -sI https://fpvtp.example.org/            # must answer over HTTPS
+curl -s  https://updates.fpvtp.example.org/latest-linux.yml   # optional block only
 ```
 
-Au démarrage, le serveur écrit une ligne qui dit tout :
+On start-up, the server writes one line that says everything:
 
 ```
-FPVTP! v0.2.0 — mode shared — données /var/lib/fpvtp — http://127.0.0.1:8080/
+FPVTP! v1.0.0 — mode shared — acquisition fermée — données /var/lib/fpvtp — http://127.0.0.1:8080/
 ```
 
-Si `mode` n'y dit pas `shared`, ou si le répertoire de données n'est pas
-`/var/lib/fpvtp`, l'unité systemd n'a pas été prise en compte : relancez
-`systemctl daemon-reload` puis `systemctl restart fpvtp`.
+If `mode` does not say `shared` there, or if the data directory is not
+`/var/lib/fpvtp`, the systemd unit was not picked up: run `systemctl
+daemon-reload` then `systemctl restart fpvtp`.
 
-## Ce qui n'a pas pu être vérifié
+## What could not be verified
 
-Ces fichiers ont été écrits sans accès à un VPS. Ont été réellement
-mesurés : la syntaxe de `deploy.sh` (`bash -n`), la validité des directives
-de `fpvtp.service` (`systemd-analyze verify`), et le fait que
-`sim/server/index.mjs` lit bien `FPVTP_MODE`, `FPVTP_DATA_DIR`, `FPVTP_HOST`
-et `FPVTP_PORT` (serveur démarré en mode `shared` avec ces variables, réponse
-`200 {"scenes":[]}` sur `/__map-api/scenes`).
+These files were written without access to a VPS. What was actually measured:
+the syntax of `deploy.sh` (`bash -n`), the validity of the `fpvtp.service`
+directives (`systemd-analyze verify`), and the fact that `sim/server/index.mjs`
+does read `FPVTP_MODE`, `FPVTP_DATA_DIR`, `FPVTP_HOST` and `FPVTP_PORT` (server
+started in `shared` mode with those variables, answering `200 {"scenes":[]}` on
+`/__map-api/scenes`).
 
-A été mesuré ensuite, à l'intégration des trois tranches : une archive
-construite exactement comme celle de la CI (`app/` + `node/`, **sans
-`node_modules`**) démarre en mode `shared` et sert le jeu — voir la section
-« Le runtime Node » plus haut pour les codes de réponse relevés.
+Measured afterwards: an archive built exactly like the CI one (`app/` +
+`node/`, **without `node_modules`**) starts in `shared` mode and serves the
+game — see the "The Node runtime" section above for the response codes
+recorded.
 
-N'ont **pas** été vérifiés, et le seront à la première livraison réelle : le
-`Caddyfile` (Caddy n'était pas installé, `caddy validate` n'a pas pu être
-joué), le durcissement systemd sous charge réelle, le téléchargement d'un
-asset de release privée, `electron-updater` contre le bloc `updates.`, et
-l'ensemble du chemin de bout en bout. `release.yml` lui-même n'a jamais
-tourné sur un runner.
+What has **not** been verified, and will be at the first real delivery: the
+`Caddyfile` (Caddy was not installed, `caddy validate` could not be run), the
+systemd hardening under real load, `electron-updater` against the GitHub
+Releases feed, and the whole end-to-end path. `release.yml` itself has never
+run on a runner.

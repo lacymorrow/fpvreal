@@ -1,46 +1,48 @@
-# Caddy — les deux entrées publiques du VPS FPVTP!.
+# Caddy — the public entry points of the FPVTP! VPS.
 #
-# Tranche T4 du design de déploiement :
+# Slice T4 of the deployment design:
 # sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md
 #
-# Installation : voir deploy/README.md.
+# Installation: see deploy/README.md.
 #   cp deploy/Caddyfile /etc/caddy/Caddyfile
-#   # remplacer les deux `example.org` par le vrai domaine
+#   # replace the `example.org` names with the real domain, and drop the
+#   # second block if you are not standing up the optional download page
 #   caddy validate --config /etc/caddy/Caddyfile
 #   systemctl reload caddy
 #
-# Caddy obtient et renouvelle les certificats TLS tout seul (Let's Encrypt),
-# à condition que les deux noms pointent bien sur l'IP de la machine et que
-# les ports 80 et 443 soient joignables.
+# Caddy obtains and renews the TLS certificates on its own (Let's Encrypt), as
+# long as the names really point at the machine's IP and ports 80 and 443 are
+# reachable.
 #
-# `fpvtp.example.org` et `updates.fpvtp.example.org` sont des exemples : ce
-# fichier est un gabarit, il n'est jamais déployé tel quel.
+# `fpvtp.example.org` and `updates.fpvtp.example.org` are examples: this file
+# is a template, it is never deployed as it stands.
 
 # ---------------------------------------------------------------------------
-# 1. Le serveur de jeu — l'API et les fichiers du build.
+# 1. The game server — the API and the built files. REQUIRED.
 # ---------------------------------------------------------------------------
 fpvtp.example.org {
-	# Le serveur Node (fpvtp.service) n'écoute que sur 127.0.0.1:8080 ; c'est
-	# ce bloc, et lui seul, qui l'expose. Tout passe par le proxy : l'API
-	# (/__operator, /__map-api) comme les fichiers statiques, parce que
-	# sim/server/static.mjs porte des choses qu'un file_server ne saurait pas
-	# reproduire (le catalogue dynamique /scenes.json depuis le répertoire de
-	# données, l'absence délibérée de repli SPA, le Cache-Control immutable).
+	# The Node server (fpvtp.service) only listens on 127.0.0.1:8080; this
+	# block, and this block alone, exposes it. Everything goes through the
+	# proxy: the API (/__operator, /__map-api) as well as the static files,
+	# because sim/server/static.mjs carries things a file_server could not
+	# reproduce (the dynamic /scenes.json catalogue built from the data
+	# directory, the deliberate absence of an SPA fallback, the immutable
+	# Cache-Control).
 	reverse_proxy 127.0.0.1:8080
 
-	# SSE — À LIRE AVANT DE S'INQUIÉTER.
-	# La progression des jobs d'acquisition est diffusée en
-	# `text/event-stream` (sim/server/api.mjs). Il n'y a RIEN à régler pour
-	# ça : le reverse_proxy de Caddy ne tamponne pas les réponses, il les
-	# écoule au fil de l'eau. Pas d'équivalent de `proxy_buffering off;`
-	# à chercher — cette directive n'existe pas, parce qu'elle n'a pas lieu
-	# d'être. (L'en-tête `x-accel-buffering: no` que le serveur envoie déjà
-	# couvrirait nginx si l'on changeait un jour de frontal.)
+	# SSE — READ THIS BEFORE WORRYING.
+	# Acquisition job progress is streamed as `text/event-stream`
+	# (sim/server/api.mjs). There is NOTHING to configure for it: Caddy's
+	# reverse_proxy does not buffer responses, it flushes them as they come.
+	# Do not go looking for an equivalent of `proxy_buffering off;` — that
+	# directive does not exist, because it has no reason to. (The
+	# `x-accel-buffering: no` header the server already sends would cover
+	# nginx if the front end were ever swapped.)
 	#
-	# Aucune compression (`encode`) n'est activée ici À DESSEIN : son
-	# interaction avec le flux SSE n'a pas pu être vérifiée sur cette machine
-	# (Caddy n'y est pas installé). Si vous l'ajoutez, vérifiez d'abord qu'un
-	# job d'acquisition affiche toujours sa progression en direct.
+	# No compression (`encode`) is enabled here ON PURPOSE: its interaction
+	# with the SSE stream could not be verified on this machine (Caddy is not
+	# installed on it). If you add it, first check that an acquisition job
+	# still shows its progress live.
 
 	log {
 		output file /var/log/caddy/fpvtp.log
@@ -48,47 +50,59 @@ fpvtp.example.org {
 }
 
 # ---------------------------------------------------------------------------
-# 2. La distribution des installeurs de bureau (Electron, D3).
+# 2. Desktop installer distribution (Electron). OPTIONAL — skip it if in doubt.
 # ---------------------------------------------------------------------------
 #
-# CHOIX : un SOUS-DOMAINE dédié (`updates.`), pas un chemin sous le domaine
-# du jeu. Trois raisons :
+# THIS BLOCK IS NO LONGER WHAT UPDATES INSTALLED APPS. Since the repository is
+# public, sim/electron-builder.yml uses `provider: github`: electron-updater
+# reads the GitHub Releases API directly, with no server of ours in the path.
+# An installation that changes nothing needs neither this block, the
+# `updates.` DNS name, nor /srv/fpvtp-updates.
 #
-#   1. Le bloc du jeu proxie TOUT vers Node. Servir un chemin statiquement
-#      depuis ce même bloc demanderait un `handle_path` placé avant le
-#      `reverse_proxy`, donc un site dont la lecture dépend d'un ordre de
-#      directives — exactement le genre de subtilité qui se casse à la
-#      prochaine modification, sur un fichier que personne ne relit souvent.
-#   2. `electron-updater` en provider générique veut une URL de base qui est
-#      la racine d'un répertoire (`latest.yml` y est cherché à côté des
-#      installeurs). Une racine de site est plus simple à donner, et plus
-#      simple à changer le jour où le dépôt devient public et où l'on
-#      repasse au provider `github`.
-#   3. Ces fichiers sont publics, sans authentification, alors que l'API du
-#      jeu ne le restera pas (clé d'opérateur, tranche T3). Deux régimes
-#      d'accès différents : deux blocs séparés, la séparation se voit.
+# What it is still good for, and why it is kept:
 #
-# AUCUNE AUTHENTIFICATION ICI, C'EST VOULU : n'importe qui doit pouvoir
-# télécharger un installeur et recevoir les mises à jour automatiques.
+#   - a download page of your own, so people are not sent to GitHub;
+#   - an alternative update feed for a fork or a private deployment, pointed at
+#     with FPVTP_UPDATE_URL (see sim/electron/main.js), which overrides the
+#     baked feed at runtime without rebuilding the app.
 #
-# Le répertoire est rempli par deploy/deploy.sh (dernière étape).
+# CHOICE: a dedicated SUBDOMAIN (`updates.`), not a path under the game's
+# domain. Three reasons:
+#
+#   1. The game block proxies EVERYTHING to Node. Serving a path statically
+#      from that same block would need a `handle_path` placed before the
+#      `reverse_proxy`, hence a site whose reading depends on directive order —
+#      exactly the kind of subtlety that breaks at the next edit, in a file
+#      nobody rereads often.
+#   2. electron-updater on the generic provider wants a base URL that is the
+#      root of a directory (`latest.yml` is looked up next to the installers).
+#      A site root is simpler to give, and simpler to change.
+#   3. These files are public, unauthenticated, whereas the game API is not
+#      (operator key). Two different access regimes: two separate blocks, and
+#      the separation is visible.
+#
+# NO AUTHENTICATION HERE, DELIBERATELY: anyone must be able to download an
+# installer and receive automatic updates.
+#
+# The directory is filled by deploy/deploy.sh (last step), which mirrors the
+# Release assets into it.
 updates.fpvtp.example.org {
 	root * /srv/fpvtp-updates
 	file_server {
-		# Un listing, pour qu'un humain puisse choisir sa plateforme à la
-		# main sans connaître le nom exact du fichier.
+		# A listing, so a human can pick their platform by hand without
+		# knowing the exact filename.
 		browse
 	}
 
-	# electron-updater lit `latest.yml` (Windows) et `latest-linux.yml`
-	# (Linux) à chaque démarrage de l'app : ils doivent être revalidés, jamais
-	# servis depuis un cache. Les installeurs, eux, portent leur version dans
-	# leur nom et ne changent jamais sous ce nom.
-	@flux path /latest.yml /latest-linux.yml
-	header @flux Cache-Control "no-cache"
+	# electron-updater reads `latest.yml` (Windows) and `latest-linux.yml`
+	# (Linux) at every app start: they must be revalidated, never served from
+	# a cache. The installers carry their version in their name and never
+	# change under that name.
+	@feeds path /latest.yml /latest-linux.yml
+	header @feeds Cache-Control "no-cache"
 
-	@installeurs path *.exe *.AppImage *.blockmap
-	header @installeurs Cache-Control "public, max-age=31536000, immutable"
+	@installers path *.exe *.AppImage *.blockmap
+	header @installers Cache-Control "public, max-age=31536000, immutable"
 
 	log {
 		output file /var/log/caddy/fpvtp-updates.log

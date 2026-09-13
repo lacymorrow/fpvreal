@@ -17,9 +17,13 @@ To run from source you need Node 22 and a WebGL2 browser. Chromium is the safe
 choice, because its Gamepad API picks up a radio as soon as you move a stick.
 
 ```bash
-git clone https://github.com/lionrayonnant/FPVThePlanet.git
+git clone --depth 1 https://github.com/lionrayonnant/FPVThePlanet.git
 cd FPVThePlanet/sim && npm install && npm run dev   # http://localhost:5173
 ```
+
+The clone is around 165 MB, nine tenths of it the 143 music tracks in
+`sim/public/music/`. `--depth 1` skips the history; the audio it does not skip,
+because the soundtrack is part of the game rather than an asset pack.
 
 A fresh clone has no terrain on disk, so the catalogue starts empty. Open the
 LIVE tab, click the map to drop a pin, then `[ FLY LIVE ]`. Tiles stream in
@@ -83,7 +87,7 @@ ground effect, propwash, battery sag) and the controller in
 | `npm run dev` | development: Vite, hot reload |
 | `npm run build` then `node server/index.mjs --dist dist --open` | the game served without Vite, which is also what runs on a server |
 | `npx electron-builder` | the desktop app (`.exe`, `.AppImage`), with auto-update |
-| `npm run selftest:ci` | the full chain: ~1,200 checks, no browser |
+| `npm run selftest:ci` | the full chain: 2,700+ checks, no browser, no network, no terrain |
 
 ## Read on
 
@@ -91,14 +95,16 @@ ground effect, propwash, battery sag) and the controller in
 |---|---|
 | [`docs/manual.md`](docs/manual.md) | commands, adding maps, the prep pipeline, the flight model, PID tuning |
 | [`sim/docs/architecture-diagrams.md`](sim/docs/architecture-diagrams.md) | six more diagrams of the running system |
-| [`sim/HANDOFF.md`](sim/HANDOFF.md) | what's verified and what isn't |
 | [`deploy/README.md`](deploy/README.md) | putting the server on a machine |
 | [`CHANGELOG.md`](CHANGELOG.md) | what changed, version by version |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | how the project works, and the rules that actually bite |
+| [`sim/HANDOFF.md`](sim/HANDOFF.md) | the maintainer's working log: what is measured, what is not. Internal, and still largely in French |
 
 ## License
 
-[GNU AGPL-3.0-only](LICENSE). The code is free, and anyone hosting a modified
-version for other people has to publish their sources.
+Copyright © 2026 lionrayonnant. [GNU AGPL-3.0-only](LICENSE). The code is free,
+and anyone hosting a modified version for other people has to publish their
+sources.
 
 Bundled third-party work keeps its own licence: [Three.js](https://threejs.org/),
 [Rapier](https://rapier.rs/), [Leaflet](https://leafletjs.com/) and
@@ -110,4 +116,16 @@ music in `sim/public/music/` was generated for this project. Map tiles are
 
 ## Contributions
 
-Still reading? Contributions are welcome!
+Still reading? Contributions are welcome.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) is the short version of how the project
+works — how to get it running, the module boundaries that keep the flight stack
+testable, and the three or four rules a pull request actually gets sent back
+for. Open an issue before anything larger than a fix; the target experience and
+the order it gets built in are already written down, and a described problem is
+often already answered by something planned.
+
+Questions, tuning talk and "is this supposed to work like that" belong in
+[Discussions](https://github.com/lionrayonnant/FPVThePlanet/discussions).
+Vulnerabilities go through [`SECURITY.md`](SECURITY.md), never a public issue.
+Everyone taking part is held to the [Code of Conduct](CODE_OF_CONDUCT.md).
