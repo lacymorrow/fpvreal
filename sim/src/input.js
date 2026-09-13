@@ -124,8 +124,8 @@ export const THROTTLE_MODE = { radio: 'full', gamepad: 'half' };
 const RADIO_RE =
 	/4f54|edgetx|opentx|freedomtx|radiomaster|frsky|jumper|tx16|taranis|betafpv|flysky|tbs|tango|horus|boxer|zorro|commando/i;
 
-// 045e = vendor Microsoft. « xinput » couvre les manettes 360/One vues via
-// XInput sous Windows.
+// 045e = vendor Microsoft. "xinput" covers the 360/One pads as seen through
+// XInput on Windows.
 const XBOX_RE =
 	/xbox|xinput|045e/i;
 
@@ -994,8 +994,8 @@ function saveCalStore(store) {
 	try {
 		localStorage.setItem(CAL_STORAGE_KEY, JSON.stringify(store));
 	} catch {
-		// Full or refused storage must not break the end of the wizard:
-		// le calibrage reste actif pour la session en cours.
+		// Full or refused storage must not break the end of the wizard: the
+		// calibration stays active for the current session.
 	}
 }
 

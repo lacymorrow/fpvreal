@@ -207,18 +207,17 @@ export function normalizeBenchConfig(raw, { families = null } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Traduction vers le reste du moteur
+// Translation into the rest of the engine
 //
-// Rien n'est réimplémenté ici. Chaque fonction produit la forme qu'un système
-// existant consomme déjà, et c'est tout.
+// Nothing is reimplemented here. Each function produces the shape an existing
+// system already consumes, and that is all.
 
-// Les paramètres de wind.js / rain.js / fog.js / cloud.js / sun.js.
+// The parameters for wind.js / rain.js / fog.js / cloud.js / sun.js.
 //
-// Passe par simParamsOf() — la MÊME traduction que le monde — mais sans le
-// sanitize() qui la précède en mode FIELD. Conséquence voulue : à 12 m/s le
-// banc et le monde écrivent exactement les mêmes nombres, donc ils volent
-// pareil ; mais le banc peut demander de la pluie sous un ciel dégagé, et
-// l'obtenir.
+// Goes through simParamsOf() — the SAME translation the world uses — but
+// without the sanitize() that precedes it in FIELD mode. Intended consequence:
+// at 12 m/s the bench and the world write exactly the same numbers, so they fly
+// the same; but the bench can ask for rain under a clear sky, and get it.
 export function benchSimParams(config) {
 	const c = normalizeBenchConfig(config);
 	const w = c.weather;
@@ -232,17 +231,17 @@ export function benchSimParams(config) {
 	});
 }
 
-// L'argument de generateEntryState(). `IDLE` n'est pas une catégorie de la
-// Bible §20 : c'est le repli au sol, celui que le générateur utilise déjà
-// quand il n'a rien trouvé. Le banc le demande explicitement.
+// The argument for generateEntryState(). `IDLE` is not one of Bible §20's
+// categories: it is the fallback on the ground, the one the generator already
+// uses when it has found nothing. The bench asks for it explicitly.
 export function benchEntryRequest(config) {
 	const c = normalizeBenchConfig(config);
 	return c.entry === 'IDLE' ? { idle: true } : { category: c.entry };
 }
 
-// L'instant du soleil. `timeMin` est une heure locale du jour courant : le
-// banc règle une heure, pas une date — on veut « 6 h du matin », pas « le 12
-// mars 2003 ». Le chemin de sun.js est celui de OPTS.date, inchangé.
+// The sun's instant. `timeMin` is a local time on the current day: the bench
+// sets a time, not a date — you want "6 in the morning", not "12 March 2003".
+// The sun.js path is OPTS.date's, unchanged.
 export function benchDate(config, now = new Date()) {
 	const c = normalizeBenchConfig(config);
 	const d = new Date(now.getTime());
@@ -251,7 +250,7 @@ export function benchDate(config, now = new Date()) {
 }
 
 // ---------------------------------------------------------------------------
-// Rendu texte de l'écran (le DOM n'en est qu'un habillage)
+// Text rendering of the screen (the DOM is only a dressing over it)
 
 export function formatClock(timeMin) {
 	const m = Math.round(clamp(Number(timeMin) || 0, 0, 1439));
@@ -262,8 +261,8 @@ function formatVis(m) {
 	return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
-// Les lignes du banc, dans l'ordre d'affichage. `value` est ce qui se lit à
-// droite ; `key` est ce que l'UI utilise pour savoir quoi éditer.
+// The bench's rows, in display order. `value` is what reads on the right;
+// `key` is what the UI uses to know what to edit.
 export function benchRows(config, { familyLabel = (f) => f } = {}) {
 	const c = normalizeBenchConfig(config);
 	const w = c.weather;
@@ -278,11 +277,11 @@ export function benchRows(config, { familyLabel = (f) => f } = {}) {
 		{ key: 'fence',   label: 'FENCE',    value: c.fence ? 'ON' : 'OFF' },
 		{ key: 'hud',     label: 'HUD',      value: c.hud },
 		{ key: 'time',    label: 'TIME',     value: formatClock(c.timeMin) },
-		// Le mock de la Bible §48 écrit le vent sur UNE ligne — mais il décrit un
-		// écran, pas des contrôles : régler la rafale et la direction demande
-		// trois curseurs. Chacun dit donc ce qu'il fait, plutôt qu'un résumé sur
-		// le premier et rien sur les deux autres — sinon la colonne des valeurs a
-		// des trous, et un curseur sans lecture ne se règle pas au chiffre.
+		// Bible §48's mock writes the wind on ONE line — but it describes a
+		// screen, not controls: setting gust and direction takes three sliders.
+		// Each therefore says what it does, rather than a summary on the first
+		// and nothing on the other two — otherwise the value column has holes,
+		// and a slider with no readout cannot be set to a number.
 		{ key: 'wind',    label: 'WIND',     value: `${w.windSpeed.toFixed(1)} m/s` },
 		{ key: 'gust',    label: 'GUST',     value: `×${w.gustFactor.toFixed(1)}` },
 		{ key: 'dir',     label: 'FROM',     value: `${String(w.windDir).padStart(3, '0')}°` },
@@ -294,8 +293,8 @@ export function benchRows(config, { familyLabel = (f) => f } = {}) {
 	];
 }
 
-// Le banc ne peut pas décoller sans terrain. C'est la SEULE chose qu'il
-// refuse, et il le dit plutôt que de griser un bouton sans expliquer.
+// The bench cannot take off without terrain. That is the ONLY thing it
+// refuses, and it says so rather than greying out a button with no explanation.
 export function benchBlockers(config, { scenes = [] } = {}) {
 	const c = normalizeBenchConfig(config);
 	const out = [];
@@ -307,14 +306,14 @@ export function benchBlockers(config, { scenes = [] } = {}) {
 			out.push(`TERRAIN ${c.terrain.slug.toUpperCase()} IS NO LONGER ON DISK`);
 		}
 	}
-	// Fence coupée sur une scène pré-cuite : ce n'est pas un bug, c'est la
-	// vérité des données. Le terrain s'arrête au bord du rectangle acquis, et
-	// ça doit se lire AVANT le vol plutôt que se découvrir dans le vide.
+	// Fence off on a baked scene: that is not a bug, it is the truth of the
+	// data. The terrain stops at the edge of the acquired rectangle, and that
+	// has to be readable BEFORE the flight rather than discovered in the void.
 	if (!c.fence && c.terrain.kind === 'cached') out.push('FENCE OFF — TERRAIN ENDS AT THE EDGE OF THE ACQUIRED AREA');
-	// En vol libre il n'y a pas de manifeste, donc pas de bbox où tirer un
-	// point d'entrée : le drone part du sol, sous la station. Le dire plutôt
-	// que d'ignorer le réglage en silence — un réglage qui n'agit pas et ne
-	// l'annonce pas est pire que pas de réglage du tout.
+	// In free flight there is no manifest, so no bbox to draw an entry point
+	// from: the drone starts on the ground, under the station. Say so rather
+	// than ignoring the setting in silence — a setting that does nothing and
+	// does not announce it is worse than no setting at all.
 	if (c.terrain.kind === 'live' && c.entry !== 'IDLE') {
 		out.push(`ENTRY ${c.entry.replace('_', ' ')} IS IGNORED IN LIVE FLIGHT — NO SURVEYED AREA TO DROP INTO`);
 	}
@@ -322,13 +321,13 @@ export function benchBlockers(config, { scenes = [] } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Persistance : sérialisation pure. La lecture/écriture localStorage vit dans
-// src/bench.js — le modèle n'a pas d'E/S.
+// Persistence: pure serialisation. The localStorage read/write lives in
+// src/bench.js — the model has no I/O.
 //
-// La CONFIG du banc persiste, ce qui s'y est PASSÉ non. Ce n'est pas une
-// entorse à « rien n'est écrit » : reposer douze réglages à chaque lancement
-// serait exactement la frustration que le banc supprime. Rien de ce qui est
-// stocké ici ne dit qu'un vol a eu lieu.
+// The bench's CONFIG persists, what HAPPENED on it does not. That is no breach
+// of "nothing is written": setting twelve controls again on every launch would
+// be exactly the frustration the bench removes. Nothing stored here says a
+// flight took place.
 export const BENCH_STORAGE_KEY = 'fpvtp.bench';
 
 export function serializeBenchConfig(config) {
@@ -339,8 +338,8 @@ export function parseBenchConfig(text, opts) {
 	try {
 		return normalizeBenchConfig(JSON.parse(text), opts);
 	} catch {
-		// Config illisible : on repart des défauts, sans rien dire. Le banc
-		// n'a pas d'écran d'erreur, il a un état de départ.
+		// Unreadable config: start again from the defaults, saying nothing. The
+		// bench has no error screen, it has a starting state.
 		return normalizeBenchConfig(null, opts);
 	}
 }

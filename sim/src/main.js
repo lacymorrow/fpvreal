@@ -120,26 +120,26 @@ export const OPTS = {
 	// TARGET SCAN choice (PHASE 08). One of:
 	//   freestyle5 race5 cinewhoop longrange heavy5 toothpick
 	family: params.get('family'),
-	// Dev : avec ?family=, la graine d'un exemplaire (livrée, châssis, portrait
-	// — #285). Sans elle, ?family= reste le profil NOMINAL, gris et sans
-	// portrait, comme au banc.
+	// Dev: with ?family=, the seed of one individual (livery, frame, portrait —
+	// #285). Without it, ?family= stays the NOMINAL profile: grey and with no
+	// portrait, as at the bench.
 	build: params.get('build'),
-	// Dev-only : ?hack=gnss-spoof prévisualise le motif de ce type de hack
-	// avant le vol, sur les chemins qui sautent le TARGET SCAN (?scene=/?family=).
+	// Dev-only: ?hack=gnss-spoof previews that hack type's pattern before the
+	// flight, on the paths that skip the TARGET SCAN (?scene=/?family=).
 	hack: params.get('hack'),
-	// Dev-only : ?date=2026-06-21T23:52:00Z fige le soleil à cet instant —
-	// c'est ce qui permet de vérifier la nuit (#111) en plein jour. Une date
-	// invalide donne un NaN silencieux dans sunPosition(), d'où le garde.
-	// Dev-only : ?night=1 rétablit la nuit, désactivée temporairement (cf.
-	// NIGHT_FLOOR_DEG dans sun.js). Se combine avec ?date= pour viser une heure.
+	// Dev-only: ?date=2026-06-21T23:52:00Z pins the sun to that instant — which
+	// is what makes it possible to check the night (#111) in broad daylight. An
+	// invalid date gives a silent NaN inside sunPosition(), hence the guard.
+	// Dev-only: ?night=1 restores the night, temporarily disabled (see
+	// NIGHT_FLOOR_DEG in sun.js). Combines with ?date= to aim at an hour.
 	night: params.get('night') === '1',
 	date: (() => {
 		const d = params.has('date') ? new Date(params.get('date')) : null;
 		return d && Number.isFinite(d.getTime()) ? d : null;
 	})(),
-	// Dev-only : ?live=48.8584,2.2945 vole en direct depuis rocktree, sans
-	// scène pré-cuite (#168). Pas de météo/geofence/écran de crédit — voir le
-	// plan d'implémentation pour ce qui est volontairement hors périmètre.
+	// Dev-only: ?live=48.8584,2.2945 flies live from rocktree, with no baked
+	// scene (#168). No weather/geofence/credit screen — see the implementation
+	// plan for what is deliberately out of scope.
 	live: params.has('live') ? params.get('live').split(',').map(Number) : null,
 	// Dev-only: ?swarm=8 forces a cluster of 8 on ?scene= and ?live=, the two
 	// paths that skip the TARGET SCAN and synthesise their own scan (#29).
@@ -153,9 +153,9 @@ export const OPTS = {
 // could not draw — see tools/dev-flags.mjs for why it refuses instead of
 // clamping.
 const devSwarm = parseSwarmFlag(OPTS.swarm);
-// `?live=foo` donnait [NaN] : origine ENU NaN, spawn NaN, requêtes rocktree sur
-// une tuile inexistante — un monde silencieusement invalide où le drone dérive
-// dans le vide sans le moindre message. Planter ici, tôt et lisiblement.
+// `?live=foo` gave [NaN]: a NaN ENU origin, a NaN spawn, rocktree requests for
+// a tile that does not exist — a silently invalid world where the drone drifts
+// through the void with no message at all. Fail here, early and readably.
 if (OPTS.live && (OPTS.live.length !== 2 || !OPTS.live.every(Number.isFinite))) {
 	throw new Error(`?live= expects numeric "lat,lon" — got "${params.get('live')}"`);
 }
@@ -163,17 +163,18 @@ if (OPTS.live && (OPTS.live.length !== 2 || !OPTS.live.every(Number.isFinite))) 
 // see tools/dev-flags.mjs for why the list is built there and not here.
 const DEV_FAMILIES = devFamilies(FAMILIES);
 if (OPTS.family && !DEV_FAMILIES.includes(OPTS.family)) {
-	throw new Error(`famille inconnue: "${OPTS.family}" — ${DEV_FAMILIES.join(' ')}`);
+	throw new Error(`unknown family: "${OPTS.family}" — ${DEV_FAMILIES.join(' ')}`);
 }
-// Résolu tardivement (PHASE 08) : la famille sort du TARGET SCAN, dans le gate
-// de chooseScene(), avant boot(). L'override dev ?family= le pré-remplit ici.
+// Resolved late (PHASE 08): the family comes out of the TARGET SCAN, in
+// chooseScene()'s gate, before boot(). The dev ?family= override pre-fills it
+// here.
 let PROFILE = OPTS.family ? PROFILES[OPTS.family] : undefined;
 if (params.toString()) console.log('[opts]', OPTS);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
-// Le dôme. scene.background reste posé au-dessus : il n'est plus jamais vu —
-// le dôme couvre l'écran — mais il porte désormais la couleur d'HORIZON, que
-// rainfall.js, lens.js et les tuiles lisent tous. Une seule couleur d'air.
+// The dome. scene.background stays set behind it: it is never seen again — the
+// dome covers the screen — but it now carries the HORIZON colour, which
+// rainfall.js, lens.js and the tiles all read. One colour of air.
 const skyDome = new SkyDome(scene);
 
 // The HUD is built BEFORE the renderer, and that order is the whole point: a
@@ -207,14 +208,14 @@ renderer.toneMapping = THREE.NoToneMapping;
 document.body.appendChild(renderer.domElement);
 
 const input = new Input();
-// Les deux couches du HUD (PHASE 12). Celle de la station existe dès le départ
-// et ne dépend d'aucune cible ; celle du drone appartient à la machine pilotée,
-// donc elle naît à l'ouverture de session, avec sa fiche caméra.
+// The HUD's two layers (PHASE 12). The station's exists from the start and
+// depends on no target; the drone's belongs to the machine being flown, so it
+// is born when the session opens, along with its camera spec.
 const fpvtpOsd = new FpvtpOsd(document.getElementById('ui'));
 let droneOsd = null;
 let camSpec = null;
-// Dernier gain nuit poussé vers lens.setSensor() — pour ne pousser que les
-// changements, et pour que applyTargetCamera() recompose la nuit en cours.
+// The last night gain pushed to lens.setSensor() — so that only changes are
+// pushed, and so applyTargetCamera() can recompose the night in progress.
 let lastNightGain = 0;
 const settings = new Settings(document.getElementById('ui'), input);
 
@@ -289,14 +290,14 @@ settings.onReplayBriefing = async () => {
 // bench. Armed at the start of each flight, spent when that flight ends.
 let hintFlight = false;
 let hintAirborneAt = null;
-// Une touche de menu pressée s'inverse un instant (issue #224).
+// A menu key pressed inverts for an instant (issue #224).
 installClickFlash();
-// Construit dans le gate de chooseScene(), une fois PROFILE résolu (PHASE 08).
-// Aucune ligne avant le gate ne l'utilise à l'exécution.
+// Built in chooseScene()'s gate, once PROFILE is resolved (PHASE 08). No line
+// before the gate uses it at runtime.
 let controller;
 // Inert until start(): no AudioContext exists before the user's first gesture.
 const audio = new EngineAudio();
-// L'état de l'hystérésis d'annonce du lien, conservé entre deux frames.
+// The hysteresis state of the link's callouts, kept between frames.
 const linkVoice = newLinkState();
 // Everything the render pipeline does beyond renderer.render(). Falls back to a
 // plain render when it is switched off, so the clean image stays one click away.
@@ -312,52 +313,52 @@ const rain = new RainField(undefined, FOG_DENSITY);
 // scene's fog density rather than sharing it — FOG_DENSITY is the clear-air
 // floor it starts from and never goes below.
 const fog = new FogField(undefined, FOG_DENSITY);
-// Et le ciel au-dessus : quelle fraction est couverte, à quelle hauteur, et de
-// combien le sol s'assombrit. Le monde le décide (#41), pas un réglage.
+// And the sky above: how much of it is covered, at what height, and how much
+// the ground darkens. The world decides that (#41), not a setting.
 const cloud = new CloudField();
-// Et la lumière : où est le soleil, ce que l'atmosphère lui fait, et ce que la
-// caméra en fait. Construit dans boot(), une fois le manifest lu — il lui faut
-// la lat/lon de la scène, et sans elle il n'existe pas plutôt que d'inventer un
-// soleil. Modèle pur : il ne ré-éclaire RIEN, l'imagerie reste non éclairée.
+// And the light: where the sun is, what the atmosphere does to it, and what the
+// camera does with it. Built in boot(), once the manifest is read — it needs the
+// scene's lat/lon, and without one it does not exist rather than inventing a
+// sun. A pure model: it re-lights NOTHING, the imagery stays unlit.
 let sun = null;
 let rainfall = null;
-// Le snapshot météo de la zone survolée, pour le HUD et __sim.debug().
+// The weather snapshot of the area being flown, for the HUD and __sim.debug().
 let weather = null;
 
 let physics = null;
-// path de nœud -> [{ colliderPath, mesh }], mode ?live= (#168). Clé le NŒUD et
-// non le collider (#179) : une libération retrouvait ses sous-maillages en
-// balayant TOUTE la table (copie comprise), soit O(nœuds chargés) par nœud
-// libéré — quadratique sur le recentrage d'une fenêtre de plusieurs centaines.
+// node path -> [{ colliderPath, mesh }], ?live= mode (#168). Keyed on the NODE
+// and not on the collider (#179): a release used to find its submeshes by
+// sweeping the WHOLE table (copy included), i.e. O(loaded nodes) per released
+// node — quadratic when recentring a window of several hundred.
 const liveMeshes = new Map();
-let liveWindow = null;          // RocktreeWindow actif en mode ?live=, sinon null
-let fenceDome = null;           // FenceDome actif en mode ?live=, sinon null (#198)
-let liveEdgeUniforms = null;    // uniformes partagés du fondu de bord du terrain live, sinon null (#202)
+let liveWindow = null;          // the live RocktreeWindow in ?live= mode, else null
+let fenceDome = null;           // the live FenceDome in ?live= mode, else null (#198)
+let liveEdgeUniforms = null;    // shared uniforms for the live terrain's edge fade, else null (#202)
 
-// Files du mode ?live= (#184, #75) : les nœuds reçus/libérés attendent dans
-// LiveNodeQueue (live-node-queue.js), et processLiveNodeWork() les draine
-// sous un budget par frame — le travail par nœud est petit (~1,4 ms) mais
-// arrive en rafales de plusieurs dizaines par frame, et l'exécuter à
-// l'arrivée gelait le rendu 70-330 ms par vague. L'ordre et le moment
-// (surtout celui des nœuds « couverts » par un autre niveau) sont la
-// politique du module, verrouillée par tools/live-node-queue-selftest.mjs.
+// The ?live= mode's queues (#184, #75): received/released nodes wait in
+// LiveNodeQueue (live-node-queue.js), and processLiveNodeWork() drains them
+// under a per-frame budget — the work per node is small (~1.4 ms) but arrives
+// in bursts of several dozen per frame, and running it on arrival froze the
+// render for 70-330 ms per wave. The order and the timing (especially of nodes
+// "covered" by another level) are that module's policy, pinned down by
+// tools/live-node-queue-selftest.mjs.
 const liveQueue = new LiveNodeQueue();
 
-// Retire de la scène et de Rapier tout ce qu'un nœud avait posé, et rend sa
-// mémoire. Appelée par la file de libérations ET par l'échange d'un nœud
-// reconstruit (#31) — le même travail dans les deux cas.
+// Removes from the scene and from Rapier everything a node had put down, and
+// gives its memory back. Called by the release queue AND by the swap of a
+// rebuilt node (#31) — the same work in both cases.
 function disposeLiveNode(path) {
 	for (const { colliderPath, mesh } of liveMeshes.get(path) ?? []) {
 		scene.remove(mesh);
 		mesh.geometry.dispose();
-		// material.dispose() ne libère pas la texture (#191) : elle pèse
-		// ~580 Kio décodée (ImageBitmap) côté CPU, plus l'upload GPU — sans
-		// ces deux lignes ça fuit à chaque nœud sorti de la fenêtre, donc
-		// avec la distance parcourue et non la taille du monde. Le seul cas
-		// sans texture est le matériau gris plat (pas de bitmap/uvs, voir
-		// buildNodeMesh) : rien à fermer alors. .uniforms.uMap, pas .map :
-		// createRocktreeMaterial() (#202) est un ShaderMaterial, qui n'a pas
-		// le raccourci .map des matériaux standard de Three.
+		// material.dispose() does not free the texture (#191): it weighs
+		// ~580 KiB decoded (ImageBitmap) on the CPU side, plus the GPU upload —
+		// without these two lines it leaks on every node that leaves the window,
+		// so with the distance travelled rather than the size of the world. The
+		// only case with no texture is the flat grey material (no bitmap/uvs,
+		// see buildNodeMesh): nothing to close then. .uniforms.uMap, not .map:
+		// createRocktreeMaterial() (#202) is a ShaderMaterial, which has none of
+		// the .map shorthand of Three's standard materials.
 		const liveMap = mesh.material.uniforms?.uMap?.value;
 		if (liveMap) {
 			liveMap.dispose();
@@ -369,7 +370,7 @@ function disposeLiveNode(path) {
 	liveMeshes.delete(path);
 }
 
-// Draine les files sous budget (voir LiveNodeQueue pour l'ordre et le moment).
+// Drains the queues under budget (see LiveNodeQueue for order and timing).
 function processLiveNodeWork(budgetMs = liveQueue.budgetMs()) {
 	if (!liveWindow) return;
 	liveQueue.drain({
@@ -378,82 +379,82 @@ function processLiveNodeWork(budgetMs = liveQueue.budgetMs()) {
 		dispose: disposeLiveNode,
 		build: (path, job) => {
 			const built = buildNodeMesh(path, job.meshes);
-			// ÉCHANGE, pas remplacement différé (#31) : un nœud dont seul le
-			// maillage change (l'`exclude` du LOD par anneaux dépend de la
-			// position de la fenêtre) reste à l'écran jusqu'ici — la fenêtre l'a
-			// signalé `replaced` au lieu de le libérer. L'ancien ne part qu'une
-			// fois le nouveau construit, dans la MÊME frame : sans ça, les
-			// libérations passant avant les builds, un anneau de sol disparaissait
-			// ~1 s à chaque recentrage (mesuré : 8,17 % du sol absent à 583 ms).
+			// A SWAP, not a deferred replacement (#31): a node whose mesh alone
+			// changes (the ring LOD's `exclude` depends on the window position)
+			// stays on screen until here — the window flagged it `replaced`
+			// instead of releasing it. The old one only leaves once the new one
+			// is built, in the SAME frame: without that, releases running before
+			// builds, a ring of ground disappeared for ~1 s on every recentring
+			// (measured: 8.17 % of the ground missing at 583 ms).
 			if (liveMeshes.has(path)) disposeLiveNode(path);
 			const entries = [];
 			liveMeshes.set(path, entries);
 			for (const { mesh, colliderPath, vertices, indices } of built) {
-				// Le collider EN PREMIER (#179) : c'est la seule de ces étapes qui
-				// puisse lever (chemin déjà chargé, trimesh refusé par Rapier). Le
-				// mesh était auparavant ajouté à la scène avant elle et enregistré
-				// après — une exception sur le premier sous-maillage d'un nœud
-				// laissait donc un mesh dans la scène que plus rien ne libérait.
+				// The collider FIRST (#179): it is the only one of these steps
+				// that can throw (path already loaded, trimesh refused by
+				// Rapier). The mesh used to be added to the scene before it and
+				// recorded after — so an exception on a node's first submesh
+				// left a mesh in the scene that nothing would ever release.
 				physics.addNodeCollider(colliderPath, vertices, indices);
 				scene.add(mesh);
-				// Upload GPU à l'arrivée, sous CE budget, plutôt qu'au premier
-				// rendu — sinon Three téléverse toutes les textures de la vague
-				// dans la frame où elles deviennent visibles.
+				// GPU upload on arrival, under THIS budget, rather than at the
+				// first render — otherwise Three uploads every texture of the
+				// wave in the frame where they become visible.
 				const liveMap = mesh.material.uniforms?.uMap?.value;
 				if (liveMap) renderer.initTexture(liveMap);
 				entries.push({ colliderPath, mesh });
 			}
 		},
 	});
-	// UN refit du query-BVH pour tout le lot de la frame (#187) — add/remove
-	// ne le paient plus chacun. Doit rester APRÈS le drain : groundBelow()
-	// (spawn, AGL) lit le pipeline au plus tard à la frame suivante.
+	// ONE refit of the query BVH for the frame's whole batch (#187) — add/remove
+	// no longer pay for it each. Must stay AFTER the drain: groundBelow() (spawn,
+	// AGL) reads the pipeline by the next frame at the latest.
 	physics.flushNodeColliders();
 }
-// Le mode d'opération de ce chargement (PHASE 26, Bible §48).
+// This load's operation mode (PHASE 26, Bible §48).
 //
-// FIELD est le jeu : une cible qui n'est pas à toi, un lien qui se dégrade,
-// une session écrite, un crash qui perd la machine.
-// BENCH est le banc : NO TARGET, NO LINK, NO HACK, NO LOSS, NOTHING LOGGED.
+// FIELD is the game: a target that is not yours, a link that degrades, a
+// session written down, a crash that loses the machine.
+// BENCH is the bench: NO TARGET, NO LINK, NO HACK, NO LOSS, NOTHING LOGGED.
 //
-// Un objet traversé, et surtout PAS un second pipeline de boot. bootLive() a
-// forké la fin de finishBoot() à la main et l'a payé trois fois (#168, #170 —
-// settings.flightActive, lastTime, exposeDebugGlobal oubliés tour à tour). Le
-// banc réutilise boot(slug) et bootLive() tels quels ; tout ce qu'il ajoute
-// est ce drapeau et les gardes qui le lisent.
-// `live` : un vol de RECONNAISSANCE en FIELD, décollé depuis le scanner sans
-// rien cuire (D7 — un mode ne se donne pas son propre chemin de boot, il
-// traverse celui qui existe avec un drapeau ; ici bootLive(), le même que
-// ?live= et que le banc). Il ne laisse rien : ni session, ni cible, ni ligne de
-// journal — un vol live ne garde aucun terrain, il ne doit donc garder aucun vol
-// (§2.2, terrain persistent, flights ephemeral).
+// One object passed through, and emphatically NOT a second boot pipeline.
+// bootLive() forked the end of finishBoot() by hand and paid for it three times
+// (#168, #170 — settings.flightActive, lastTime, exposeDebugGlobal each
+// forgotten in turn). The bench reuses boot(slug) and bootLive() as they are;
+// all it adds is this flag and the guards that read it.
+// `live`: a RECONNAISSANCE flight in FIELD, taking off from the scanner with
+// nothing baked (D7 — a mode does not give itself its own boot path, it goes
+// through the one that exists with a flag; here bootLive(), the same one ?live=
+// and the bench use). It leaves nothing: no session, no target, no log line — a
+// live flight keeps no terrain, so it must keep no flight either (§2.2, terrain
+// persistent, flights ephemeral).
 const MODE = { bench: false, live: false, config: null };
-// Les rates d'un exemplaire tiré au banc, posés avant bootLive() qui construit
-// son contrôleur lui-même. null en FIELD et pour ?live= : le contrôleur
-// retombe alors sur RATE_PRESETS[preset], comme avant.
+// The rates of an individual drawn at the bench, set before bootLive(), which
+// builds its own controller. null in FIELD and for ?live=: the controller then
+// falls back to RATE_PRESETS[preset], as before.
 let benchRates = null;
-// L'instant que le banc donne au soleil. Recalculé quand l'heure change, et
-// pas à chaque frame : sun.update() tourne à 60 Hz et n'a pas besoin qu'on lui
-// fabrique une Date soixante fois par seconde.
+// The instant the bench gives the sun. Recomputed when the time changes and not
+// every frame: sun.update() runs at 60 Hz and does not need a Date manufactured
+// for it sixty times a second.
 let benchClock = null;
 
-// Le panneau du banc est-il ouvert par-dessus le vol ? Gèle la sim comme le
-// fait le panneau Settings : on règle une machine à l'arrêt, pas en vol libre.
+// Is the bench panel open over the flight? Freezes the sim the way the Settings
+// panel does: you set up a machine at a standstill, not in free flight.
 let benchPanelOpen = false;
 
-// Applique au monde vivant tout ce que la config du banc décide. Appelée au
-// boot ET à chaque changement du panneau en vol : c'est le même chemin, donc
-// un réglage se comporte pareil avant et pendant le vol.
+// Applies to the living world everything the bench config decides. Called at
+// boot AND on every change from the in-flight panel: it is the same path, so a
+// setting behaves the same before and during a flight.
 function applyBenchConfig() {
 	if (!MODE.bench || !MODE.config) return;
 	const c = MODE.config;
 	benchClock = benchDate(c);
 	applySimParams(benchSimParams(c), { physics, rain, fog, cloud, sun });
 
-	// La cellule, à chaud. physics.setProfile() reconstruit la Propulsion et
-	// les propriétés de masse du corps Rapier sans recharger la scène ; c'est
-	// déjà ce que fait tools/selftest.mjs pour parcourir les six familles.
-	// Le contrôleur suit : ses PID sont ceux du profil, pas des constantes.
+	// The airframe, hot. physics.setProfile() rebuilds the Propulsion and the
+	// Rapier body's mass properties without reloading the scene; that is already
+	// what tools/selftest.mjs does to walk the six families. The controller
+	// follows: its PIDs are the profile's, not constants.
 	const build = c.airframe.seed ? targetBuild({ seed: c.airframe.seed, family: c.airframe.family }) : null;
 	const profile = build ? build.profile : PROFILES[c.airframe.family];
 	if (physics && profile && physics.profile?.family !== profile.family) {
@@ -461,11 +462,11 @@ function applyBenchConfig() {
 		PROFILE = physics.profile;
 		audio.setProfile(physics.profile);
 		controller = new FlightController({ profile: PROFILE, rates: build?.rates, mode: defaultFlightMode() });
-		console.log(`[bench] cellule → ${PROFILE.family} (${PROFILE.label})`);
-		// Le drone du joueur suit la cellule (#286) : ses hélices, sa livrée et
-		// son châssis sont ceux de l'exemplaire qui vole, pas de l'ancien —
-		// sans ça, les hélices de l'ancienne machine restaient dans le champ
-		// (noté au HANDOFF depuis #264).
+		console.log(`[bench] airframe -> ${PROFILE.family} (${PROFILE.label})`);
+		// The player's drone follows the airframe (#286): its props, its livery
+		// and its frame are those of the individual actually flying, not of the
+		// old one — without this, the old machine's props stayed in frame (noted
+		// in HANDOFF since #264).
 		if (playerDrone && camSpec) {
 			lens.setOnboard(null);
 			playerDrone.dispose();
@@ -474,21 +475,21 @@ function applyBenchConfig() {
 			lens.setOnboard(viewMode === 'chase' ? null : playerDrone.onboardScene, playerDrone.onboardCamera);
 		}
 	}
-	// physics.battery est un getter vers propulsion.battery, et setProfile()
-	// reconstruit la Propulsion — donc le pack. Reposer le drapeau ICI, après
-	// le changement de cellule et non une seule fois au boot, est ce qui fait
-	// qu'un changement de cellule en vol ne rend pas la charge en douce.
+	// physics.battery is a getter onto propulsion.battery, and setProfile()
+	// rebuilds the Propulsion — hence the pack. Setting the flag again HERE,
+	// after the airframe change rather than once at boot, is what stops an
+	// in-flight airframe change from quietly handing the charge back.
 	physics?.battery?.setDrain(c.battery !== 'HELD');
 }
 
-// Le panneau du banc, ouvert par-dessus le vol (touche B). Le MÊME écran que
-// la configuration d'avant décollage, en mode `live` : un réglage doit se
-// comporter pareil avant et pendant, sinon le banc ment sur ce qu'il règle.
+// The bench panel, opened over the flight (B key). The SAME screen as the
+// pre-takeoff configuration, in `live` mode: a setting has to behave the same
+// before and during, otherwise the bench lies about what it sets.
 async function toggleBenchPanel() {
 	if (benchPanelOpen) return;
 	benchPanelOpen = true;
-	// Le curseur souris appartient au vol : sans ça, le pointer lock avale les
-	// clics du panneau et rien n'est réglable.
+	// The mouse cursor belongs to the flight: without this, pointer lock eats the
+	// panel's clicks and nothing can be set.
 	document.exitPointerLock?.();
 	try {
 		MODE.config = await runBench(document.getElementById('ui'), {
@@ -497,63 +498,63 @@ async function toggleBenchPanel() {
 		}) ?? MODE.config;
 	} finally {
 		benchPanelOpen = false;
-		// Même recalage que la sortie de pause : ne pas rejouer l'écart
-		// d'horloge accumulé pendant le réglage comme un pas de physique géant.
+		// The same reset as coming out of pause: do not replay the wall-clock gap
+		// accumulated while setting things as one giant physics step.
 		accumulator = 0;
 		lastTime = performance.now();
 	}
 }
 
-// Les limites de la zone (#139) et ce qu'on voit au-delà. Les deux naissent
-// dans finishBoot(), une fois la bbox du manifeste connue : sans carte, il n'y
-// a ni clôture ni horizon à dessiner.
+// The area's limits (#139) and what is seen beyond them. Both are born in
+// finishBoot(), once the manifest's bbox is known: with no map there is neither
+// a fence nor a horizon to draw.
 let fence = null;
-let geofenceWall = null;   // GeofenceWall actif hors ?live=/banc, sinon null (#199)
+let geofenceWall = null;   // the live GeofenceWall outside ?live=/bench, else null (#199)
 let distantGround = null;
-// Les drones ambiants (issue #250) : null au banc (NO TARGET) et tant que la
-// carte n'est pas chargée. `liveBounds` est la bulle du DIRECT : muté à
-// chaque frame, jamais remplacé — le modèle en garde la référence.
+// The ambient drones (issue #250): null at the bench (NO TARGET) and until the
+// map is loaded. `liveBounds` is the LIVE bubble: mutated every frame, never
+// replaced — the model holds the reference.
 let ambient = null;
-// L'essaim (issue #29) : null au banc et hors cluster. Comme les ambiants, il
-// n'a aucun effet sur le jeu — pas de corps Rapier, pas de collision, pas de
-// cible, pas d'usure.
+// The swarm (issue #29): null at the bench and outside a cluster. Like the
+// ambients, it has no effect on the game — no Rapier body, no collision, no
+// target, no wear.
 let swarm = null;
-// La clôture que l'essaim lit, MUTÉE à chaque frame et jamais remplacée : le
-// modèle ne la retient pas. `bbox` en scène pré-cuite, `center`/`radius` en
-// direct (le cercle de confiance de la fenêtre rocktree).
+// The fence the swarm reads, MUTATED every frame and never replaced: the model
+// does not hold onto it. `bbox` on a baked scene, `center`/`radius` live (the
+// rocktree window's circle of confidence).
 const swarmFence = { bbox: null, center: null, radius: 0 };
-// L'horloge que le sillage horodate : des secondes monotones, gelées avec la
-// physique. Pas performance.now() — une pause y creuserait un trou de dix
-// secondes dans la piste, et le slot d'une unité se lit à un instant passé.
+// The clock the wake is timestamped against: monotonic seconds, frozen with the
+// physics. Not performance.now() — a pause would dig a ten-second hole in the
+// track, and a unit's slot is read at a past instant.
 let swarmClock = 0;
 const liveBounds = { center: null, trusted: 0 };
-// La résolution en pixels device, pour le billboard de LED des ambiants
-// (même piège que uResolution dans lens.js). Mise à jour dans resize().
+// The resolution in device pixels, for the ambients' LED billboard (the same
+// trap as uResolution in lens.js). Updated in resize().
 const ambientRes = { w: 1, h: 1 };
-// La force du rappel, écrite une fois par PAS de physique plutôt qu'allouée —
-// même règle que `drift` plus bas : ceci tourne à 250 Hz. Rapier recopie le
-// vecteur dans addForce(), rien ne le retient après le pas.
+// The fence push force, written once per physics STEP rather than allocated —
+// same rule as `drift` below: this runs at 250 Hz. Rapier copies the vector
+// inside addForce(), nothing holds it after the step.
 const _fenceForce = { x: 0, y: 0, z: 0 };
-// Le manifeste de la scène, hissé de boot() : l'OSD drone en tire la lat/lon.
+// The scene's manifest, hoisted out of boot(): the drone OSD reads its lat/lon.
 let sceneManifest = null;
 let emitter = null;
 // armFlight()'s promise, which arms exactly once: the boot calls it, the
 // startup() chain awaits it (see armFlight()).
 let flightArming = null;
-// Le drone du joueur (issue #264) : monté à l'armement du vol, une fois la
-// caméra de la cible connue — la recette lit son uptilt. Null au banc en vol
-// libre ?live=, comme les ambiants : ce chemin de dev ne monte pas de caméra.
+// The player's drone (issue #264): mounted when the flight is armed, once the
+// target's camera is known — the recipe reads its uptilt. Null on the ?live=
+// free-flight dev path, like the ambients: that path mounts no camera.
 let playerDrone = null;
-// Le champ de la caméra de vol, tel que la vue embarquée le recopie. Alloué une
-// fois : le chemin de vol n'alloue rien par frame.
+// The flight camera's field, as the onboard view copies it. Allocated once: the
+// flight path allocates nothing per frame.
 const playerCam = { fov: 120, aspect: 1 };
 // The build drawn for THIS flight, hoisted out of the places that resolve it
 // (terrain, live, bench, override). PROFILE already carries its profile; the
 // recipe wants the build itself. Null when a nominal profile is flown.
 let flightBuild = null;
-// Et sa GRAINE, la même que le serveur reconstruit dans resolveTarget(). Le
-// portrait fil de fer (#264) ne se déduit que de `family` + `buildSeed` : c'est
-// aussi ce qui fait qu'une session déjà journalisée sait afficher sa machine.
+// And its SEED, the same one the server rebuilds in resolveTarget(). The
+// wireframe portrait (#264) is derived from `family` + `buildSeed` alone: that
+// is also what lets an already-logged session show its machine.
 let flightBuildSeed = null;
 // D11 — 'fpv' (the video feed) or 'chase' (a third-person camera that follows
 // the machine while the simulation keeps running). Per-flight state: every
@@ -566,17 +567,17 @@ let chasePos = null;
 // nose direction; rather than snapping the camera to north, we hold the last one.
 let chaseYaw = 0;
 let paused = false;
-// Horodatage du début RÉEL de vol (sticks actifs), posé à chaque endroit qui
-// remet lastTime à zéro pour cette raison. Sert à ignorer Espace pendant les
-// 5 premières secondes : sans ça, une pause prise par réflexe pendant le
-// Control Vector (qui gèle le monde mais pas les touches) arrive telle
-// quelle au lâcher des sticks, et le joueur atterrit sur un jeu en pause sans
-// avoir voulu y entrer.
+// The timestamp of the REAL start of the flight (sticks live), set everywhere
+// that resets lastTime for that reason. Used to ignore Space for the first
+// 5 seconds: without it, a pause taken by reflex during the Control Vector
+// (which freezes the world but not the keys) arrives as-is when the sticks are
+// handed over, and the player lands on a paused game without meaning to.
 let flightStartTime = 0;
 const PAUSE_GUARD_MS = 5000;
-// Le hack + le rituel (vector code, demo scene) tournent devant un monde déjà
-// chargé et physiquement actif (#22) : sans ce gel, le drone tombe pendant que
-// le joueur regarde encore l'écran d'analyse, avant d'avoir touché les sticks.
+// The hack plus the ritual (vector code, demo scene) run in front of a world
+// that is already loaded and physically active (#22): without this freeze the
+// drone falls while the player is still looking at the analysis screen, before
+// they have touched a stick.
 let introFrozen = false;
 let crashed = false;
 
@@ -591,40 +592,38 @@ const flightExit = new FlightExit({
 	navigate: () => { location.href = location.pathname; },
 });
 
-// État « bouton manette tenu » pour la sortie de fin de vol (issue #123).
-// Vrai par défaut : seul un front montant APRÈS l'armement de la sortie
-// déclenche la déconnexion.
+// The "pad button held" state for the end-of-flight exit (issue #123). True by
+// default: only a rising edge AFTER the exit is armed triggers the disconnect.
 let exitPadHeld = true;
 
-// PHASE 16 : levé par la touche capture, consommé une fois par frame juste
-// après lens.render() — c'est cette frame-là, déjà rendue, que lens.capture()
-// redessine à la résolution du capteur cible. L'OSD FPVTP! (overlay DOM
-// séparé, jamais dans le canvas) n'y figure jamais.
+// PHASE 16: raised by the capture key, consumed once per frame right after
+// lens.render() — that already-rendered frame is the one lens.capture() redraws
+// at the target sensor's resolution. The FPVTP! OSD (a separate DOM overlay,
+// never in the canvas) never appears in it.
 let pendingCapture = false;
 
 const flightEnd = new FlightEnd();
 
-// Le retournement assisté (#105). Alimenté DANS la boucle de pas fixe, comme la
-// clôture de zone : son couple doit partir dans le même pas que la poussée, et
-// son terme d'amortissement veut les 250 Hz plutôt que la fréquence d'affichage.
+// Assisted turtle mode (#105). Fed INSIDE the fixed-step loop, like the area
+// fence: its torque has to leave in the same step as the thrust, and its damping
+// term wants the 250 Hz rather than the display rate.
 const turtle = new Turtle();
-// L'appui, posé par onAction et consommé par le premier pas fixe qui suit. Une
-// pression n'est pas un maintien : elle ne vaut qu'une fois, quel que soit le
-// nombre de pas dans la frame.
+// The press, set by onAction and consumed by the first fixed step that follows.
+// A press is not a hold: it counts once, however many steps are in the frame.
 let turtlePressed = false;
-// L'inertie de roulis/tangage du profil courant, une seule valeur : le
-// retournement tourne autour d'un axe HORIZONTAL, et les deux inerties
-// s'accordent à quelques pour cent sur toutes les familles.
+// The current profile's roll/pitch inertia as a single value: the flip turns
+// about a HORIZONTAL axis, and the two inertias agree to within a few per cent
+// on every family.
 const flipInertia = (profile) => (profile.inertia.x + profile.inertia.z) / 2;
 
-// Le lien vu par lens.js quand la machine est morte : quality 0 et frozen sont
-// exactement ce que le shader interprète déjà comme « plus rien n'arrive ».
-// Aucun code d'image nouveau, seulement le mode de dégradation le plus profond.
+// The link as lens.js sees it when the machine is dead: quality 0 and frozen
+// are exactly what the shader already reads as "nothing is arriving any more".
+// No new picture code, only the deepest degradation mode.
 const DEAD_LINK = { quality: 0, rssiDbm: -100, lossDb: 999, frozen: true };
 let linkForced = false;
 
-// Le mode choisi par le joueur dans les réglages du lien, mémorisé pour que la
-// séquence de crash puisse forcer une dégradation même s'il a coupé le modèle.
+// The mode the player chose in the link settings, remembered so the crash
+// sequence can force a degradation even if they turned the model off.
 let lensLinkMode = LINK_OFF;
 
 // The ground under the drone, one Rapier raycast per frame — physics.groundBelow
@@ -635,27 +634,27 @@ let groundY = null;
 // The area being flown (= scene slug) and the spawn altitude, for the session.
 let flyArea = null;
 let flyTarget = null;
-// La zone du vol en cours, sous la forme attendue par fieldLoop() (#253) : posée
-// dès que le TARGET SCAN démarre, relue par finishSession({redeploy:true}) pour
-// permettre de relancer la même zone sans repasser par le terminal.
+// The current flight's zone, in the shape fieldLoop() expects (#253): set as
+// soon as the TARGET SCAN starts, read back by finishSession({redeploy:true}) so
+// the same zone can be launched again without going through the terminal.
 let lastZone = null;
 let spawnY = 0;
-// Le point de départ complet, pas seulement son altitude : l'OSD drone affiche
-// une distance au point de décollage, donc il lui faut les trois coordonnées.
+// The full starting point, not only its altitude: the drone OSD shows a
+// distance to the takeoff point, so it needs all three coordinates.
 let spawnX = 0;
 let spawnZ = 0;
-// L'horloge de vol, en horloge murale : elle continue de tourner pendant une
-// pause, comme sur du vrai matériel. Amorcée au chargement pour que les
-// premières images, avant l'ouverture de session, n'affichent pas 1970.
+// The flight clock, on wall-clock time: it keeps running through a pause, like
+// real hardware. Primed at load so the first frames, before the session opens,
+// do not read 1970.
 let sessionStartedAt = Date.now();
 let cameraFov = 120, cameraTilt = 25;
 let accumulator = 0;
 let lastTime = performance.now();
 
 function resize() {
-	// Le format vient de la caméra de la cible dès qu'on en a une : la cible du
-	// composer est dimensionnée au capteur, donc une scène rendue au format de
-	// la fenêtre y serait étirée, en plus des bandes noires.
+	// The aspect comes from the target's camera as soon as there is one: the
+	// composer's target is sized to the sensor, so a scene rendered at the
+	// window's aspect would be stretched inside it, on top of the black bars.
 	camera.aspect = camSpec ? camSpec.aspect : innerWidth / innerHeight;
 	camera.updateProjectionMatrix();
 	renderer.setSize(innerWidth, innerHeight);
@@ -670,9 +669,9 @@ function resize() {
 addEventListener('resize', resize);
 resize();
 
-// La caméra de la cible : appliquée une fois, au moment où l'on prend la main.
-// Elle touche le champ, l'inclinaison, le format, la définition et le capteur —
-// et rien d'autre : le vol n'en dépend pas.
+// The target's camera: applied once, at the moment control is taken. It touches
+// the field of view, the uptilt, the aspect, the resolution and the sensor — and
+// nothing else: the flight does not depend on it.
 function applyTargetCamera(spec) {
 	camSpec = spec;
 	cameraFov = spec.fovDeg;
@@ -708,12 +707,11 @@ function stage(name) {
 // so it can start the moment a scene's slug is known — well before a target
 // (and its family) has been picked — and run underneath TARGET SCAN and the
 // hack ritual instead of underneath its own loading screen (PHASE 13).
-// Charge une zone SANS rien monter dans la scène Three : les meshes sont
-// seulement rendus à l'appelant, et c'est finishBoot() qui les monte, une fois
-// la zone réellement engagée. C'est ce qui rend un préchargement orphelin
-// inoffensif — le TARGET SCAN est annulable, et un retour au choix de zone
-// laisse ce chargement finir tranquillement au lieu de l'abandonner (voir
-// preloadFor).
+// Loads an area WITHOUT mounting anything into the Three scene: the meshes are
+// only returned to the caller, and finishBoot() is what mounts them, once the
+// area is really committed. That is what makes an orphaned preload harmless —
+// the TARGET SCAN is cancellable, and going back to the zone selection lets that
+// load finish quietly instead of abandoning it (see preloadFor).
 async function preloadScene(slug) {
 	const base = sceneBase(slug);
 	const t0 = performance.now();
@@ -757,19 +755,18 @@ async function preloadScene(slug) {
 // hold that already follows TARGET SCAN. Takes preloadScene()'s return value
 // (or its promise — awaited here, not by the caller) so the two stages chain
 // without the caller needing to know boot() is split in two.
-// Extrait pour être appelable aussi depuis bootLive() (#168, #170) — mode
-// ?live= sans finishBoot(). Même objet de contrôle/debug des deux côtés ;
-// certains champs (weather, distantGround, sun, rain, fog, cloud) restent
-// null en mode direct, ce qui ne pose problème que si un appelant invoque
-// debug()/teleport()/setWeather() dans ce mode — aucune vérification
-// existante ne le fait.
+// Pulled out so bootLive() can call it too (#168, #170) — ?live= mode has no
+// finishBoot(). The same control/debug object on both sides; some fields
+// (weather, distantGround, sun, rain, fog, cloud) stay null in live mode, which
+// only matters if a caller invokes debug()/teleport()/setWeather() there — no
+// existing check does.
 function exposeDebugGlobal() {
 	window.__sim = {
 		physics, controller, camera, renderer, scene, input, timeline, audio, music, space, lens, link, rain, fog, cloud, sun,
 		fence, distantGround,
 		// Overrides the sticks; pass null to hand control back.
 		setInput: (s) => { window.__simInput = s; },
-		// L'état des files du mode live (#75), pour mesurer une vague en vol.
+		// The live mode's queue state (#75), to measure a wave in flight.
 		liveStats: () => ({ builds: liveQueue.builds.size, swaps: liveQueue.swaps.size, covered: liveQueue.covered.size, releases: liveQueue.releases.length, pending: liveWindow?.pendingCount() ?? null, edgeCenter: liveEdgeUniforms ? [liveEdgeUniforms.uWindowCenter.value.x, liveEdgeUniforms.uWindowCenter.value.y] : null, edgeRadius: liveEdgeUniforms?.uLoadRadiusM.value ?? null, edgeFade: liveEdgeUniforms?.uEdgeFadeM.value ?? null }),
 		// Wind is off by default. setWeather({speed, direction, gust, turbulence})
 		// with speed in m/s at 10 m and direction in degrees the wind comes from;
@@ -789,11 +786,11 @@ function exposeDebugGlobal() {
 		setFog: (f) => fog.setParams(f),
 		// What the world said about this zone today, and what it became.
 		weather: () => weather,
-		// La session de vol en cours (PHASE 06), ou null.
+		// The flight session in progress (PHASE 06), or null.
 		session: () => session.current(),
-		// Les drones ambiants (issue #250), ou null (banc, avant la carte).
+		// The ambient drones (issue #250), or null (bench, before the map).
 		ambient: () => ambient,
-		// L'essaim (issue #29), ou null (banc, hors cluster, avant la carte).
+		// The swarm (issue #29), or null (bench, outside a cluster, before the map).
 		swarm: () => swarm,
 		// Why an end-of-flight exit does not exit (#20). Everything [ESC] /
 		// [ENTER], the click and the pad button depend on, in one console call
@@ -835,14 +832,14 @@ function exposeDebugGlobal() {
 			flightEnd.reset();
 			turtle.reset();
 			fence.reset();
-			// Sinon un second crash dans la même page ne re-forcerait pas la
-			// dégradation du lien : setLink(true) ne s'exécute qu'un coup par vol.
+			// Otherwise a second crash in the same page would not force the link
+			// degradation again: setLink(true) runs once per flight.
 			linkForced = false;
-			// Un saut arbitraire laisserait les ambiants derrière, hors bulle.
+			// An arbitrary jump would leave the ambients behind, out of the bubble.
 			ambient?.reset();
-			// L'essaim suit le SILLAGE : un saut le rendrait droit à travers
-			// tout ce qui sépare les deux points. Le sillage se vide, les unités
-			// se reposent sur le joueur.
+			// The swarm follows the WAKE: a jump would send it straight through
+			// everything between the two points. The wake is emptied and the
+			// units settle back onto the player.
 			swarm?.reset(physics.position);
 		},
 		// Points the camera at a target from the drone's current position.
@@ -917,11 +914,11 @@ function exposeDebugGlobal() {
 					// The range the air alone gives you, the range once the rain is
 					// in it too, and how much of that is coming back as veil.
 					range: Math.round(fog.range),
-					// La densité réellement poussée au shader inclut aussi le
-					// plafond (cf. cloud.extinctionAt dans frame()) : l'ajouter ici
-					// pour que la portée affichée corresponde à ce que l'image
-					// montre une fois qu'on approche le plafond. p et spawnY sont
-					// déjà en main plus haut, pas besoin d'un nouveau raycast.
+					// The density actually pushed to the shader also includes the
+					// ceiling (see cloud.extinctionAt in frame()): add it here so
+					// the reported range matches what the picture shows once you
+					// approach the ceiling. p and spawnY are already to hand
+					// above, no need for another raycast.
 					rangeWithRain: Math.round(fogRange(fog.density + rain.extinction + cloud.extinctionAt(p.y - spawnY))),
 					density: +(fog.density).toFixed(6),
 					glare: +fog.glare.toFixed(3),
@@ -929,13 +926,13 @@ function exposeDebugGlobal() {
 				cloud: {
 					cloudCover: +cloud.cover.toFixed(3),
 					cloudBase: Math.round(cloud.base),
-					// Négatif tant qu'on est sous le plafond, positif une fois dedans
-					// ou au-dessus. C'est le chiffre qu'on regarde quand on vérifie
-					// qu'un whiteout arrive au bon moment.
+					// Negative while below the ceiling, positive once inside it or
+					// above. This is the number you look at when checking that a
+					// whiteout arrives at the right moment.
 					ceilingAGL: Math.round((physics.position.y - spawnY) - cloud.base),
 				},
-				// Ce qui permet de vérifier le soleil dans le vrai navigateur
-				// plutôt que de regarder une capture et d'y croire.
+				// What lets the sun be checked in a real browser rather than
+				// looking at a screenshot and believing it.
 				sun: sun && {
 					elevation: +sun.elevation.toFixed(2),
 					azimuth: +sun.azimuth.toFixed(2),
@@ -963,27 +960,28 @@ function exposeDebugGlobal() {
 					rayMs: +linkState.rayMs.toFixed(3),
 				},
 				flightEnd: flightEnd.out.phase,
-				// Ce qui permet de vérifier la clôture dans le vrai navigateur
-				// plutôt que de regarder une capture et d'y croire.
+				// What lets the fence be checked in a real browser rather than
+				// looking at a screenshot and believing it.
 				fence: {
 					zone: fence.out.zone,
-					// ATTENTION : ce n'est PAS la distance au bord. C'est
-					// min(marge horizontale, marge verticale − v.edge), et en
-					// vol normal c'est presque toujours le terme VERTICAL qui
-					// sort.
+					// CAREFUL: this is NOT the distance to the edge. It is
+					// min(horizontal margin, vertical margin - v.edge), and in
+					// normal flight it is almost always the VERTICAL term that
+					// wins.
 					//
-					// Mesuré sur tour-eiffel (bbox.min.y = −30,9), au centre de
-					// la bbox, à y = 60 en coordonnées ABSOLUES : la marge
-					// horizontale vaut 640,6 m et ce champ n'affiche que 98,9.
+					// Measured on tour-eiffel (bbox.min.y = -30.9), at the centre
+					// of the bbox, at y = 60 in ABSOLUTE coordinates: the
+					// horizontal margin is 640.6 m and this field reads only
+					// 98.9.
 					//
-					// Le REPÈRE compte, et c'est ce qui a déjà produit trois
-					// chiffres différents pour la même grandeur : décrire le
-					// même vol comme « 60 m au-dessus du plancher » (y absolu
-					// 29,1) donne 68,0, pas 98,9. Dire lequel des deux, ou ne
-					// pas citer de nombre.
+					// The FRAME OF REFERENCE matters, and it has already produced
+					// three different numbers for the same quantity: describing
+					// the same flight as "60 m above the floor" (absolute y 29.1)
+					// gives 68.0, not 98.9. Say which of the two, or quote no
+					// number at all.
 					//
-					// La ZONE, elle, ne souffre pas de ce mélange : elle vient
-					// de max(rang) des deux couloirs, qui restent indépendants.
+					// The ZONE does not suffer from that mixture: it comes from
+					// max(rank) of the two corridors, which stay independent.
 					marginM: +fence.out.marginM.toFixed(1),
 					t: +fence.out.t.toFixed(3),
 					lossDb: +fence.out.lossDb.toFixed(1),
@@ -992,10 +990,10 @@ function exposeDebugGlobal() {
 					pushMs2: +Math.hypot(fence.out.push.x, fence.out.push.y, fence.out.push.z).toFixed(2),
 					corridor: fence.effectiveCorridor,
 				},
-				// Le ciel habité (issue #250) : undefined au banc, où il n'y a
-				// pas d'ambiants du tout.
+				// The inhabited sky (issue #250): undefined at the bench, where
+				// there are no ambients at all.
 				ambient: ambient?.debug(),
-				// L'essaim (issue #29) : undefined au banc et hors cluster.
+				// The swarm (issue #29): undefined at the bench and outside a cluster.
 				swarm: swarm?.model ? swarm.debug() : undefined,
 			};
 		},
@@ -1028,18 +1026,18 @@ function applyLensAndLink() {
 	lens.setLink({ mode: lensLinkMode, severity: linkCfg.severity });
 }
 
-// `arm` (#122, voir armFlight()) : qui monte le vol — la cible, la caméra de la
-// machine, ses hélices, son OSD — et donc QUAND. Vrai par défaut, sous l'écran
-// de chargement, qui est le seul à couvrir ce moment sur les chemins sans
-// cérémonie (?scene=, l'override ?family=, le banc). Les chemins FIELD passent
-// faux : là, c'est le geste [ JACK IN ] qui arme, parce que rien ne doit
-// toucher au monde avant lui et que tout doit être en place après lui.
+// `arm` (#122, see armFlight()): who mounts the flight — the target, the
+// machine's camera, its props, its OSD — and therefore WHEN. True by default,
+// under the loading screen, which is the only thing covering that moment on the
+// paths with no ceremony (?scene=, the ?family= override, the bench). The FIELD
+// paths pass false: there, the [ JACK IN ] gesture is what arms, because nothing
+// must touch the world before it and everything must be in place after it.
 async function finishBoot(preloading, { arm = true } = {}) {
 	const preloaded = await preloading;
 	const { manifest, meshes, collision, t0 } = preloaded;
 
-	// Le montage dans la scène a lieu ICI et pas dans preloadScene() : à partir
-	// de cet instant la zone est engagée, on ne revient plus en arrière.
+	// Mounting into the scene happens HERE and not in preloadScene(): from this
+	// moment the area is committed, and there is no going back.
 	sceneManifest = manifest;
 	fpvtpOsd.setCredit(creditText(manifest));
 	for (const m of meshes) scene.add(m);
@@ -1055,74 +1053,74 @@ async function finishBoot(preloading, { arm = true } = {}) {
 	hud.detail(`${(manifest.collision.indexCount / 3).toLocaleString()} triangles`);
 	await nextPaint();
 	physics = new Physics(collision, manifest.spawn, PROFILE ? { profile: PROFILE } : {});
-	// Le collision.bin a été copié dans la mémoire WASM : plus rien ici n'en
-	// relit les tableaux JS. On les rend tout de suite (issue #249) — le cache
-	// des préchargements retiendrait sinon la zone entière jusqu'au prochain
-	// rechargement, et le Collider Rapier en garde une vue de son côté.
+	// collision.bin has been copied into WASM memory: nothing here reads its JS
+	// arrays again. Give them back at once (issue #249) — otherwise the preload
+	// cache would hold the whole area until the next reload, and the Rapier
+	// Collider keeps a view of it on its own side.
 	physics.releaseSourceArrays(collision);
 	preloaded.collision = null;
-	// Sur les chemins sans cible (?scene=, mode dev sans ?family=), PROFILE n'a
-	// jamais été résolu et Physics est retombé sur son profil par défaut. Les
-	// deux couches d'OSD lisent la batterie et la masse du profil à chaque
-	// image : on adopte ici celui qui vole réellement, une fois pour toutes.
+	// On the paths with no target (?scene=, dev mode with no ?family=), PROFILE
+	// was never resolved and Physics fell back to its default profile. Both OSD
+	// layers read the profile's battery and mass every frame: adopt the one
+	// actually flying here, once and for all.
 	PROFILE = physics.profile;
 	audio.setProfile(physics.profile);
 	if (OPTS.family) console.log(`[family] ${physics.profile.family} — ${physics.profile.label}`);
 
-	// Les limites de la zone (#139). Construites AVANT le tirage du point
-	// d'entrée juste en dessous : c'est la même bbox, et entry-state.js s'en
-	// sert désormais pour ne jamais naître dans l'avertissement.
+	// The area's limits (#139). Built BEFORE the entry point is drawn just below:
+	// it is the same bbox, and entry-state.js now uses it so a flight is never
+	// born inside the warning.
 	//
-	// FENCE OFF au banc : une clôture immense plutôt qu'une branche dans
-	// frame(). Même motif que le mode ?live= plus bas — la zone reste toujours
-	// NOMINAL et le rappel toujours nul, donc tout ce qui lit fence.out (la
-	// force, l'OSD, la fin de vol hors couverture) continue de fonctionner sans
-	// rien savoir du banc. Le terrain, lui, s'arrête quand même au bord du
-	// rectangle acquis : c'est dit avant le décollage, pas découvert dans le vide.
+	// FENCE OFF at the bench: an enormous fence rather than a branch inside
+	// frame(). Same pattern as the ?live= mode below — the zone stays NOMINAL
+	// and the push stays nil, so everything that reads fence.out (the force, the
+	// OSD, the out-of-coverage end of flight) keeps working while knowing
+	// nothing about the bench. The terrain still stops at the edge of the
+	// acquired rectangle: that is said before takeoff, not discovered in the
+	// void.
 	fence = MODE.bench && !MODE.config.fence
 		? new Geofence({ min: [-1e6, -1e6, -1e6], max: [1e6, 1e6, 1e6] })
 		: new Geofence(manifest.bbox);
-	// Muraille numérique (#199) : seulement pour une vraie bbox de carte —
-	// la bbox ±1e6 du banc sans clôture n'a rien à border visuellement, même
-	// logique que le fence géant plus bas en mode ?live=/bootLive().
+	// The digital wall (#199): only for a real map bbox — the bench's +/-1e6 bbox
+	// with the fence off has nothing to visually bound, the same logic as the
+	// giant fence below in ?live=/bootLive() mode.
 	geofenceWall = (MODE.bench && !MODE.config.fence) ? null : new GeofenceWall(scene, manifest.bbox);
 	const ec = fence.effectiveCorridor;
-	console.log(`[fence] couloir ${ec.caution.toFixed(0)}/${ec.hold.toFixed(0)} m`
-		+ ` (échelle ${ec.scale.toFixed(2)}, demi-côté ${ec.halfMinM.toFixed(0)} m)`);
-	// Et ce qu'on voit au-delà du dernier chunk. Monté ici, avant le
-	// renderer.compile() de la fin du chargement : sa matière doit compiler
-	// derrière l'écran de chargement, pas à la première frame de vol.
+	console.log(`[fence] corridor ${ec.caution.toFixed(0)}/${ec.hold.toFixed(0)} m`
+		+ ` (scale ${ec.scale.toFixed(2)}, half-side ${ec.halfMinM.toFixed(0)} m)`);
+	// And what is seen beyond the last chunk. Mounted here, before the
+	// renderer.compile() at the end of the load: its material must compile behind
+	// the loading screen, not on the first frame of flight.
 	//
-	// Un seul par page : finishBoot() n'est appelé qu'une fois (ses deux
-	// appelants s'excluent) et changer de zone recharge la page. Si un
-	// démontage de scène apparaît un jour, il devra faire dispose() PUIS
-	// setDistantGround(null) — l'enregistrement de loader.js ne doit pas
-	// survivre à l'objet, setFog/setNight/setDim écriraient sur une matière
-	// libérée.
+	// One per page: finishBoot() is called once (its two callers exclude each
+	// other) and changing area reloads the page. If a scene teardown ever
+	// appears, it will have to dispose() THEN setDistantGround(null) —
+	// loader.js's registration must not outlive the object, or
+	// setFog/setNight/setDim would write to a freed material.
 	//
-	// La météo n'a pas encore été appliquée à ce stade : ces deux valeurs sont
-	// l'air clair du départ, et la première frame les réécrit toutes les deux
-	// par setFog() (lastDensity/lastSkyHex partent à -1, donc elle passe).
+	// The weather has not been applied at this point: these two values are the
+	// clear air of the start, and the first frame rewrites both through setFog()
+	// (lastDensity/lastSkyHex start at -1, so it goes through).
 	distantGround = new DistantGround(scene, manifest.bbox, {
 		fogColor: scene.background, fogDensity: fog.density,
 	});
 	setDistantGround(distantGround);
 
-	// Les drones ambiants (issue #250) — jamais au banc : NO TARGET.
+	// The ambient drones (issue #250) — never at the bench: NO TARGET.
 	if (!MODE.bench) {
 		ambient = new AmbientDrones({
 			scene,
 			bounds: { bbox: manifest.bbox, corridor: fence.effectiveCorridor },
 		});
-		// L'essaim (issue #29), même garde : il n'a d'unités que si la cible en
-		// porte un, ce que setSwarm() décide plus bas.
+		// The swarm (issue #29), same guard: it only has units if the target
+		// carries one, which setSwarm() decides below.
 		swarm = new SwarmDrones({ scene });
 		swarmFence.bbox = manifest.bbox;
 	}
 
-	// L'entrée. En FIELD c'est le tirage pondéré de la Bible §20 — tu hérites
-	// d'un drone déjà en vol et tu ne choisis pas dans quel état. Au banc, c'est
-	// une demande : ta machine, ta position de départ.
+	// The entry. In FIELD it is Bible §20's weighted draw — you inherit a drone
+	// already in flight and you do not choose what state it is in. At the bench
+	// it is a request: your machine, your starting position.
 	physics.applyEntryState(generateEntryState({
 		physics,
 		manifest,
@@ -1151,9 +1149,9 @@ async function finishBoot(preloading, { arm = true } = {}) {
 		hud.progress(`UPLOADING TEXTURES ${i + 1}/${meshes.length}…`, 0.80 + 0.16 * (i / meshes.length));
 		await nextPaint();
 		renderer.initTexture(meshes[i].material.uniforms.uMap.value);
-		// Sur le GPU, donc plus en RAM (issue #249) : ces pixels étaient le
-		// premier poste mémoire de la page, et une page de vol ne survit pas
-		// au vol suivant — chaque rechargement en empilait une copie de plus.
+		// On the GPU, so no longer in RAM (issue #249): these pixels were the
+		// page's largest memory item, and a flight page does not survive into the
+		// next flight — every reload stacked one more copy of them.
 		releaseTexturePixels(meshes[i].material.uniforms.uMap.value);
 	}
 
@@ -1182,29 +1180,29 @@ async function finishBoot(preloading, { arm = true } = {}) {
 
 	stage('done');
 
-	// La météo du monde, pas un réglage (PHASE 04). Le world state de l'opérateur
-	// a déjà décidé du temps qu'il fait sur cette zone aujourd'hui ; on ne fait
-	// qu'écrire les paramètres des trois modèles, qui n'ont pas changé.
-	// L'origine du manifest est la lat/lon exacte de la scène, donc la même clé
-	// de zone que celle vue par le terminal avant le décollage.
+	// The world's weather, not a setting (PHASE 04). The operator's world state
+	// has already decided what the weather is over this area today; all that
+	// happens here is writing the three models' parameters, which have not
+	// changed. The manifest's origin is the scene's exact lat/lon, hence the same
+	// zone key the terminal saw before takeoff.
 	const o = manifest.origin ?? {};
-	// La lat/lon exacte de la scène : la même qui sert de clé de zone à la
-	// météo, et la seule chose dont la position du soleil a besoin en plus de
-	// l'instant. Aucun fuseau horaire n'entre ici — la position du soleil est
-	// fonction de l'instant UTC et du lieu, point.
+	// The scene's exact lat/lon: the same one that keys the weather zone, and the
+	// only thing the sun's position needs besides the instant. No time zone comes
+	// into this — the sun's position is a function of the UTC instant and the
+	// place, full stop.
 	sun = SunField.forOrigin(o);
 
-	// Au banc, la météo n'appartient pas au monde : elle appartient à
-	// l'opérateur. C'est le SEUL endroit du jeu où c'est vrai, et c'est
-	// pourquoi les curseurs retirés de SETTINGS en PHASE 04 ne reviennent pas
-	// dans SETTINGS — la décision D3 tient, le banc est simplement hors monde.
+	// At the bench the weather does not belong to the world: it belongs to the
+	// operator. That is the ONLY place in the game where this is true, and it is
+	// why the sliders removed from SETTINGS in PHASE 04 do not come back into
+	// SETTINGS — decision D3 holds, the bench is simply outside the world.
 	//
-	// Aucun worldWeather() dans cette branche : pas d'aller-retour serveur, pas
-	// de snapshot écrit, aucune clé de zone touchée. Le banc ne consulte pas le
-	// monde et ne lui laisse rien.
+	// No worldWeather() in this branch: no server round trip, no snapshot
+	// written, no zone key touched. The bench does not consult the world and
+	// leaves it nothing.
 	if (MODE.bench) {
-		// `weather` reste null : c'est ce que lisent l'OSD et __sim.debug(),
-		// et il ne doit pas y avoir de bulletin là où il n'y a pas de monde.
+		// `weather` stays null: that is what the OSD and __sim.debug() read, and
+		// there must be no forecast where there is no world.
 		weather = null;
 		applyBenchConfig();
 		console.log('[bench] conditions', benchSimParams(MODE.config));
@@ -1215,7 +1213,8 @@ async function finishBoot(preloading, { arm = true } = {}) {
 			console.log(`[weather] ${weather.zone} ${weather.day} (${weather.source}) — `
 				+ `${headline(weather.days[0])}`, applied);
 		} else {
-			// Scène sans origine connue : monde neutre plutôt que météo inventée.
+			// A scene with no known origin: a neutral world rather than invented
+			// weather.
 			physics.setWeather(CALM.wind);
 			rain.setParams(CALM.rain);
 			fog.setParams(CALM.fog);
@@ -1224,14 +1223,14 @@ async function finishBoot(preloading, { arm = true } = {}) {
 		}
 	}
 
-	// Les matériaux de cette zone viennent d'apparaître dans tileMaterials
-	// (loader.js) à leurs valeurs par défaut (uDim=1, uNight=0) : setFog/setDim/
-	// setNight ne les a jamais touchés. La boucle de rendu ne les pousse que
-	// sur CHANGEMENT (lastDensity/lastSkyHex/lastDim/lastNight ci-dessous) — si
-	// la nuit était déjà installée à la scène précédente, la valeur n'a pas
-	// changé et ces matériaux restent bloqués à leurs défauts pour toujours.
-	// Invalider le cache force le prochain frame à les resynchroniser même
-	// quand la valeur elle-même n'a pas bougé depuis la scène d'avant.
+	// This area's materials have just appeared in tileMaterials (loader.js) at
+	// their default values (uDim=1, uNight=0): setFog/setDim/setNight has never
+	// touched them. The render loop only pushes those on CHANGE
+	// (lastDensity/lastSkyHex/lastDim/lastNight below) — if the night was already
+	// installed on the previous scene, the value has not changed and those
+	// materials stay stuck at their defaults for ever. Invalidating the cache
+	// forces the next frame to resynchronise them even when the value itself has
+	// not moved since the scene before.
 	lastDensity = NaN;
 	lastSkyHex = NaN;
 	lastDim = NaN;
@@ -1261,14 +1260,14 @@ async function finishBoot(preloading, { arm = true } = {}) {
 	}
 
 	timeline[timeline.length - 1].ms = Math.round(performance.now() - timeline[timeline.length - 1].at);
-	console.table(timeline.map(s => ({ étape: s.name, ms: s.ms })));
+	console.table(timeline.map(s => ({ stage: s.name, ms: s.ms })));
 	console.log(`total ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 
 	exposeDebugGlobal();
 
 	hud.ready();
-	// À partir d'ici les sticks pilotent le drone : le panneau Settings ouvert
-	// en vol n'écoute plus la manette (issue #123, voir settings.js).
+	// From here the sticks fly the drone: the Settings panel opened in flight no
+	// longer listens to the pad (issue #123, see settings.js).
 	settings.flightActive = true;
 	lastTime = performance.now();
 	flightStartTime = lastTime;
@@ -1283,34 +1282,34 @@ async function boot(slug) {
 	return finishBoot(preloadFor(slug));
 }
 
-// Niveau d'octree constant pour ce jalon (Global Constraints) — la vraie
-// sélection de LOD par distance/altitude reste un ticket de suivi. 21 :
-// ZOOM_TO_LEVEL[20] dans google-earth.mjs — le niveau que produit le zoom
-// par défaut d'`add-map` (CLAUDE.md, --zoom 20), donc déjà le niveau que
-// toutes les cartes existantes utilisent couramment.
+// A constant octree level for this milestone (Global Constraints) — real LOD
+// selection by distance/altitude stays a follow-up ticket. 21 is
+// ZOOM_TO_LEVEL[20] in google-earth.mjs — the level `add-map`'s default zoom
+// produces (CLAUDE.md, --zoom 20), so already the level every existing map
+// routinely uses.
 const ROCKTREE_LEVEL = 21;
 
 // The attribution the live terrain carries. See the setCredit() call in
 // bootLive() for why this is a literal and not creditText().
 const LIVE_CREDIT = '© Google';
 
-// Boot minimal pour ?live=lat,lon (#168) : pas de manifest, pas de
-// collision.bin, pas de météo. Origine ENU fixée UNE FOIS ici, au point de
-// spawn — pas de recentrage en vol (hors périmètre, voir la spec).
+// The minimal boot for ?live=lat,lon (#168): no manifest, no collision.bin, no
+// weather. The ENU origin is fixed ONCE here, at the spawn point — no recentring
+// in flight (out of scope, see the spec).
 async function bootLive([lat, lon], { arm = true } = {}) {
-	// Trois latences indépendantes, RECOUVERTES plutôt qu'additionnées (#21) :
-	// l'init de Rapier (chunk WASM à charger et compiler), la première
-	// traversée rocktree (6 frontières de bulks séquentielles sur le réseau)
-	// et la création des Workers (pool de fetch + traversée : un chargement de
-	// module chacun, qui n'était payé qu'au premier fetchNode(), donc APRÈS la
-	// traversée). Avant, bootLive() attendait Rapier avant de lancer quoi que
-	// ce soit sur le réseau.
+	// Three independent latencies, OVERLAPPED rather than added up (#21):
+	// Rapier's init (a WASM chunk to load and compile), the first rocktree
+	// traverse (6 sequential bulk boundaries over the network) and the creation
+	// of the Workers (fetch pool + traverse: one module load each, which was
+	// only paid at the first fetchNode(), so AFTER the traverse). Before this,
+	// bootLive() waited for Rapier before starting anything on the network.
 	//
-	// Le chemin scène fait initPhysics() dans preloadScene() (avant tout usage
-	// de Rapier/Physics) — bootLive() ne passe jamais par preloadScene(), donc
-	// jamais par cet appel sans le reproduire ici. Sans lui, `new
-	// Physics(...)` plante immédiatement (module WASM Rapier non initialisé),
-	// avant même la première requête réseau vers kh.google.com (#174).
+	// The scene path calls initPhysics() inside preloadScene() (before any use
+	// of Rapier/Physics) — bootLive() never goes through preloadScene(), so
+	// never through that call unless it reproduces it here. Without it, `new
+	// Physics(...)` fails immediately (the Rapier WASM module is not
+	// initialised), before even the first network request to kh.google.com
+	// (#174).
 	const physicsReady = initPhysics();
 	warmUpTraverseWorker();
 	warmUpNodePool();
@@ -1318,71 +1317,71 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	const rocktreeWindow = new RocktreeWindow({
 		level: ROCKTREE_LEVEL,
 		origin: { lat, lon },
-		// La distance d'affichage vient du curseur Settings (#182), dès le boot
-		// — démarrer au repli puis élargir une frame plus tard fetcherait le
-		// boot en deux vagues.
+		// The view range comes from the Settings slider (#182), from the boot on
+		// — starting narrow and widening a frame later would fetch the boot in
+		// two waves.
 		floorRadiusM: loadViewRange(),
-		// Les callbacks n'exécutent RIEN (#184) : ils empilent, et le travail
-		// réel (build + cuisson Rapier + upload texture + dispose) est étalé
-		// par processLiveNodeWork() sous un budget par frame. Mesuré avant :
-		// chaque nœud ne coûte que ~1,4 ms, mais le pool en livre des dizaines
-		// dans la même frame — gels de 70 à 330 ms à chaque vague, GPU oisif.
-		// Ni l'un ni l'autre ne touche `physics` : ils peuvent donc courir
-		// pendant que Rapier s'initialise encore (#21).
+		// The callbacks execute NOTHING (#184): they enqueue, and the real work
+		// (build + Rapier bake + texture upload + dispose) is spread out by
+		// processLiveNodeWork() under a per-frame budget. Measured before: each
+		// node costs only ~1.4 ms, but the pool delivers dozens of them in the
+		// same frame — 70 to 330 ms freezes on every wave, with an idle GPU.
+		// Neither callback touches `physics`: they can therefore run while
+		// Rapier is still initialising (#21).
 		onNodeReady: (path, matrix, meshes, sphereRadius) => {
-			// `swap` : un mesh est déjà à l'écran pour ce chemin (`replaced`,
-			// ou un couvert redemandé) — l'échange attendra la vague complète.
+			// `swap`: a mesh is already on screen for this path (`replaced`, or a
+			// covered one asked for again) — the swap will wait for the full wave.
 			liveQueue.queueBuild(path, { matrix, meshes, sphereRadius }, { swap: liveMeshes.has(path) });
-			// Signal "la fenêtre bouge" pour le dôme numérique (#198) — au
-			// moment où le nœud est REÇU, pas où processLiveNodeWork() le
-			// construit sous budget : ce dernier peut traîner plusieurs
-			// frames, le churn perçu commence dès l'arrivée du réseau.
+			// The "the window is moving" signal for the digital dome (#198) — at
+			// the moment the node is RECEIVED, not when processLiveNodeWork()
+			// builds it under budget: the latter can lag several frames behind,
+			// and the perceived churn starts as soon as the network delivers.
 			fenceDome?.markChurn();
 		},
 		onNodeReleased: (path, opts) => {
-			// `replaced` (#31) : le nœud reste désiré, seul son maillage change
-			// et son remplaçant est déjà en route. On ne retire RIEN — c'est le
-			// build qui échangera, à la vague complète (LiveNodeQueue, #75).
-			// Sinon le sol manque tout le temps du refetch, et c'est l'anneau
-			// qui « recharge » vu en volant.
+			// `replaced` (#31): the node is still wanted, only its mesh changes
+			// and its replacement is already on the way. Remove NOTHING — the
+			// build is what swaps, at the full wave (LiveNodeQueue, #75).
+			// Otherwise the ground is missing for the whole refetch, and that is
+			// the "reloading" ring seen while flying.
 			if (opts?.replaced) return;
-			// Remplacé par un autre niveau : tenu à l'écran jusqu'à la vague
-			// complète, voir LiveNodeQueue.
+			// Replaced by another level: held on screen until the full wave, see
+			// LiveNodeQueue.
 			if (opts?.covered && liveMeshes.has(path)) { liveQueue.queueCovered(path); fenceDome?.markChurn(); return; }
-			// Sans ce drapeau, la libération est franche : la file jette un
-			// build éventuel ET retire ce qui est en scène (depuis l'échange
-			// ci-dessus, un chemin peut être les deux à la fois).
+			// Without that flag the release is outright: the queue drops any
+			// pending build AND removes what is in the scene (since the swap
+			// above, a path can be both at once).
 			if (!liveMeshes.has(path)) { liveQueue.dropBuild(path); return; }
 			liveQueue.queueRelease(path);
 			fenceDome?.markChurn();
 		},
 	});
-	// Amorce la fenêtre autour du spawn avant la première frame : sans ce
-	// premier appel, le drone tombe dans le vide jusqu'au premier update()
-	// de la boucle de rendu. Lancée ICI, avant d'attendre Rapier, pour que le
-	// réseau travaille pendant la compilation du WASM ; attendue plus bas,
-	// juste avant la boucle qui guette le sol.
+	// Primes the window around the spawn before the first frame: without this
+	// first call the drone falls through the void until the render loop's first
+	// update(). Started HERE, before waiting on Rapier, so the network works
+	// while the WASM compiles; awaited further down, just before the loop that
+	// watches for the ground.
 	const firstWave = rocktreeWindow.update({ lat, lon });
 
 	await physicsReady;
 	const emptyCollision = { vertices: new Float32Array(0), indices: new Uint32Array(0) };
-	// Position PROVISOIRE : aucun relief n'est chargé au moment de la
-	// construction de Physics. Le vrai point de spawn est calé sur le sol réel
-	// plus bas, une fois le premier collider de la colonne arrivé (#182) —
-	// cette valeur ne survit que si aucun sol n'apparaît (spawn en mer).
+	// A PROVISIONAL position: no terrain is loaded when Physics is constructed.
+	// The real spawn point is set on the real ground further down, once the
+	// column's first collider arrives (#182) — this value only survives if no
+	// ground ever appears (a spawn at sea).
 	physics = new Physics(emptyCollision, { x: 0, y: 80, z: 0 }, PROFILE ? { profile: PROFILE } : {});
 	PROFILE = physics.profile;
 	audio.setProfile(physics.profile);
-	// Le chemin scène le fait via applyEntryState() (finishBoot(), plus haut) —
-	// reset() en est le cas simple (spawn/identité/zéro, déjà ce que le
-	// constructeur pose) mais il fait AUSSI this.propulsion.primeFor(hoverThrottle(...)),
-	// ce que le constructeur seul ne fait pas : sans lui les 4 moteurs
-	// démarrent à omega=0/thrust=0 (« à froid ») et doivent remonter par le
-	// lag moteur réaliste de quad.js avant de produire une poussée utile.
-	// Mesuré : même à throttle 0.85 soutenu dès la 1ʳᵉ frame, le drone
-	// s'écrase avant que les moteurs n'aient rattrapé leur retard — la marge
-	// de 80 m au-dessus du sol (commentaire ci-dessus) est mangée par ce
-	// retard, pas par un défaut du maillage de collision.
+	// The scene path does this through applyEntryState() (finishBoot(), above) —
+	// reset() is its simple case (spawn/identity/zero, already what the
+	// constructor sets) but it ALSO calls
+	// this.propulsion.primeFor(hoverThrottle(...)), which the constructor alone
+	// does not: without it the 4 motors start at omega=0/thrust=0 ("cold") and
+	// have to climb through quad.js's realistic motor lag before producing any
+	// useful thrust. Measured: even at a sustained throttle of 0.85 from the
+	// very first frame, the drone crashes before the motors have caught up — the
+	// 80 m of margin above the ground (see the comment above) is eaten by that
+	// lag, not by a flaw in the collision mesh.
 	physics.reset();
 
 	liveWindow = rocktreeWindow;
@@ -1390,64 +1389,64 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	if (!MODE.bench) {
 		ambient = new AmbientDrones({
 			scene,
-			// Direct : le cercle de confiance de la fenêtre, relu à chaque frame
-			// (bounds est muté, jamais remplacé — le modèle garde la référence).
+			// Live: the window's circle of confidence, re-read every frame
+			// (bounds is mutated, never replaced — the model holds the
+			// reference).
 			bounds: liveBounds,
 		});
-		// ?live= est un raccourci de DEV : openFlightSession() en sort tout de
-		// suite, donc personne d'autre ne poserait de scan sur ce chemin.
+		// ?live= is a DEV shortcut: openFlightSession() returns from it
+		// immediately, so nobody else would set a scan on this path.
 		if (OPTS.live) ambient.setScan({ seed: `dev::${OPTS.live}`, count: 4, index: 0, ...(devSwarm ? { swarmAt: 0, swarmChance: 1, swarm: devSwarm } : {}) });
 		swarm = new SwarmDrones({ scene });
-		// ?live= sort d'openFlightSession() avant la pose de l'essaim : c'est
-		// ici, et seul ?swarm= peut en poser un sur ce chemin.
-		// `?live=` sort d'openFlightSession() avant l'écriture du bus : c'est
-		// donc ici aussi que se pose la présence de l'essaim pour ce chemin.
+		// ?live= leaves openFlightSession() before the swarm is placed: this is
+		// where it happens, and only ?swarm= can place one on this path.
+		// `?live=` also leaves before the bus is written, so this is where the
+		// swarm's presence is set for this path too.
 		if (OPTS.live) setSwarmPresent(!!devSwarm);
 		if (OPTS.live && devSwarm) { swarm.setSwarm(devSwarm); swarm.reset(physics.position); }
 	}
-	// Brouillard local du bord de fenêtre (#198, retour "rupture nette" après
-	// vérification en vol) : le terrain live n'a aucun autre brouillard (la
-	// météo est hors périmètre en ?live=), donc scene.fog est entièrement
-	// libre ici — densité poussée chaque frame par fogDensityFor() plus bas.
-	// SkyDome a fog:false et n'en est pas affecté.
+	// Local fog at the window's edge (#198, "hard cut" feedback after checking in
+	// flight): live terrain has no other fog (weather is out of scope in
+	// ?live=), so scene.fog is entirely free here — its density is pushed every
+	// frame by fogDensityFor() below. SkyDome has fog:false and is unaffected.
 	scene.fog = new THREE.FogExp2(FENCE_CYAN, 0);
-	// Fondu de bord DU TERRAIN LUI-MÊME (#202, suite de #200 : même retour
-	// utilisateur, la silhouette du disque chargé se découpait encore net
-	// contre le ciel vue de haut — scene.fog ci-dessus ne dépend que de la
-	// position du DRONE, pas de si le fragment regardé est près du bord).
-	// buildNodeMesh() lit ce module-scope pour chaque nouveau nœud ; posé
-	// AVANT que RocktreeWindow ne puisse livrer son premier nœud.
+	// An edge fade on THE TERRAIN ITSELF (#202, following #200: the same user
+	// feedback — the loaded disc's silhouette still cut sharply against the sky
+	// seen from above, because scene.fog above depends only on the DRONE's
+	// position, not on whether the fragment being looked at is near the edge).
+	// buildNodeMesh() reads this module scope for each new node; set BEFORE
+	// RocktreeWindow can deliver its first node.
 	liveEdgeUniforms = createLiveEdgeUniforms(FENCE_CYAN);
-	// Révèle le curseur « View range » (caché hors mode live) et le branche :
-	// setFloorRadiusM() invalide le cache de position de la fenêtre, le
-	// prochain update() de frame() charge la couronne manquante (ou libère
-	// l'excédent) sans redémarrage.
+	// Reveals the "View range" slider (hidden outside live mode) and wires it up:
+	// setFloorRadiusM() invalidates the window's position cache, and frame()'s
+	// next update() loads the missing ring (or releases the excess) with no
+	// restart.
 	settings.setViewRange(loadViewRange(), (m) => rocktreeWindow.setFloorRadiusM(m));
-	// La première traversée, lancée tout en haut (#21) : d'ici, Rapier est
-	// prêt et les premiers nœuds sont peut-être déjà en file de build.
+	// The first traverse, started right at the top (#21): by here Rapier is ready
+	// and the first nodes may already be queued for building.
 	await firstWave;
 
-	// Attend le SOL RÉEL avant de lâcher le drone (#182). L'origine ENU est à
-	// l'altitude 0 de l'ellipsoïde et le spawn à +80 m — or le terrain, lui,
-	// est où il veut : ~175 m ellipsoïdaux à Versailles (spawn 95 m SOUS le
-	// sol, chute sans fin), ~79 m au Champ de Mars (1 m de marge, une course
-	// de 0,5 s entre la chute et le premier collider — perdue à froid dès que
-	// la vague de boot grossit, cf. le curseur de distance). update() ci-dessus
-	// n'attend PAS les fetchs : on guette donc le premier collider dans la
-	// colonne du spawn, puis on cale le point de spawn dessus. Timeout généreux
-	// (réseau froid) ; au-delà, on garde l'ancien comportement plutôt que de
-	// bloquer le boot pour toujours (spawn en mer : aucun sol ne viendra).
+	// Waits for the REAL GROUND before letting the drone go (#182). The ENU
+	// origin sits at ellipsoid altitude 0 and the spawn at +80 m — but the
+	// terrain is wherever it likes: ~175 ellipsoidal metres at Versailles (a
+	// spawn 95 m BELOW the ground, an endless fall), ~79 m at the Champ de Mars
+	// (1 m of margin, a 0.5 s race between the fall and the first collider — lost
+	// on a cold start as soon as the boot wave grows, see the view-range slider).
+	// update() above does NOT wait for the fetches: so watch for the first
+	// collider in the spawn's column, then set the spawn point on it. A generous
+	// timeout (cold network); past it, the old behaviour is kept rather than
+	// blocking the boot for ever (a spawn at sea: no ground will ever come).
 	const SPAWN_ABOVE_GROUND_M = 80;
-	// Le boot attend la VAGUE COMPLÈTE, pas seulement la colonne du spawn
-	// (#189). Lâché dès le premier collider, le drone dérive pendant sa chute
-	// de 80 m et atterrit parfois dans un trou pas encore construit — mesuré à
-	// Lyon : passage sous la carte, puis la fenêtre suit le drone sous terre
-	// en chargeant/déchargeant à l'infini (le « chargement impossible »).
-	// Accessoirement, remplir derrière l'écran de chargement à plein budget
-	// (25 ms) évite les 10-90 s de remplissage au compte-goutte (3 ms/frame)
-	// sous les yeux du joueur. Plafond : à froid le réseau peut traîner, on
-	// finit par lâcher le drone plutôt que bloquer pour toujours — le sol de
-	// SA colonne, lui, reste exigé (sinon spawn en mer : ancien comportement).
+	// The boot waits for the FULL WAVE, not only the spawn's column (#189).
+	// Released at the first collider, the drone drifts during its 80 m fall and
+	// sometimes lands in a hole that has not been built yet — measured at Lyon:
+	// it goes under the map, then the window follows the drone underground,
+	// loading and unloading for ever (the "impossible loading"). Incidentally,
+	// filling in behind the loading screen at full budget (25 ms) avoids the
+	// 10-90 s of drip-feed filling (3 ms/frame) in front of the player. The cap:
+	// on a cold start the network can drag, so the drone is eventually released
+	// rather than blocking for ever — the ground of ITS OWN column, however, is
+	// still required (otherwise a spawn at sea: the old behaviour).
 	const BOOT_DEADLINE_MS = 45000;
 	const bootDeadline = performance.now() + BOOT_DEADLINE_MS;
 	let groundHere = null;
@@ -1461,10 +1460,10 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	hud.setStage('terrain');
 	hud.progress('WAITING FOR TERRAIN…', 0.5);
 	for (;;) {
-		// La boucle de rendu n'a pas démarré : personne d'autre ne draine les
-		// files de nœuds (#184) — sans cet appel, aucun collider n'apparaîtrait
-		// jamais. Le tri par distance met le nœud sous le spawn dans la
-		// première vague, le sol arrive donc en premier.
+		// The render loop has not started: nobody else drains the node queues
+		// (#184) — without this call no collider would ever appear. The sort by
+		// distance puts the node under the spawn in the first wave, so the ground
+		// arrives first.
 		processLiveNodeWork(25);
 		if (groundHere === null) groundHere = physics.groundBelow(0, 3000, 0, 6000);
 		waveDone = rocktreeWindow.pendingCount() === 0 && liveQueue.idle();
@@ -1491,30 +1490,30 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	}
 	hud.detail('');
 	if (groundHere !== null) {
-		// physics.reset() renvoie au spawn ET re-prime les moteurs — muter
-		// spawn.y d'abord garde ce point correct pour tout ce qui s'y ramène
-		// (touche R, et le repli de generateEntryState() ci-dessous si ses
-		// deux tirs de sécurité échouent) au-dessus du sol réel, pas de
-		// l'ellipsoïde.
+		// physics.reset() returns to the spawn AND re-primes the motors —
+		// mutating spawn.y first keeps that point correct, above the real ground
+		// rather than the ellipsoid, for everything that comes back to it (the R
+		// key, and generateEntryState()'s fallback below if its two safety nets
+		// both fail).
 		physics.spawn.y = groundHere + SPAWN_ABOVE_GROUND_M;
 
-		// Le chemin scène tire l'entrée par generateEntryState() (Bible §20,
-		// finishBoot() plus haut, et son pendant banc à 1417) — bootLive() se
-		// contentait jusqu'ici d'un reset() qui pose TOUJOURS le même point,
-		// moteurs coupés, chute verticale : jamais l'entrée « déjà en vol »
-		// que la carte cuite donne. On rejoue le même tirage pondéré (et,
-		// comme les deux autres appels, l'override du banc — sans lui un
-		// vol libre sur terrain live ignorait silencieusement IDLE/catégorie
-		// forcée alors que le même réglage marche sur une carte cuite), mais
-		// borné à un carré inscrit dans le disque qu'on vient d'attendre :
-		// c'est la seule zone dont la collision est vraiment posée à cet
-		// instant, contrairement à un manifest.bbox cuit qui couvre toute la
-		// carte. Facteur 0,5 : le carré inscrit exact vaudrait 1/√2 ≈ 0,71 du
-		// rayon, on se garde de la marge contre un chunk pas tout à fait fini
-		// en bord de vague — SAUF si la vague n'a justement pas fini (plafond
-		// de 45 s atteint, waveDone resté faux) : ce carré-là n'a plus rien
-		// de garanti, on retombe alors sur la seule colonne dont le sol est
-		// exigé plus haut (rayon nul, x=z=0).
+		// The scene path draws its entry through generateEntryState() (Bible
+		// §20, finishBoot() above, and its bench counterpart) — bootLive() used
+		// to make do with a reset(), which ALWAYS puts down the same point,
+		// motors cut, falling vertically: never the "already in flight" entry a
+		// baked map gives. The same weighted draw is replayed here (and, like the
+		// other two call sites, the bench override — without it a free flight on
+		// live terrain silently ignored IDLE or a forced category while the same
+		// setting works on a baked map), but bounded to a square inscribed in the
+		// disc that has just been waited for: that is the only area whose
+		// collision is really in place at this instant, unlike a baked
+		// manifest.bbox which covers the whole map. Factor 0.5: the exact
+		// inscribed square would be 1/sqrt(2) ~ 0.71 of the radius, and margin is
+		// kept against a chunk not quite finished at the edge of the wave —
+		// EXCEPT when the wave has precisely not finished (the 45 s cap reached,
+		// waveDone still false): that square is no longer guaranteed at all, so
+		// it falls back to the one column whose ground is required above (zero
+		// radius, x=z=0).
 		const liveRadiusM = waveDone ? loadViewRange() * 0.5 : 0;
 		const liveManifest = {
 			bbox: {
@@ -1529,54 +1528,52 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 			...(MODE.bench ? benchEntryRequest(MODE.config) : {}),
 		});
 	} else {
-		console.warn('[rocktree] aucun sol sous le spawn — spawn ellipsoïdal conservé');
+		console.warn('[rocktree] no ground under the spawn — keeping the ellipsoidal spawn');
 	}
 
-	// Le chemin scène le pose dans finishBoot() (avec en plus une recherche de
-	// plafond pour les spawns sous un pont — hors périmètre ici). frame() lit
-	// emitter.x/y/z SANS garde, hors du bloc `if (!frozen)` (obstructionBetween
-	// pour le lien) — resté à `null` (sa valeur de départ), il plante dès la
-	// première frame. S'il n'y a aucun collider pile sous (x=0, z=0), retomber
-	// sur le point de spawn lui-même plutôt que null.
+	// The scene path sets this in finishBoot() (with an extra ceiling search for
+	// spawns under a bridge — out of scope here). frame() reads emitter.x/y/z
+	// with NO guard, outside the `if (!frozen)` block (obstructionBetween, for
+	// the link) — left at `null` (its starting value) it throws on the very first
+	// frame. If there is no collider exactly below (x=0, z=0), fall back to the
+	// spawn point itself rather than null.
 	emitter = { x: 0, y: (groundHere !== null ? groundHere : physics.spawn.y) + ANTENNA_HEIGHT, z: 0 };
 
-	// Les conditions du banc, en vol libre (PHASE 26).
+	// The bench's conditions, in free flight (PHASE 26).
 	//
-	// Ce chemin ne passe pas par finishBoot(), donc rien de ce que finishBoot()
-	// pose n'existe ici : sans ces trois lignes, TOUT le panneau de conditions
-	// du banc était ignoré en silence — et pire, la première ouverture du
-	// panneau en vol (touche B) appelait applyBenchConfig() et faisait
-	// apparaître la météo d'un coup, au milieu du vol.
+	// This path does not go through finishBoot(), so nothing finishBoot() sets
+	// exists here: without these three lines the WHOLE bench conditions panel
+	// was silently ignored — and worse, the first time the panel was opened in
+	// flight (B key) applyBenchConfig() made the weather appear all at once, in
+	// the middle of the flight.
 	//
-	// `?live=` seul ne change pas : il reste sans météo ni soleil, c'est son
-	// hors-périmètre assumé (#168). Ici la lat/lon est réelle et vient de
-	// l'opérateur, donc le soleil est légitime — c'est la même construction que
-	// le chemin scène, à partir de la même donnée.
-	// Vaut aussi pour la reconnaissance FIELD : la lat/lon y vient du rectangle
-	// que l'opérateur vient de dessiner, elle est donc tout aussi réelle qu'au
-	// banc. applyBenchConfig() reste au banc — il n'y a pas de config à appliquer
-	// ici, et il se garde lui-même sur MODE.bench.
+	// `?live=` on its own does not change: it stays without weather or sun,
+	// which is its acknowledged out-of-scope (#168). Here the lat/lon is real and
+	// comes from the operator, so the sun is legitimate — it is the same
+	// construction as the scene path, from the same data.
+	// The same holds for FIELD reconnaissance: there the lat/lon comes from the
+	// rectangle the operator has just drawn, so it is every bit as real as at the
+	// bench. applyBenchConfig() stays the bench's — there is no config to apply
+	// here, and it guards itself on MODE.bench.
 	if (MODE.bench || MODE.live) {
 		sun = SunField.forOrigin({ latitude: lat, longitude: lon });
 		applyBenchConfig();
 	}
 
-	// Boucle de vol : frame() lit fence.*/controller.* sans garde nulle part
-	// (elle suppose toujours une scène pré-cuite complète) — le mode ?live=
-	// doit donc lui fournir de vraies instances, pas les laisser null.
-	// Geofence avec une bbox démesurée : le VRAI code testé (pas un stub),
-	// mais dimensionné pour ne jamais s'engager (scale plafonne à 1, le
-	// drone n'approche jamais un bord à 1000 km) — zone toujours NOMINAL,
-	// push toujours nul. Cohérent avec le hors-périmètre explicite du plan
-	// ("pas de Geofence" en mode direct) : elle existe juste pour ne pas
-	// planter frame(), elle n'agit jamais.
+	// The flight loop: frame() reads fence.*/controller.* with no guard anywhere
+	// (it always assumes a complete baked scene) — so ?live= mode has to hand it
+	// real instances rather than leave them null. A Geofence with an outsized
+	// bbox: the REAL tested code (not a stub), but sized never to engage (scale
+	// tops out at 1, and the drone never comes near an edge 1000 km away) — the
+	// zone stays NOMINAL and the push stays nil. Consistent with the plan's
+	// explicit out-of-scope ("no Geofence" in live mode): it exists only so
+	// frame() does not crash, and it never acts.
 	fence = new Geofence({ min: [-1e6, -1e6, -1e6], max: [1e6, 1e6, 1e6] });
-	// `benchRates` porte les rates de l'exemplaire quand il y en a un : le banc
-	// les pose depuis sa cellule tirée, le vol en direct depuis sa cible
-	// (#218) — bootLive() construit lui-même son contrôleur, donc dans les deux
-	// cas ils doivent être posés AVANT l'appel. Sans exemplaire (?live= nu),
-	// `opts.rates` est optionnel dans flightController.js et retombe sur
-	// RATE_PRESETS[this.preset].
+	// `benchRates` carries the individual's rates when there is one: the bench
+	// sets them from its drawn airframe, a live flight from its target (#218) —
+	// bootLive() builds its own controller, so in both cases they have to be set
+	// BEFORE the call. With no individual (bare ?live=), `opts.rates` is optional
+	// in flightController.js and falls back to RATE_PRESETS[this.preset].
 	controller = new FlightController({ profile: PROFILE, rates: benchRates ?? undefined, mode: defaultFlightMode() });
 
 	// LEGAL, not polish. Google requires the copyright of the imagery it serves
@@ -1614,18 +1611,18 @@ async function bootLive([lat, lon], { arm = true } = {}) {
 	}
 	renderer.compile(scene, camera);
 	hud.ready();
-	// window.__sim doit exister avant la première frame : c'est ce que toute
-	// vérification navigateur de ce dépôt lit (Tâche 11 comprise).
+	// window.__sim must exist before the first frame: it is what every browser
+	// check in this repo reads (Task 11 included).
 	exposeDebugGlobal();
-	// Sans ça frame() n'est jamais programmée en mode ?live= — le drone ne
-	// vole jamais, l'écran reste figé. Miroir du dernier geste de
-	// finishBoot() pour le chemin scène, y compris les deux lignes qui le
-	// précèdent là-bas et manquaient ici :
-	//  - flightActive : sinon le panneau Settings continue de manger la manette
-	//    en vol (issue #123, voir settings.js) ;
-	//  - lastTime : sans ce recalage, la 1ʳᵉ frame mesure dt depuis le
-	//    chargement du module (des secondes), clampé à 0,25 s — une bourrasque
-	//    de physique de 250 ms d'un coup au tout premier pas.
+	// Without this, frame() is never scheduled in ?live= mode — the drone never
+	// flies and the screen stays frozen. A mirror of finishBoot()'s last gesture
+	// on the scene path, including the two lines that precede it there and were
+	// missing here:
+	//  - flightActive: otherwise the Settings panel keeps eating the pad in
+	//    flight (issue #123, see settings.js);
+	//  - lastTime: without this reset the first frame measures dt since the
+	//    module loaded (seconds), clamped to 0.25 s — a 250 ms gust of physics
+	//    all at once on the very first step.
 	settings.flightActive = true;
 	lastTime = performance.now();
 	flightStartTime = lastTime;
@@ -1640,12 +1637,12 @@ function nextPaint() {
 // `action` is an ACTION ID from src/key-map.js (D13), not a key: the bindings
 // live in the map, and Escape / Enter / Tab arrive raw because they stay fixed.
 input.onAction = (action, event) => {
-	// Pas de respawn : on ne fait pas réapparaître un drone qu'on a perdu.
+	// No respawn: a drone you have lost does not come back.
 	// terrain persistent, flights ephemeral.
 	//
-	// Sauf au banc, où il n'y a rien à faire réapparaître : la machine est
-	// locale, la remettre en état n'est pas un rembobinage. La touche n'existe
-	// QUE là — FIELD ne gagne rien, pas même une touche inerte à découvrir.
+	// Except at the bench, where there is nothing to bring back: the machine is
+	// local, and putting it right is not a rewind. The key exists ONLY there —
+	// FIELD gains nothing, not even an inert key to discover.
 	if (MODE.bench && action === 'respawn') { respawn(); return; }
 	if (MODE.bench && action === 'benchPanel') { event.preventDefault(); toggleBenchPanel(); return; }
 	if (action === 'pause') { event.preventDefault(); togglePause(); }
@@ -1653,31 +1650,30 @@ input.onAction = (action, event) => {
 	else if (action === 'cycleMode') controller?.cycleMode();
 	else if (action === 'view') setView(viewMode === 'fpv' ? 'chase' : 'fpv');
 	else if (action === 'photo') pendingCapture = true;
-	// Le retournement (#105). Un appui, pas un maintien : ceci ne détruit rien,
-	// et turtle.js refuse de lui-même tant que la machine n'est pas sur le dos
-	// et immobile — la touche est donc inerte partout ailleurs. Reposé plutôt
-	// qu'accumulé : une pression pendant la pause ne doit pas se déclencher à la
-	// reprise.
+	// Turtle mode (#105). A press, not a hold: this destroys nothing, and
+	// turtle.js refuses of its own accord until the machine is on its back and
+	// still — so the key is inert everywhere else. Set rather than accumulated:
+	// a press during a pause must not fire when play resumes.
 	else if (action === 'turtle') turtlePressed = flightEnd.phase === FLYING;
 	else if (action === 'tab') { event.preventDefault(); settings.toggleSettings(); }
 	else if (action === 'escape' && settings.settingsOpen) settings.toggleSettings(false);
-	// Le joueur sort lui-même du contrôle : rien ne le sort à sa place. C'est
-	// Entrée que la ligne nomme (#71) : en pointer lock, et a fortiori en plein
-	// écran navigateur, Échap est confisquée pour rendre le curseur et ne
-	// délivre jamais de keydown à la page (comportement du navigateur, pas un
-	// bug — voir le clic ci-dessous pour la même raison). Échap reste acceptée
-	// en doublon silencieux : elle marche quand rien ne la confisque.
+	// The player leaves control themselves: nothing takes them out of it. Enter
+	// is the key the line names (#71): under pointer lock, and all the more in
+	// browser fullscreen, Escape is confiscated to hand the cursor back and never
+	// delivers a keydown to the page (browser behaviour, not a bug — see the
+	// click below for the same reason). Escape is still accepted as a silent
+	// duplicate: it works when nothing confiscates it.
 	else if ((action === 'escape' || action === 'enter') && flightEnd.out.exitArmed) finishSession();
-	// #253 : REDEPLOY, clavier seulement (comme les touches banc ci-dessus) —
-	// la manette garde son geste « n'importe quel bouton déconnecte » plus bas.
-	// FIELD only : au banc 'r' respawn déjà (garde tout en haut de ce handler).
+	// #253: REDEPLOY, keyboard only (like the bench keys above) — the pad keeps
+	// its "any button disconnects" gesture below. FIELD only: at the bench 'r'
+	// already respawns (the guard at the very top of this handler).
 	else if (action === 'respawn' && flightEnd.out.exitArmed && !flightExit.busy) finishSession({ redeploy: true });
 };
 
-// #253 : clé sessionStorage portant la zone à rejouer d'un REDEPLOY à travers
-// le rechargement de page que finishSession() déclenche. sessionStorage et non
-// localStorage : ne doit pas survivre à la fermeture de l'onglet, et ne doit
-// jamais fuiter vers un autre onglet ouvert sur une zone différente.
+// #253: the sessionStorage key carrying a REDEPLOY's zone across the page
+// reload finishSession() triggers. sessionStorage and not localStorage: it must
+// not survive the tab closing, and must never leak into another tab open on a
+// different area.
 const QUICK_RESTART_KEY = 'fpvtp.quickRestart';
 
 function consumeQuickRestart() {
@@ -1718,44 +1714,44 @@ renderer.domElement.addEventListener('click', () => {
 	// Safety net for ?scene=<slug>, which skips the menu and therefore skips the
 	// only other user gesture we get. start() is idempotent.
 	audio.start();
-	// [ENTER] DISCONNECT au clic : un clic est un geste garanti par la page en
-	// plein écran navigateur, là où Échap ne l'est pas (confisquée pour quitter
-	// le plein écran lui-même — voir le commentaire d'exitPointerLock plus
-	// bas). Un joueur qui vient de crasher plein écran a donc toujours un
-	// moyen de sortir.
+	// [ENTER] DISCONNECT on a click: a click is a gesture the page is guaranteed
+	// in browser fullscreen, where Escape is not (confiscated to leave fullscreen
+	// itself — see the exitPointerLock comment below). A player who has just
+	// crashed in fullscreen therefore always has a way out.
 	if (flightEnd.out.exitArmed && !flightExit.busy) { finishSession(); return; }
-	// Une fois le vol fini, on ne reprend plus le curseur : le reverrouiller
-	// reconfisquerait Échap au navigateur (voir la sortie du pointer lock à la
-	// fermeture de session), et il n'y a plus rien à piloter.
+	// Once the flight is over the cursor is not taken back: re-locking it would
+	// hand Escape back to the browser (see the pointer lock release when the
+	// session closes), and there is nothing left to fly.
 	const flying = flightEnd.phase === FLYING;
 	if (flying && !settings.settingsOpen) renderer.domElement.requestPointerLock();
 });
 
-// PHASE 16 : lit le canvas du composer tel qu'il vient d'être peint —
-// résolution/ratio du capteur cible, OSD drone, dégradation du lien, pluie et
-// brouillard tous déjà dedans, l'overlay DOM FPVTP! jamais dedans. `toBlob`
-// lit le buffer au moment de l'appel, pas besoin de `preserveDrawingBuffer` :
-// appelé synchrone dans la même frame que le rendu, avant tout autre dessin.
+// PHASE 16: reads the composer's canvas exactly as it has just been painted —
+// the target sensor's resolution and aspect, the drone OSD, the link
+// degradation, the rain and the fog all already in it, the FPVTP! DOM overlay
+// never in it. `toBlob` reads the buffer at call time, so no
+// `preserveDrawingBuffer` is needed: it is called synchronously in the same
+// frame as the render, before anything else is drawn.
 async function capturePhoto() {
 	const cap = await lens.capture();
 	if (!cap) return;
 
-	// Au banc, l'image part directement sur le disque de l'opérateur et NULLE
-	// PART ailleurs : ni session, ni serveur, ni journal. « Nothing here is
-	// logged » parle de ce que FPVTP! enregistre, pas de ce que tu emportes —
-	// et dumper une frame dans un fichier est de toute façon le geste juste au
-	// banc, là où le vol de terrain rédige un rapport.
-	// Même geste en reconnaissance : sans session ouverte, session.capturePhoto()
-	// n'aurait nulle part où écrire et échouerait en silence. Ce qu'on emporte
-	// part sur le disque de l'opérateur, comme au banc.
+	// At the bench the image goes straight to the operator's disk and NOWHERE
+	// else: no session, no server, no log. "Nothing here is logged" is about what
+	// FPVTP! records, not about what you take away — and dumping a frame to a
+	// file is the right gesture at a bench anyway, where a field flight writes a
+	// report instead.
+	// The same gesture on reconnaissance: with no session open,
+	// session.capturePhoto() would have nowhere to write and would fail in
+	// silence. What you take away goes to the operator's disk, as at the bench.
 	if (MODE.bench || MODE.live) {
 		const url = URL.createObjectURL(cap.blob);
 		const a = document.createElement('a');
 		a.href = url;
 		a.download = `bench-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
 		a.click();
-		// Révoqué au tour suivant : révoquer tout de suite couperait l'URL
-		// sous le téléchargement que le clic vient à peine de démarrer.
+		// Revoked on a later turn: revoking at once would cut the URL out from
+		// under the download the click has only just started.
 		setTimeout(() => URL.revokeObjectURL(url), 10_000);
 		fpvtpOsd.flashCaptured(null);
 		return;
@@ -1772,20 +1768,20 @@ async function capturePhoto() {
 function respawn() {
 	if (!physics) return;
 
-	// terrain persistent, flights ephemeral : après un crash le drone a disparu,
-	// on ne réapparaît pas en place — retour au terminal. En mode ?scene= (dev)
-	// on garde le respawn local pour ne pas casser le flow de debug.
+	// terrain persistent, flights ephemeral: after a crash the drone is gone, and
+	// you do not reappear on the spot — back to the terminal. In ?scene= mode
+	// (dev) the local respawn is kept so as not to break the debug flow.
 	//
-	// Et au banc (PHASE 26), où il n'y a rien à perdre : NO LOSS. La règle de
-	// FIELD n'est pas assouplie, elle ne s'applique simplement pas — il n'y a
-	// aucune machine distante ici, donc aucune machine distante à perdre.
+	// And at the bench (PHASE 26), where there is nothing to lose: NO LOSS.
+	// FIELD's rule is not relaxed, it simply does not apply — there is no remote
+	// machine here, so no remote machine to lose.
 	if (crashed && !OPTS.scene && !MODE.bench) { location.href = location.pathname; return; }
 	fpvtpOsd.setSessionStatus(null);
 	controller.arm();
-	// En vol libre il n'y a pas de manifeste : ni bbox pour tirer un point, ni
-	// spawn à recopier. generateEntryState() y planterait sur manifest.spawn.
-	// physics.reset() est exactement ce que bootLive() utilise — il renvoie au
-	// spawn ET re-prime les moteurs, ce que le constructeur seul ne fait pas.
+	// In free flight there is no manifest: no bbox to draw a point from, no spawn
+	// to copy. generateEntryState() would throw there on manifest.spawn.
+	// physics.reset() is exactly what bootLive() uses — it returns to the spawn
+	// AND re-primes the motors, which the constructor alone does not.
 	if (!sceneManifest) {
 		physics.reset();
 	} else {
@@ -1798,13 +1794,13 @@ function respawn() {
 		}));
 	}
 	link.reset();
-	// La machine vient d'être remise en état : un retournement en cours n'a plus
-	// d'objet, et son couple ne doit pas survivre au saut.
+	// The machine has just been put right: a flip in progress has no object any
+	// more, and its torque must not survive the jump.
 	turtle.reset();
-	// Pour l'HYSTÉRÉSIS, et pour elle seule : sans ce reset, zoneOf() jugerait
-	// la première frame d'après-respawn à l'aune de la zone d'avant. La perte
-	// sur le lien, elle, est déjà partie — link.reset() (juste au-dessus) remet
-	// _terminalLoss à zéro, et fence.update() recalcule lossDb dans la frame.
+	// For the HYSTERESIS, and for it alone: without this reset, zoneOf() would
+	// judge the first post-respawn frame by the previous zone. The link's loss is
+	// already gone — link.reset() (just above) puts _terminalLoss back to zero,
+	// and fence.update() recomputes lossDb within the frame.
 	fence.reset();
 
 	// Neither model was being reset here, and both say in their own comments
@@ -1820,18 +1816,18 @@ function respawn() {
 	// A new life starts back behind the goggles (D11): the view is a state OF
 	// the flight, not of the session.
 	setView('fpv');
-	// Le ciel se retire aussi : les ambiants d'avant le respawn étaient nés
-	// autour d'un point de vol qui n'existe plus (issue #250).
+	// The sky withdraws too: the ambients from before the respawn were born
+	// around a flight point that no longer exists (issue #250).
 	ambient?.reset();
-	// Et l'essaim se repose sur le joueur : son sillage vient d'être invalidé
-	// par le même saut (issue #29).
+	// And the swarm settles back onto the player: its wake has just been
+	// invalidated by the same jump (issue #29).
 	swarm?.reset(physics.position);
 }
 
 function togglePause(force) {
-	// Espace pendant le Control Vector (introFrozen) arrive quand même ici —
-	// le gel arrête la physique, pas les touches. Ignorer la bascule
-	// manuelle sur cette fenêtre évite d'atterrir en vol déjà en pause.
+	// Space during the Control Vector (introFrozen) still arrives here — the
+	// freeze stops the physics, not the keys. Ignoring the manual toggle over
+	// that window avoids landing in a flight that is already paused.
 	if (force === undefined && performance.now() - flightStartTime < PAUSE_GUARD_MS) return;
 	paused = force ?? !paused;
 	// Coming back should not replay the wall-clock gap as one giant physics step.
@@ -1921,8 +1917,8 @@ function yawOf(q) {
 	return Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.y * q.y + q.z * q.z));
 }
 
-// Roulis et tangage, pour l'horizon artificiel de l'OSD drone. Même convention
-// de quaternion que yawOf juste au-dessus.
+// Roll and pitch, for the drone OSD's artificial horizon. The same quaternion
+// convention as yawOf just above.
 function rollOf(q) {
 	return Math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.z * q.z + q.x * q.x));
 }
@@ -1930,10 +1926,10 @@ function pitchOf(q) {
 	return Math.asin(Math.max(-1, Math.min(1, 2 * (q.w * q.x - q.y * q.z))));
 }
 
-// Latitude/longitude affichées par l'OSD des cibles qui ont un GPS. Approximation
-// plate, ce qui est très largement suffisant sur une scène de deux kilomètres.
-// Une scène sans origine connue n'a pas de coordonnées : l'OSD affiche alors
-// des tirets plutôt qu'un point plausible au large de l'Afrique.
+// The latitude/longitude shown by the OSD of targets that have GPS. A flat
+// approximation, which is more than enough over a two-kilometre scene. A scene
+// with no known origin has no coordinates: the OSD then shows dashes rather than
+// a plausible point off the coast of Africa.
 function latLonOf(p) {
 	const o = sceneManifest?.origin;
 	if (!o || !Number.isFinite(o.latitude) || !Number.isFinite(o.longitude)) {
@@ -1943,18 +1939,18 @@ function latLonOf(p) {
 	return { lat, lon: o.longitude + p.x / (111320 * Math.cos(lat * Math.PI / 180)) };
 }
 
-// La position géographique du drone pour la couverture (issue #245), cuit ou
-// live, un seul chemin de sortie : { lat, lon }, éventuellement NaN — c'est
-// session.feed() qui ignore un résultat non fini.
+// The drone's geographic position for coverage (issue #245), baked or live, one
+// single way out: { lat, lon }, possibly NaN — session.feed() is what ignores a
+// non-finite result.
 //
-// - terrain cuit : latLonOf(), l'approximation plate déjà jugée suffisante sur
-//   une scène de deux kilomètres ;
-// - live : la même conversion ENU → ECEF → géodésique que la fenêtre de
-//   streaming fait déjà chaque frame plus haut (#182 pour la garde NaN, qui
-//   vit côté session).
+// - baked terrain: latLonOf(), the flat approximation already judged sufficient
+//   over a two-kilometre scene;
+// - live: the same ENU -> ECEF -> geodetic conversion the streaming window
+//   already does every frame above (#182 for the NaN guard, which lives on the
+//   session side).
 //
-// Appelée SEULEMENT aux échantillons (5 Hz) : session.feed() reçoit la fonction,
-// pas la valeur.
+// Called ONLY at the samples (5 Hz): session.feed() receives the function, not
+// the value.
 function droneGeo(p) {
 	if (liveWindow) {
 		const ecef = localEnuToEcef(p, liveWindow.originEcef, liveWindow.originBasis);
@@ -1973,9 +1969,9 @@ function simFrozen() { return paused || introFrozen || settings.settingsOpen || 
 // the mix has saturated, and the rain can recolour the sky at a density the
 // fog has already settled on.
 let lastDensity = -1;
-// La même extinction, sans le sentinel -1 : c'est elle que les drones ambiants
-// (#250) recopient dans leur propre matériau, qui duplique délibérément la
-// formule de TileMaterial.js.
+// The same extinction, without the -1 sentinel: this is the one the ambient
+// drones (#250) copy into their own material, which deliberately duplicates
+// TileMaterial.js's formula.
 let lastFogDensity = 0;
 let lastSkyHex = -1;
 let lastDim = 1;
@@ -1989,10 +1985,10 @@ let lensShutter = 0;
 // plane of the lens. Written once a frame into the same object rather than
 // allocated, like every other per-frame vector here.
 const drift = { x: 0, y: 0 };
-// L'état du soleil entre deux frames, et les vecteurs réutilisés plutôt que
-// réalloués — même règle que `drift` juste au-dessus.
-let sunVisible = 1;    // 0..1, occlusion lissée
-let sunInFrame = 0;    // 0..1, ce que le posemètre voit du disque
+// The sun's state between frames, and the vectors reused rather than
+// reallocated — the same rule as `drift` just above.
+let sunVisible = 1;    // 0..1, smoothed occlusion
+let sunInFrame = 0;    // 0..1, how much of the disc the light meter sees
 const _sunWorld = new THREE.Vector3();
 const _sunView = new THREE.Vector3();
 const _camDir = new THREE.Vector3();
@@ -2016,10 +2012,10 @@ function frame() {
 	const dt = Math.min((now - lastTime) / 1000, 0.25);
 	lastTime = now;
 
-	// `frozen` d'ABORD : il conditionne la lecture des entrées (issue #33). Le
-	// gaz clavier est un intégrateur, et l'intégrer pendant que la simulation
-	// est gelée arme le drone à l'insu du joueur — taper dans le panneau de
-	// remappage suffisait à mettre le gaz à fond.
+	// `frozen` FIRST: it governs how the inputs are read (issue #33). The
+	// keyboard throttle is an integrator, and integrating it while the
+	// simulation is frozen arms the drone behind the player's back — typing in
+	// the remap panel was enough to run the throttle to full.
 	const frozen = simFrozen();
 
 	// The drone's OSD is mounted BEFORE the flight (armFlight()), so it is
@@ -2035,54 +2031,53 @@ function frame() {
 	const sticks = window.__simInput ?? input.update(dt, { frozen });
 	audio.setMuted(frozen);
 
-	// Le STREAMING n'est pas de la simulation : il continue en pause, panneau
-	// de réglages ouvert ou intro figée (#31). Sous le `if (!frozen)` ci-dessus,
-	// une pause gelait `processLiveNodeWork()` : la file de builds restait
-	// pleine et le monde restait à moitié construit tant qu'on ne reprenait
-	// pas. Mesuré : 478 builds en file bloqués, 79 % du sol absent pendant
-	// TOUTE la pause, tout revenu 1,2 s après la reprise. Or c'est justement
-	// en pause qu'on regarde le paysage — et qu'on le photographie. Rien
-	// là-dedans ne fait avancer le monde : le drain pose des meshes et des
-	// colliders sur un monde qui ne step pas, et le recalcul de fenêtre part de
-	// la position du drone, immobile en pause (update() sort aussitôt sous
-	// REFRESH_THRESHOLD_M). Le filet anti-trou (#189), lui, reste gelé : il
-	// fait un respawn, ce qu'une pause ne doit jamais déclencher.
+	// STREAMING is not simulation: it carries on while paused, with the settings
+	// panel up or the intro frozen (#31). Under the `if (!frozen)` above, a pause
+	// froze `processLiveNodeWork()`: the build queue stayed full and the world
+	// stayed half built until play resumed. Measured: 478 queued builds blocked,
+	// 79 % of the ground missing for the WHOLE pause, all of it back 1.2 s after
+	// resuming. And a pause is exactly when you look at the landscape — and
+	// photograph it. Nothing in here advances the world: the drain puts meshes
+	// and colliders onto a world that is not stepping, and the window recompute
+	// starts from the drone's position, which is still while paused (update()
+	// returns at once under REFRESH_THRESHOLD_M). The anti-hole net (#189) does
+	// stay frozen: it does a respawn, which a pause must never trigger.
 	if (liveWindow) {
-		// Étale le travail des nœuds reçus/libérés sous budget (#184).
+		// Spreads the work of received/released nodes under budget (#184).
 		processLiveNodeWork();
-		// Ne bloque jamais la frame de rendu : la fenêtre se recalcule en
-		// tâche de fond, la frame courante vole avec ce qui est déjà là.
-		// physics.position (mètres ENU locaux) -> lat/lon : inverse exact
-		// de la conversion que build-node.mjs fait dans l'autre sens.
+		// Never blocks the render frame: the window recomputes in the
+		// background, and the current frame flies with what is already there.
+		// physics.position (local ENU metres) -> lat/lon: the exact inverse of
+		// the conversion build-node.mjs does the other way.
 		const dronePos = physics.position;
 		const droneEcef = localEnuToEcef(dronePos, liveWindow.originEcef, liveWindow.originBasis);
 		const droneGeo = ecefToGeodetic(...droneEcef);
-		// Garde (#182) : une position dégénérée (drone passé sous le terrain
-		// pendant une chute, mesuré à y=−2465 m à Versailles) fait rendre
-		// NaN à ecefToGeodetic — et update({lat:NaN}) avorte alors TOUTE la
-		// fenêtre en silence (zone NaN → 0 nœud désiré → tout libéré), un
-		// gel permanent du streaming. Mieux vaut geler la FENÊTRE sur sa
-		// dernière position saine que la vider.
+		// A guard (#182): a degenerate position (the drone gone under the
+		// terrain during a fall, measured at y=-2465 m at Versailles) makes
+		// ecefToGeodetic return NaN — and update({lat:NaN}) then aborts the
+		// WHOLE window in silence (a NaN zone -> 0 desired nodes -> everything
+		// released), a permanent freeze of the streaming. Better to freeze the
+		// WINDOW on its last sane position than to empty it.
 		if (Number.isFinite(droneGeo.lat) && Number.isFinite(droneGeo.lon)) {
-			// Rien n'attend cette promesse (c'est le but : la frame ne bloque
-			// pas dessus) — sans .catch(), un échec réseau ou un traverse qui
-			// lève devient une unhandled promise rejection silencieuse.
-			// Observabilité seulement : pas de retry ici (ticket de suivi).
+			// Nothing awaits this promise (that is the point: the frame does not
+			// block on it) — without .catch(), a network failure or a traverse
+			// that throws becomes a silent unhandled promise rejection.
+			// Observability only: no retry here (follow-up ticket).
 			liveWindow.update({ lat: droneGeo.lat, lon: droneGeo.lon })
-				.catch((err) => console.warn('[rocktree] fenêtre de streaming : échec du recalcul', err));
+				.catch((err) => console.warn('[rocktree] streaming window: recompute failed', err));
 		}
 	}
 
 	let crashedThisFrame = false;
 	let peakImpact = 0;
 	if (!frozen) {
-		// Touchdown : en airmode un quad ne se pose pas tout seul — les moteurs
-		// tournent au ralenti, la moindre inclinaison au contact le renvoie en
-		// l'air, et une sphère de collision qui a de la vitesse angulaire roule
-		// sans fin (pas de glissement au point de contact → la friction ne la
-		// freine pas). Le vent, lui, continue de le pousser. Quand le pilote a
-		// coupé les gaz et que le drone est au ras du sol, on coupe les moteurs
-		// et physics.setGroundHold fige le reste : plus de vent, plus de dérive.
+		// Touchdown: in airmode a quad does not settle on its own — the motors
+		// idle, the slightest tilt on contact sends it back up, and a collision
+		// sphere with angular velocity rolls for ever (no sliding at the contact
+		// point, so friction does not slow it). The wind, meanwhile, keeps
+		// pushing it. When the pilot has cut the throttle and the drone is
+		// skimming the ground, the motors are cut and physics.setGroundHold
+		// pins the rest: no more wind, no more drift.
 		// The "throttle cut" threshold is the flown family's, not a constant:
 		// see idleThrottle() in quad.js. This block survives the removal of
 		// landing (D9, 2026-09-08) — it is the physical feel of resting on the
@@ -2097,11 +2092,10 @@ function frame() {
 		let steps = 0;
 		while (accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
 			const { motors } = controller.update(sticks, physics, FIXED_STEP);
-			// Le retournement assisté (#105). Il lit le `stuck` de la frame
-			// PRÉCÉDENTE — flightEnd.update() tourne après cette boucle — et
-			// c'est sans conséquence : l'immobilité se mesure sur quatre
-			// secondes, une frame de retard ne la déplace pas. Jamais sur une
-			// épave : une machine morte ne se retourne pas.
+			// Assisted turtle mode (#105). It reads the PREVIOUS frame's `stuck`
+			// — flightEnd.update() runs after this loop — and that is harmless:
+			// stillness is measured over four seconds, and one frame of lag does
+			// not move it. Never on a wreck: a dead machine does not flip.
 			const q = physics.rotation;
 			const up = rotateVec(q, 0, 1, 0);
 			turtle.update({
@@ -2115,37 +2109,37 @@ function frame() {
 				maxTorque: maxRollTorque(physics.profile),
 			});
 			turtlePressed = false;
-			// Un retournement n'est pas un vol : les moteurs se taisent pendant
-			// que le couple fait le travail. Et le maintien au sol lâche —
-			// l'amortissement qui empêche la sphère de rouler sans fin
-			// combattrait exactement le mouvement qu'on demande.
+			// A flip is not a flight: the motors go quiet while the torque does
+			// the work. And the ground hold releases — the damping that stops
+			// the sphere rolling for ever would fight exactly the movement being
+			// asked for.
 			if (turtle.out.active) {
 				motors.fill(0);
 				physics.setGroundHold(false);
 			}
 			if (touchdown && !turtle.out.active) motors.fill(0);
-			// La clôture lit la position de CE pas, et sa force part DANS ce
-			// pas : physics.step() commence par resetForces(), un addForce
-			// appelé d'ici serait effacé sans jamais être intégré. D'où le
-			// troisième paramètre plutôt qu'un appel séparé.
+			// The fence reads THIS step's position, and its force leaves IN this
+			// step: physics.step() begins with resetForces(), so an addForce
+			// called from here would be wiped without ever being integrated.
+			// Hence the third parameter rather than a separate call.
 			fence.update(physics.position);
 			let fenceForce = null;
-			// `!linkDead` : une épave n'a plus de failsafe. Sans ça le rappel
-			// continue de pousser un drone désarmé — mesuré, il ramenait
-			// l'épave de 71 m dehors à 239 m dedans, à 22 m/s, et faisait
-			// retomber `over` derrière elle (#150). L'écran ne le montrait pas
-			// (linkDead force DEAD_LINK au rendu), mais le monde le faisait.
+			// `!linkDead`: a wreck has no failsafe left. Without this the push
+			// keeps shoving a disarmed drone — measured, it carried the wreck
+			// from 71 m outside to 239 m inside, at 22 m/s, and dropped `over`
+			// behind it (#150). The screen did not show it (linkDead forces
+			// DEAD_LINK at render time), but the world did it.
 			//
-			// Aucun risque de couper le rappel trop tôt : flightEnd.update()
-			// tourne APRÈS cette boucle, donc la frame où l'on franchit
-			// applique encore sa force, et linkDead ne se lève que dans la
-			// même frame où main.js désarme le contrôleur. En retard d'une
-			// frame, jamais en avance.
+			// No risk of cutting the push too early: flightEnd.update() runs
+			// AFTER this loop, so the frame in which the boundary is crossed
+			// still applies its force, and linkDead only rises in the same frame
+			// where main.js disarms the controller. One frame late, never
+			// early.
 			if (fence.out.zone !== FENCE_OK && !flightEnd.out.linkDead) {
-				// push est une ACCÉLÉRATION (m/s², plafonnée à A_MAX) : Rapier
-				// veut des newtons, donc × la masse réelle de l'appareil — pas
-				// celle du profil par défaut. Un drone lourd est rappelé aussi
-				// fermement qu'un léger.
+				// push is an ACCELERATION (m/s^2, capped at A_MAX): Rapier wants
+				// newtons, so multiply by the machine's REAL mass — not the
+				// default profile's. A heavy drone is pushed back as firmly as a
+				// light one.
 				const a = fence.out.push, m = physics.profile.mass;
 				_fenceForce.x = a.x * m; _fenceForce.y = a.y * m; _fenceForce.z = a.z * m;
 				fenceForce = _fenceForce;
@@ -2160,10 +2154,10 @@ function frame() {
 						const dx = dronePos.x - centerLocal.x, dz = dronePos.z - centerLocal.z;
 						const len = Math.hypot(dx, dz) || 1;
 						const m = physics.profile.mass;
-						// fenceForce peut déjà être posé par le rappel de zone
-						// ci-dessus (mode scène) ; en mode ?live= fence est toujours
-						// NOMINAL (pas de Geofence construite), donc fenceForce est
-						// encore null ici — les deux rappels ne se cumulent jamais.
+						// fenceForce may already have been set by the area push
+						// above (scene mode); in ?live= mode the fence is always
+						// NOMINAL (no real Geofence built), so fenceForce is still
+						// null here — the two pushes never add up.
 						_fenceForce.x = -(dx / len) * a * m;
 						_fenceForce.z = -(dz / len) * a * m;
 						_fenceForce.y = 0;
@@ -2173,21 +2167,21 @@ function frame() {
 			}
 			const impact = physics.step(motors, FIXED_STEP, fenceForce,
 				turtle.out.active ? turtle.out.torque : null);
-			// NO LOSS (PHASE 26) : au banc le choc reste un choc — la physique
-			// ne se négocie pas, la machine encaisse, culbute et s'arrête. Mais
-			// rien n'est perdu, donc rien ne meurt : ni l'image, ni le son, ni
-			// la session. On repart d'une touche.
+			// NO LOSS (PHASE 26): at the bench an impact is still an impact — the
+			// physics is not negotiable, the machine takes it, tumbles and stops.
+			// But nothing is lost, so nothing dies: not the picture, not the
+			// sound, not the session. One key starts you again.
 			//
-			// C'est bien la règle de FIELD qui ne s'applique pas, et non une
-			// règle assouplie : « le drone est détruit » suppose un drone
-			// distant qui appartient à quelqu'un, et il n'y en a aucun ici.
+			// It really is FIELD's rule that does not apply, not a relaxed rule:
+			// "the drone is destroyed" presupposes a remote drone that belongs to
+			// somebody, and there is none here.
 			if (impact > 0 && !flightEnd.out.linkDead && !crashed && !MODE.bench) {
 				const r = physics.rotation;
 				if (impact > crashThreshold(r)) {
 					crashedThisFrame = true;
 					crashed = true;
-					// Le drone est détruit. La session se ferme sur CRASHED — le
-					// terrain, lui, reste. terrain persistent, flights ephemeral.
+					// The drone is destroyed. The session closes on CRASHED — the
+					// terrain stays. terrain persistent, flights ephemeral.
 					fpvtpOsd.setSessionStatus('TARGET LOST<small>SESSION TERMINATED</small>', 'lost');
 					session.end('CRASHED').then((s) => s && console.log('[session] CRASHED', s));
 					endOfFirstFlight();
@@ -2199,27 +2193,28 @@ function frame() {
 		}
 		if (steps === MAX_STEPS_PER_FRAME) accumulator = 0;
 
-		// UNE fois par FRAME, hors de la boucle d'accumulation (#187) : logé
-		// dans la boucle, ce bloc tournait une fois par STEP physique — en
-		// rattrapage (12-15 steps/frame après une frame longue) il s'exécutait
-		// 12-15 fois dans la même frame. La poussée de clôture, elle, reste par
-		// step : elle dépend de la position, qui change à chaque step. Le drain
-		// et le recalcul de fenêtre, eux, ont quitté ce garde (#31) : voir le
-		// bloc `if (liveWindow)` plus haut, hors de `!frozen`.
+		// ONCE per FRAME, outside the accumulation loop (#187): inside the loop
+		// this block ran once per physics STEP — while catching up (12-15
+		// steps/frame after a long frame) it executed 12-15 times in the same
+		// frame. The fence push does stay per step: it depends on the position,
+		// which changes at every step. The drain and the window recompute have
+		// left this guard (#31): see the `if (liveWindow)` block above, outside
+		// `!frozen`.
 		if (liveWindow && !frozen) {
-			// Filet anti-trou (#189) : le terrain Google Earth a de VRAIS trous —
-			// les nœuds absents (404, résultat normal du protocole) ne produisent
-			// aucune géométrie, l'eau du Vieux-Port de Marseille en est un de
-			// plusieurs hectares. Un drone qui y glisse ou y vole tombe SOUS la
-			// carte pour toujours, et la fenêtre le suit en chargeant/déchargeant
-			// en boucle (mesuré : le « chargement impossible »). Critère : chute
-			// franche (vy < −20, ~2 s de chute libre) ET rien en dessous jusqu'à
-			// −6 km — une vraie vallée a toujours du sol dessous, pas un trou.
-			// L'eau devient donc un crash-respawn, cohérent avec le FPV réel.
+			// The anti-hole net (#189): Google Earth terrain has REAL holes —
+			// missing nodes (404, a normal result of the protocol) produce no
+			// geometry at all, and the water of Marseille's Vieux-Port is one
+			// several hectares across. A drone that slides or flies into one
+			// falls UNDER the map for ever, and the window follows it,
+			// loading and unloading in a loop (measured: the "impossible
+			// loading"). The criterion: a clean fall (vy < -20, ~2 s of free
+			// fall) AND nothing below down to -6 km — a real valley always has
+			// ground under it, a hole does not. Water therefore becomes a
+			// crash-respawn, which is consistent with real FPV.
 			{
 				const p = physics.position;
 				if (physics.body.linvel().y < -20 && physics.groundBelow(p.x, p.y + 2, p.z, 6000) === null) {
-					console.warn('[rocktree] drone tombé dans un trou de la carte (nœud absent) — respawn');
+					console.warn('[rocktree] drone fell into a hole in the map (missing node) — respawn');
 					physics.reset();
 					flightEnd.reset();
 					turtle.reset();
@@ -2227,31 +2222,30 @@ function frame() {
 			}
 		}
 
-		// Un seul raycast de sol par frame de physique. Gelé, rien n'a bougé :
-		// la dernière valeur de groundY reste correcte, inutile de refaire un
-		// test plein maillage pour rien.
+		// One ground raycast per physics frame. Frozen, nothing has moved: the
+		// last groundY stays correct, and there is no point redoing a full-mesh
+		// test for nothing.
 		const fp = physics.position;
 		groundY = physics.groundBelow(fp.x, fp.y, fp.z);
 
-		// L'acoustique du lieu suit la géométrie réelle (issue #122). Elle relit
-		// la rosace que le pas de physique vient de lancer pour l'ombre de vent :
-		// aucun rayon supplémentaire. Gelé, on ne touche à rien — le lieu n'a
-		// pas changé, et une réverbération qui dérive pendant une pause
-		// s'entendrait.
+		// The acoustics of the place follow the real geometry (issue #122). They
+		// re-read the rosette the physics step has just cast for the wind shadow:
+		// no extra rays. Frozen, nothing is touched — the place has not changed,
+		// and a reverb drifting during a pause would be audible.
 		space.update(physics.probe);
 
 		placeCamera(dt);
 	}
 
-	// Le drone du joueur (issue #264). APRÈS la caméra, comme les ambiants, et
-	// AVANT eux : les deux exemplaires sont du même bois, autant les éclairer
-	// dans le même souffle. Gelé, dt = 0 — le temps du shader ne dérive pas
-	// pendant une pause.
+	// The player's drone (issue #264). AFTER the camera, like the ambients, and
+	// BEFORE them: both are cut from the same cloth, so they may as well be lit
+	// in the same breath. Frozen, dt = 0 — the shader's time does not drift
+	// during a pause.
 	//
-	// Le soleil, l'obscurcissement, le brouillard et la résolution sont
-	// EXACTEMENT ceux passés aux ambiants juste en dessous : une machine qui
-	// s'assombrirait autrement que celles qui l'entourent se verrait.
-	// Muté, pas remplacé : la vue embarquée relit ce champ à chaque frame.
+	// The sun, the dimming, the fog and the resolution are EXACTLY those passed
+	// to the ambients just below: a machine that darkened differently from the
+	// ones around it would show.
+	// Mutated, not replaced: the onboard view re-reads this field every frame.
 	playerCam.fov = camera.fov;
 	playerCam.aspect = camera.aspect;
 	playerDrone?.update({
@@ -2265,10 +2259,10 @@ function frame() {
 		resolution: ambientRes,
 	});
 
-	// Les drones ambiants (issue #250). APRÈS la caméra : ils naissent hors du
-	// champ, donc le modèle veut l'orientation de CETTE frame, pas celle de la
-	// précédente. Gelé, dt = 0 et les voix se taisent — mais update() tourne
-	// quand même, sans quoi setMuted() ne viserait plus aucun AudioParam.
+	// The ambient drones (issue #250). AFTER the camera: they are born outside
+	// the frame, so the model wants THIS frame's orientation, not the previous
+	// one's. Frozen, dt = 0 and the voices go quiet — but update() still runs,
+	// without which setMuted() would no longer aim at any AudioParam.
 	if (ambient) {
 		if (liveWindow) {
 			const c = liveWindow.windowCenterLocal;
@@ -2283,26 +2277,26 @@ function frame() {
 			top: sceneManifest ? sceneManifest.bbox.max[1] + 50 : physics.position.y + 300,
 			span: sceneManifest ? (sceneManifest.bbox.max[1] - sceneManifest.bbox.min[1]) + 100 : 3000,
 			fogColor: scene.background, fogDensity: lastFogDensity, sun,
-			// `cloud.dim`, pas `sun.ambient` : les ambiants s'assombrissent
-			// comme les tuiles (setDim plus bas). L'exposition absolue est le
-			// métier de l'AGC de la lentille, pas celui d'un matériau.
+			// `cloud.dim`, not `sun.ambient`: the ambients darken like the tiles
+			// (setDim below). Absolute exposure is the lens AGC's business, not
+			// a material's.
 			dim: cloud.dim,
 			resolution: ambientRes,
 		});
 	}
 
-	// L'essaim (issue #29). Après le bloc caméra comme les ambiants, et avant
-	// lens.render : sa sortie traverse la lentille comme tout le reste. Il ne
-	// touche à RIEN — pas de corps Rapier, pas de collision, pas de cible, pas
-	// d'usure ; gelé, dt = 0 et le modèle ne fait pas un pas.
+	// The swarm (issue #29). After the camera block like the ambients, and before
+	// lens.render: its output goes through the lens like everything else. It
+	// touches NOTHING — no Rapier body, no collision, no target, no wear; frozen,
+	// dt = 0 and the model does not take a step.
 	if (swarm?.model) {
 		if (liveWindow) {
 			swarmFence.center = liveWindow.windowCenterLocal;
 			swarmFence.radius = liveWindow.nearestTrustedRadius();
 		}
 		if (!frozen) swarmClock += dt;
-		// Gelé, dt = 0 et les voix se taisent — mais update() tourne quand
-		// même, sans quoi setMuted() ne viserait plus aucun AudioParam.
+		// Frozen, dt = 0 and the voices go quiet — but update() still runs,
+		// without which setMuted() would no longer aim at any AudioParam.
 		swarm.setMuted(frozen);
 		swarm.update({
 			dt: frozen ? 0 : dt,
@@ -2315,8 +2309,8 @@ function frame() {
 		});
 	}
 
-	// La fin de vol décide seule : ce qui s'affiche, quand l'image meurt, quand
-	// la session se ferme. main.js ne fait que l'alimenter et obéir.
+	// The end of flight decides on its own: what is shown, when the picture dies,
+	// when the session closes. main.js only feeds it and obeys.
 	//
 	// Called OUTSIDE the frozen block (final review, fix 1): `closes` is an
 	// event only the next update() drains, and if the sim freezes (C or Space)
@@ -2330,53 +2324,55 @@ function frame() {
 		speed: Math.hypot(fv.x, fv.y, fv.z),
 		angularSpeed: Math.hypot(fw.x, fw.y, fw.z),
 		crashed: crashedThisFrame,
-		// Sortie de zone : même phase que le crash, autre table de texte
-		// (FENCE_TIMELINE). Le verdict de session reste CRASHED.
+		// Leaving the area: the same phase as a crash, a different text table
+		// (FENCE_TIMELINE). The session verdict stays CRASHED.
 		//
-		// Jamais au banc : la clôture y avertit et résiste — l'OSD passe en
-		// CAUTION puis HOLD, le rappel pousse — mais elle n'exécute plus. Un
-		// pilote qui insiste sort et se retrouve au-dessus de rien, ce qui est
-		// une conséquence honnête du terrain, pas une sanction.
+		// Never at the bench: the fence there warns and resists — the OSD goes to
+		// CAUTION then HOLD, the push pushes — but it no longer carries out the
+		// sentence. A pilot who insists gets out and finds themselves over
+		// nothing, which is an honest consequence of the terrain, not a
+		// punishment.
 		outOfZone: MODE.bench ? false : fence.out.over,
-		// La coupure volontaire du lien (#216) : K tenue deux secondes. Sans
-		// elle, un drone coincé dans une façade — ni pose reconnue, ni crash —
-		// ne fermait jamais sa session, et RIEN ne rendait la main au terminal.
+		// Deliberately cutting the link (#216): K held for two seconds. Without
+		// it, a drone stuck in a facade — neither a recognised landing nor a
+		// crash — never closed its session, and NOTHING handed control back to
+		// the terminal.
 		//
-		// Jamais au banc : R y remet la machine en état, il n'y a aucune
-		// machine distante à perdre ni aucune session à clore. La reconnaissance
-		// FIELD, elle, l'a — elle vole une vraie machine sur un vrai terrain.
+		// Never at the bench: R there puts the machine right, there is no remote
+		// machine to lose and no session to close. FIELD reconnaissance does have
+		// it — it flies a real machine over real terrain.
 		//
-		// Lue en direct plutôt que par onAction : un maintien n'est pas un
-		// appui, et input.js ne connaît aucun mode de jeu (il n'a donc pas à
-		// savoir que cette touche existe ici et pas au banc).
+		// Read live rather than through onAction: a hold is not a press, and
+		// input.js knows no game mode (so it has no business knowing this key
+		// exists here and not at the bench).
 		cutHeld: !MODE.bench && input.isHeld('cutLink'),
 	});
-	// Gardé sur ce que la machine a réellement accepté (linkDead), pas sur
+	// Guarded on what the machine actually accepted (linkDead), not on
 	// crashedThisFrame (final review, bonus): an impact taken after the end of
 	// the flight must not replay the death of the picture over the end screen.
 	if (flightEnd.out.linkDead) {
-		// Le drone est détruit : les moteurs se taisent, donc le son aussi —
-		// audio.js suit le régime moteur, il n'y a rien à couper à la main.
-		// La musique, elle, ne suit rien : on la coupe explicitement, ici et
-		// pas à `closes`, pour qu'elle meure À L'INSTANT DU CHOC, avec l'image.
-		// Attendre la ligne « LINK LOST » (1,6 s) laisserait la musique jouer
-		// par-dessus l'épave qui roule (issue #122).
+		// The drone is destroyed: the motors go quiet, so the sound does too —
+		// audio.js follows the motor speeds, there is nothing to cut by hand.
+		// The music follows nothing, so it is cut explicitly, here and not at
+		// `closes`, so it dies AT THE MOMENT OF IMPACT, with the picture.
+		// Waiting for the "LINK LOST" line (1.6 s) would leave the music playing
+		// over the wreck as it rolls (issue #122).
 		//
-		// Sauf la radio (issue #120) : elle n'est pas la musique de ce vol, elle
-		// est ce que l'opérateur a mis en fond. Un crash ne coupe pas la radio.
+		// Except the radio (issue #120): it is not this flight's music, it is
+		// what the operator put on in the background. A crash does not cut the
+		// radio.
 		if (!radio.owns) music.kill();
-		// L'acoustique se tait avec le drone. Sans cet appel le réseau garde sa
-		// dernière valeur de wet et l'énergie déjà accumulée dans ses boucles :
-		// le bruit continuait dans les menus après la fin de session.
+		// The acoustics go quiet with the drone. Without this call the network
+		// keeps its last wet value and the energy already accumulated in its
+		// loops: the noise carried on into the menus after the session ended.
 		space.silence();
-		// Le ciel se tait avec elle : plus de récepteur, plus de voix (#250).
+		// The sky goes quiet with it: no receiver, no voices (#250).
 		ambient?.silence();
-		// L'essaim aussi (#29) : il continue de voler, mais plus personne ne
-		// l'écoute.
+		// The swarm too (#29): it keeps flying, but nobody is listening any more.
 		swarm?.silence();
 		controller.disarm();
-		// Si le joueur avait coupé la modélisation du lien, il ne verrait
-		// aucune dégradation. La mort de l'image ne se négocie pas.
+		// If the player had turned the link model off, they would see no
+		// degradation at all. The death of the picture is not negotiable.
 		if (!linkForced) {
 			linkForced = true;
 			lens.setLink({ mode: lensLinkMode === LINK_OFF ? LINK_ANALOG : lensLinkMode, severity: 1 });
@@ -2389,13 +2385,12 @@ function frame() {
 		space.silence();
 		session.end(closes).then((s) => s && console.log(`[session] ${closes}`, s));
 		endOfFirstFlight();
-		// Le vol est fini : on rend la souris. Ce n'est pas du confort, c'est ce
-		// qui rend [ENTER] DISCONNECT possible — en pointer lock (a fortiori en
-		// plein écran), le navigateur confisque Échap pour déverrouiller le
-		// curseur et ne délivre aucun keydown à la page. La seule sortie que
-		// l'écran de fin propose serait alors la seule touche qui n'arrive
-		// jamais. Le drone ne répond plus de toute façon : il n'y a plus rien à
-		// piloter à la souris.
+		// The flight is over: the mouse is handed back. This is not comfort, it
+		// is what makes [ENTER] DISCONNECT possible — under pointer lock (all the
+		// more in fullscreen) the browser confiscates Escape to unlock the cursor
+		// and delivers no keydown to the page. The one way out the end screen
+		// offers would then be the one key that never arrives. The drone does not
+		// answer any more anyway: there is nothing left to fly with the mouse.
 		document.exitPointerLock?.();
 	}
 
@@ -2408,10 +2403,10 @@ if (!frozen) {
 	fog.update(dt);
 	cloud.update(dt);
 
-	// Altitude au-dessus du sol, utilisée pour le plafond nuageux.
-	// On la prend par rapport au spawn plutôt que via un raycast :
-	// le relief local est négligeable devant l'altitude de la base des nuages,
-	// et le raycast plus bas dans cette frame n'a pas encore eu lieu.
+	// Altitude above ground, used for the cloud ceiling. Taken relative to the
+	// spawn rather than through a raycast: the local relief is negligible next to
+	// the cloud base's altitude, and the raycast further down this frame has not
+	// happened yet.
 	const altitudeAGL = physics.position.y - spawnY;
 
 	skyDome.setState({
@@ -2425,28 +2420,28 @@ if (!frozen) {
 		night: sun ? sun.night : 0,
 	});
 
-	// Les extinctions s'additionnent :
-	// - brouillard
-	// - pluie
-	// - plafond nuageux
+	// The extinctions add up:
+	// - fog
+	// - rain
+	// - cloud ceiling
 	//
-	// Entrer dans un nuage produit ici un voile uniforme piloté par
-	// l'altitude de la caméra, plutôt qu'un calcul par fragment.
+	// Entering a cloud produces a uniform veil here, driven by the camera's
+	// altitude, rather than a per-fragment computation.
 	const density =
 		fog.density +
 		rain.extinction +
 		cloud.extinctionAt(altitudeAGL);
 
-	// Couleur réellement produite par le dôme cette frame.
+	// The colour the dome actually produced this frame.
 	const sky = skyDome.horizon;
 	const skyHex = sky.getHex();
 
-	// Le soleil avance avec l'horloge de la frame, comme la pluie et
-	// le brouillard. Rien de ce calcul ne redescend dans le modèle de vol.
+	// The sun advances on the frame clock, like the rain and the fog. None of
+	// this computation feeds back into the flight model.
 	if (sun) {
-		// Le soleil est-il masqué par un bâtiment ?
-		// Un seul rayon suffit ici : la sonde de vent effectue déjà
-		// plusieurs tests à ~20,8 Hz.
+		// Is the sun hidden behind a building?
+		// One ray is enough here: the wind probe already runs several tests at
+		// ~20.8 Hz.
 		const sp = physics.position;
 		const far = 2000;
 
@@ -2459,13 +2454,12 @@ if (!frozen) {
 			sp.z + sun.dir.z * far,
 		).blocked ? 1 : 0;
 
-		// Lissage pour éviter le clignotement lorsque le rayon frôle
-		// l'arête d'un bâtiment.
+		// Smoothing, to avoid flicker when the ray grazes a building's edge.
 		sunVisible +=
 			((1 - blocked) - sunVisible) *
 			(1 - Math.exp(-dt / 0.08));
 
-		// Direction du soleil dans l'espace caméra.
+		// The sun's direction in camera space.
 		_sunWorld.set(
 			sun.dir.x,
 			sun.dir.y,
@@ -2478,7 +2472,7 @@ if (!frozen) {
 
 		const cosAngle = axis.dot(_sunWorld);
 
-		// Fraction de présence du soleil dans le champ de vision.
+		// How much of the sun is present in the field of view.
 		const halfFov =
 			(camera.fov * Math.PI / 180) / 2;
 
@@ -2492,14 +2486,14 @@ if (!frozen) {
 
 		sunInFrame = inFrame * sunVisible;
 
-		// Nuit désactivée temporairement (cf. NIGHT_FLOOR_DEG dans sun.js).
-		// `?night=1` la rétablit pour la vérifier.
+		// Night temporarily disabled (see NIGHT_FLOOR_DEG in sun.js). `?night=1`
+		// restores it so it can be checked.
 		sun.update(dt, {
 			sunInFrame,
-			// L'heure du banc emprunte le chemin de ?date= — sun.js ne connaît
-			// que « un instant, un lieu », et n'a pas à apprendre ce qu'est un
-			// banc. benchClock est recalculé quand l'opérateur bouge le curseur
-			// en vol, d'où la variable plutôt qu'un appel par frame.
+			// The bench's time takes the ?date= path — sun.js only knows "an
+			// instant, a place", and has no business learning what a bench is.
+			// benchClock is recomputed when the operator moves the slider in
+			// flight, hence the variable rather than a call per frame.
 			...(MODE.bench ? { date: benchClock } : OPTS.date ? { date: OPTS.date } : {}),
 			...(OPTS.night ? {} : { minElevationDeg: NIGHT_FLOOR_DEG }),
 		});
@@ -2512,22 +2506,21 @@ if (!frozen) {
 
 		setFog(sky, density);
 
-		// Muté, pas remplacé : lens.js lit cet objet à chaque frame.
+		// Mutated, not replaced: lens.js reads this object every frame.
 		scene.background.set(sky);
 
-		// Les streaks sont eux aussi éclairés par le ciel.
+		// The streaks are lit by the sky too.
 		rainfall?.setSky(scene.background);
 	}
 
-	// Même principe que pour le fondu : on ne retouche pas tous les
-	// matériaux de chunk à chaque frame pour une valeur qui évolue
-	// sur plusieurs minutes.
+	// The same principle as the fog: every chunk material is not rewritten each
+	// frame for a value that moves over several minutes.
 	if (cloud.dim !== lastDim) {
 		lastDim = cloud.dim;
 		setDim(cloud.dim);
 	}
 
-	// Les lumières de la ville (#112), même principe throttlé que le fondu.
+	// The city lights (#112), throttled on the same principle as the fog.
 	const night = sun ? sun.night : 0;
 	if (night !== lastNight) {
 		lastNight = night;
@@ -2537,20 +2530,20 @@ if (!frozen) {
 		// Light the air scatters into the barrel rather than onto the subject.
 		// Zero compiles it out of the lens shader entirely.
 		lens.setGlare(fog.glare);
-		// Et la lumière qui vient d'une direction plutôt que de partout. La
-		// projection est faite ici parce que main.js est le seul à connaître la
-		// caméra ; lens.js ne reçoit que des nombres, comme pour setGlare().
+		// And the light that comes from a direction rather than from everywhere.
+		// The projection is done here because main.js is the only one that knows
+		// the camera; lens.js receives numbers only, as for setGlare().
 		if (sun) {
 			_sunView.copy(_sunWorld).applyQuaternion(_camInv.copy(camera.quaternion).invert());
-			// Espace carré de la passe : x est étiré par l'aspect, exactement
-			// comme `base` dans le shader.
-			// L'espace `base` du shader, et pas un espace écran inventé ici.
-			// lens.js:226-227 le définit : base.x = ndc.x · uAspect et
-			// dir = (base.xy · uTanHalf, −1), avec uTanHalf = tan(fovY/2)
-			// (lens.js:761). Donc base = (v.x/−v.z, v.y/−v.z) / tan(fovY/2) —
-			// SANS facteur 0,5 et SANS multiplier une seconde fois par l'aspect,
-			// qui est déjà porté par l'amplitude de base.x. La caméra regarde
-			// vers −Z, d'où le signe.
+			// The pass's square space: x is stretched by the aspect, exactly like
+			// `base` in the shader.
+			// The shader's `base` space, and not a screen space invented here.
+			// lens.js:226-227 defines it: base.x = ndc.x * uAspect and
+			// dir = (base.xy * uTanHalf, -1), with uTanHalf = tan(fovY/2)
+			// (lens.js:761). So base = (v.x/-v.z, v.y/-v.z) / tan(fovY/2) — with
+			// NO factor of 0.5 and WITHOUT multiplying by the aspect a second
+			// time, which base.x's amplitude already carries. The camera looks
+			// down -Z, hence the sign.
 			const front = _sunView.z < 0;
 			const tanHalf = Math.tan(camera.fov * Math.PI / 360);
 			const invZ = 1 / Math.max(1e-4, -_sunView.z);
@@ -2562,65 +2555,64 @@ if (!frozen) {
 				amount: sun.sunAmount * sunVisible,
 				exposure: sun.exposure,
 			});
-			// Le prix du haut gain (starlight, #111) : grain, noirs levés,
-			// désaturation, composés PAR-DESSUS le capteur de la cible. Poussé
-			// seulement quand le gain bouge — le jour, l'appliquant de
-			// applyTargetCamera() reste le seul à parler à setSensor().
+			// The price of high gain (starlight, #111): grain, lifted blacks,
+			// desaturation, composed ON TOP OF the target's sensor. Pushed only
+			// when the gain moves — by day, applyTargetCamera()'s own call stays
+			// the only one that talks to setSensor().
 			if (sun.gain !== lastNightGain) {
 				lastNightGain = sun.gain;
 				lens.setSensor(nightSensor(sun.gain, camSpec?.sensor));
 			}
 		}
 	skyDome.update(camera, frozen ? 0 : dt);
-	// Dôme numérique du bord de fenêtre live (#198) : uniquement en mode
-	// ?live=, hors du bloc météo ci-dessus qui n'existe pas dans ce mode
-	// (voir le commentaire sur rainfall?. juste en dessous).
+	// The digital dome at the live window's edge (#198): only in ?live= mode,
+	// outside the weather block above, which does not exist in that mode (see the
+	// comment on rainfall?. just below).
 	if (fenceDome) {
 		fenceDome.update(frozen ? 0 : dt, {
 			windowCenterLocal: liveWindow?.windowCenterLocal,
 			loadRadiusM: liveWindow?.loadRadiusM(),
 			dronePosLocal: physics.position,
 		});
-		// Le terrain se dissout dans le brouillard près du vrai bord plutôt
-		// que de s'arrêter net (retour "rupture nette" après vérification) —
-		// même ratio que le dôme, courbe différente (fogDensityFor() reste
-		// nulle jusqu'à mi-fenêtre, contrairement à l'opacité du dôme qui
-		// reste perceptible en continu par choix).
+		// The terrain dissolves into fog near the real edge rather than stopping
+		// dead ("hard cut" feedback after checking) — the same ratio as the
+		// dome, a different curve (fogDensityFor() stays nil until halfway out,
+		// unlike the dome's opacity, which stays continuously perceptible by
+		// choice).
 		scene.fog.density = liveFogDensityFor(fenceDome.distanceRatio);
-		// Fondu de bord DU TERRAIN (#202) : contrairement à la ligne
-		// ci-dessus (scalaire global, fonction de la position du DRONE), ce
-		// terme est PAR FRAGMENT et suit le vrai bord de la fenêtre — voir
-		// RocktreeMaterial.js. windowCenterLocal reste null tant que
-		// RocktreeWindow n'a pas posé sa première fenêtre (tout premier
-		// frame) ; uLoadRadiusM reste alors à 0, et le shader s'en sert déjà
-		// comme garde (edgeFadeFor()).
+		// An edge fade on THE TERRAIN (#202): unlike the line above (a global
+		// scalar, a function of the DRONE's position), this term is PER FRAGMENT
+		// and follows the window's real edge — see RocktreeMaterial.js.
+		// windowCenterLocal stays null until RocktreeWindow has set its first
+		// window (the very first frame); uLoadRadiusM then stays at 0, and the
+		// shader already uses that as a guard (edgeFadeFor()).
 		if (liveWindow?.windowCenterLocal) {
 			const { x, z } = liveWindow.windowCenterLocal;
 			liveEdgeUniforms.uWindowCenter.value.set(x, z);
 			const liveRadius = liveWindow.loadRadiusM();
 			liveEdgeUniforms.uLoadRadiusM.value = liveRadius;
-			// La frange suit le rayon (#32) : fixe, elle disparaissait à 2 km.
+			// The fringe follows the radius (#32): fixed, it vanished at 2 km.
 			liveEdgeUniforms.uEdgeFadeM.value = edgeFadeForRadius(liveRadius);
 		}
 		liveEdgeUniforms.uFogDensity.value = scene.fog.density;
-		// Le terrain se dissout dans la clôture elle-même (#107) : même champ,
-		// même seconde, même dominante que le dôme — sinon les deux matières
-		// dérivent l'une par rapport à l'autre et la couture se revoit.
+		// The terrain dissolves into the fence itself (#107): the same field, the
+		// same second, the same cast as the dome — otherwise the two materials
+		// drift apart and the seam shows again.
 		liveEdgeUniforms.uFieldTime.value = fenceDome.fieldTime;
 		liveEdgeUniforms.uHueBias.value = fenceDome.hueBias;
 		liveEdgeUniforms.uEyeY.value = physics.position.y;
 	}
-	// Muraille numérique du bord de carte pré-cuite (#199) : même principe,
-	// géométrie de bbox plutôt que de rayon — voir geofence-dome.js.
+	// The digital wall at a baked map's edge (#199): the same principle, bbox
+	// geometry rather than a radius — see geofence-dome.js.
 	if (geofenceWall) geofenceWall.update(frozen ? 0 : dt, physics.position);
 	// Zero dt while the sim is frozen, which is all it takes to stop the rain
 	// dead on a picture that is not moving.
-	// `?.` : rainfall ne naît que dans finishBoot() (chemin scène) — en mode
-	// ?live= (#168, #170) il reste null, hors périmètre comme la météo (voir
-	// le commentaire sur OPTS.live). Sans la garde, ce code non protégé par
-	// `if (!frozen)` (contrairement au reste de la météo, cf. plus haut) plante
-	// dès la première frame, animation loop comprise (mesuré : Uncaught
-	// TypeError: Cannot read properties of null (reading 'update') at frame()).
+	// `?.`: rainfall is only born in finishBoot() (the scene path) — in ?live=
+	// mode (#168, #170) it stays null, out of scope like the weather (see the
+	// comment on OPTS.live). Without the guard, this code — which is not behind
+	// `if (!frozen)`, unlike the rest of the weather above — throws on the very
+	// first frame, animation loop included (measured: Uncaught TypeError: Cannot
+	// read properties of null (reading 'update') at frame()).
 	rainfall?.update({
 		rain, wind: physics.wind.out, velocity: physics.velocity,
 		shutter: lensShutter, dt: frozen ? 0 : dt, camera,
@@ -2653,16 +2645,16 @@ if (!frozen) {
 	linkState.distance = Math.hypot(p.x - emitter.x, p.y - emitter.y, p.z - emitter.z);
 	linkState.blocked = shadow.blocked;
 	linkState.span = shadow.span;
-	// AVANT update() et pas après : c'est update() qui lit _terminalLoss, donc
-	// l'écrire ensuite coûterait une frame de retard sur la dégradation.
-	// Ce canal court-circuite délibérément la borne de jouabilité #79 : sortir
-	// de la zone n'est pas une nuisance dont on doit pouvoir se relever, c'est
-	// la fin de la session.
+	// BEFORE update() and not after: update() is what reads _terminalLoss, so
+	// writing it afterwards would cost a frame of lag on the degradation.
+	// This channel deliberately bypasses playability bound #79: leaving the area
+	// is not a nuisance you should be able to recover from, it is the end of the
+	// session.
 	link.setTerminalLoss(fence.out.lossDb);
-	// LOOPBACK (PHASE 26) : le flux ne traverse rien, donc rien ne le dégrade.
-	// On nourrit quand même le modèle — distance nulle, aucune occultation —
-	// plutôt que de le contourner : il continue de produire un `out` cohérent
-	// que l'OSD et lens.js lisent sans savoir qu'on est au banc.
+	// LOOPBACK (PHASE 26): the feed crosses nothing, so nothing degrades it. The
+	// model is fed all the same — zero distance, no occlusion — rather than
+	// bypassed: it keeps producing a coherent `out` that the OSD and lens.js read
+	// without knowing they are at the bench.
 	const loopback = MODE.bench && MODE.config?.link === 'LOOPBACK';
 	link.update(loopback
 		? { distance: 0, blocked: false, span: 0, dt }
@@ -2686,13 +2678,13 @@ if (!frozen) {
 	const v = physics.velocity;
 	const bat = physics.battery;
 
-	// Télémétrie agrégée de la session (PHASE 06) : des maxima et des cumuls,
-	// pas un enregistrement image par image. dt=0 quand la sim est gelée, pour
-	// ne pas gonfler la durée pendant une pause.
+	// The session's aggregated telemetry (PHASE 06): maxima and totals, not a
+	// frame-by-frame recording. dt=0 when the sim is frozen, so a pause does not
+	// inflate the duration.
 	const av = physics.angularVelocity;
-	// NOTHING HERE IS LOGGED : au banc il n'y a pas de session ouverte, donc
-	// rien à nourrir. Le garde est ici plutôt que dans session.js pour que la
-	// promesse se lise à l'endroit où elle serait rompue.
+	// NOTHING HERE IS LOGGED: at the bench no session is open, so there is
+	// nothing to feed. The guard is here rather than in session.js so the promise
+	// reads at the place where it would be broken.
 	if (!MODE.bench) {
 		session.feed({
 			speed: Math.hypot(v.x, v.y, v.z),
@@ -2701,24 +2693,24 @@ if (!frozen) {
 			altitudeAboveSpawn: p.y - spawnY,
 			dt: frozen ? 0 : dt,
 			armed: controller.armed,
-			// La piste (issue #24) : les deux seules valeurs que la télémétrie
-			// agrégée n'utilisait pas, déjà calculées ici pour l'OSD et le son.
+			// The track (issue #24): the only two values the aggregated telemetry
+			// did not use, already computed here for the OSD and the sound.
 			throttle: sticks.throttle,
 			headingDeg: yawOf(physics.rotation) * 180 / Math.PI,
-			// La couverture (issue #245) : une fonction, appelée par session.js
-			// seulement quand un échantillon est dû — rien entre deux.
+			// Coverage (issue #245): a function, called by session.js only when a
+			// sample is due — nothing in between.
 			geo: () => droneGeo(p),
 		});
 	}
 
-	// L'arc musical en vol (issue #122). Un seul appel, un seul scalaire, et
-	// setIntensity ne déplace que des AudioParams : aucun nœud n'est créé par
-	// frame. Gelé, on ne touche à rien — la musique tient sa valeur pendant une
-	// pause au lieu de retomber au plancher.
+	// The in-flight musical arc (issue #122). One call, one scalar, and
+	// setIntensity only moves AudioParams: no node is created per frame. Frozen,
+	// nothing is touched — the music holds its value through a pause instead of
+	// falling back to the floor.
 	//
-	// La radio (issue #120) est hors de cet arc : elle joue à plat. Sans ce
-	// garde, couper les gaz la passerait au filtre fermé, ce qui n'a aucun sens
-	// pour une bande-son qu'on a choisie soi-même.
+	// The radio (issue #120) is outside this arc: it plays flat. Without this
+	// guard, cutting the throttle would push it into the closed filter, which
+	// makes no sense for a soundtrack you chose yourself.
 	if (!frozen && !radio.owns && music.playing) {
 		music.setIntensity(flightIntensity({
 			throttle: sticks.throttle,
@@ -2727,8 +2719,8 @@ if (!frozen) {
 		}));
 	}
 
-	// Les deux couches, dans cet ordre : celle de la cible, qui traversera la
-	// liaison et le capteur, puis la nôtre, qui ne traverse rien.
+	// The two layers, in this order: the target's, which will go through the link
+	// and the sensor, then ours, which goes through nothing.
 	const here = latLonOf(p);
 	droneOsd?.update({
 		voltageV: bat.voltage,
@@ -2752,16 +2744,15 @@ if (!frozen) {
 		rollRad: rollOf(physics.rotation),
 		pitchRad: pitchOf(physics.rotation),
 		flightSeconds: (Date.now() - sessionStartedAt) / 1000,
-		// Normalisé sur la poussée de vol stationnaire et pas sur MAX_THRUST, qui
-		// n'est pas importé dans main.js : pas d'import nouveau pour un chiffre
-		// décoratif.
+		// Normalised on hover thrust and not on MAX_THRUST, which is not imported
+		// into main.js: no new import for a decorative number.
 		escTempC: 34 + 22 * physics.propulsion.thrust / (PROFILE.mass * 9.81),
 		vtxChan: 4,
-		// Les avertissements d'un OSD réel ne sont pas décoratifs : ils sont ce
-		// qui reste lisible quand tout le reste est bruité.
-		// NO COVERAGE passe devant RXLOSS : en zone d'avertissement la clôture
-		// EST la cause du RXLOSS, et afficher l'effet plutôt que la cause
-		// dirait au pilote de revenir vers… rien.
+		// A real OSD's warnings are not decorative: they are what stays legible
+		// when everything else is noise.
+		// NO COVERAGE comes before RXLOSS: inside the warning corridor the fence
+		// IS the cause of the RXLOSS, and showing the effect rather than the
+		// cause would tell the pilot to come back towards... nothing.
 		warning: bat.voltage / PROFILE.battery.cells < 3.4 ? 'LOW VOLTAGE'
 			: fence.out.warning ? fence.out.warning
 			: link.out.quality < 0.25 ? 'RXLOSS' : '',
@@ -2773,8 +2764,8 @@ if (!frozen) {
 		usingGamepad: input.usingGamepad,
 		windMs: Math.hypot(physics.wind.out.x, physics.wind.out.z),
 		windRelRad: Math.atan2(physics.wind.out.x, physics.wind.out.z) - yawOf(physics.rotation),
-		// La visibilité réellement vue, brouillard ET pluie : le motif exact déjà
-		// employé en main.js:409, pour que les deux ne disent jamais deux choses.
+		// The visibility actually seen, fog AND rain: the exact same expression
+		// already used above, so the two can never say different things.
 		visibilityM: fogRange(fog.density + rain.extinction),
 		rssiDbm: link.out.rssiDbm,
 		operator: operator.getOperator()?.name,
@@ -2784,9 +2775,9 @@ if (!frozen) {
 		live: MODE.live,
 	});
 	fpvtpOsd.setFlightEnd(flightEnd.out);
-	// Les deux issues d'une machine coincée (#216, #105). Les libellés nomment
-	// la touche réellement liée, donc la carte de touches vive — relue seulement
-	// sur les frames qui affichent quelque chose, ce qui est rare par nature.
+	// The two ways out of a stuck machine (#216, #105). The labels name the key
+	// actually bound, so the live key map — re-read only on the frames that show
+	// something, which is rare by nature.
 	if (flightEnd.out.stuck || flightEnd.out.cutProgress > 0 || turtle.out.eligible) {
 		const rows = keyMapRows(input.getKeyMap());
 		fpvtpOsd.setCut(flightEnd.out, keyOf(rows, 'cutLink', 'K'));
@@ -2813,10 +2804,10 @@ if (!frozen) {
 	fpvtpOsd.setPhotoReady(photoReady);
 	settings.updateAxisBars();
 
-	// [ENTER] DISCONNECT, version radio (issue #123) : une fois la sortie armée le
-	// vol est fini — n'importe quel bouton de manette NOUVELLEMENT pressé
-	// déconnecte, sans poser la radio. Front montant seulement : un inter tenu
-	// depuis le vol ou le geste de désarmement ne compte pas.
+	// [ENTER] DISCONNECT, radio version (issue #123): once the exit is armed the
+	// flight is over — any NEWLY pressed pad button disconnects, without putting
+	// the radio down. Rising edge only: a switch held since the flight, or the
+	// disarm gesture, does not count.
 	if (flightEnd.out.exitArmed && !flightExit.busy) {
 		const pad = (navigator.getGamepads?.() ?? []).find(Boolean);
 		const down = !!pad?.buttons.some((b) => b.pressed);
@@ -2839,9 +2830,9 @@ if (!frozen) {
 		if (peakImpact > 0) audio.playImpact(peakImpact);
 	}
 
-	// La liaison, en vol seulement : une porteuse continue dont le souffle suit
-	// la marge, et deux annonces sur franchissement de seuil. C'est le seul son
-	// d'interface qui vit pendant le vol.
+	// The link, in flight only: a continuous carrier whose hiss follows the
+	// margin, and two callouts on threshold crossings. It is the only interface
+	// sound that lives during the flight.
 	if (flightEnd.phase === FLYING) {
 		uiAudio.setLinkQuality(link.out.quality);
 		const ev = linkEvent(link.out.quality, dt, linkVoice);
@@ -2855,21 +2846,21 @@ if (!frozen) {
 // Picks which prepared map to fly before doing any of the heavy loading work.
 // ?scene=<slug> skips the menu (handy for bookmarking/dev), otherwise the
 // menu is shown even with a single map so "choose from a menu" always holds.
-// Résout l'opérateur (bootstrapping au premier lancement), pose l'opérateur sur
-// la Home, puis rend la main au choix de carte existant. ?scene=<slug> saute
-// Home ET menu mais garde un opérateur en mémoire pour operator.getOperator().
-// Nombre de signaux du TARGET SCAN, cohérent avec la densité affichée par le
-// Global Scanner (PHASE 03/05). Le terrain acquis porte { level, range } ;
-// on mappe le level normalisé (0..1, log) sur 2..5, la même échelle que le
-// Global Scanner. Terrain sans densité (cache ancien, terrain local) → 4.
-// Enveloppe THREE de la sortie de fetchNode() (#168, #187). Depuis #187 tout
-// le calcul (ECEF→ENU, strip→triangles, UV normalisés, boundingSphere) est
-// fait dans le Worker par tools/lib/rocktree/build-node.mjs — chaque mesh
-// arrive avec positions/uvs/indices déjà transférables ; il ne reste ici que
-// ce qui exige le fil principal : objets THREE et matériau. Un nœud peut
-// porter plusieurs meshes — chacun devient son propre THREE.Mesh ET son
-// propre collider (`${path}#${i}` : addNodeCollider() suit une clé, pas un
-// nœud).
+// Resolves the operator (bootstrapping on a first launch), puts the operator on
+// the Home, then hands back to the existing map selection. ?scene=<slug> skips
+// both Home AND menu but keeps an operator in memory for
+// operator.getOperator().
+// The TARGET SCAN's signal count, consistent with the density the Global Scanner
+// shows (PHASE 03/05). Acquired terrain carries { level, range }; the normalised
+// level (0..1, log) is mapped onto 2..5, the same scale as the Global Scanner.
+// Terrain with no density (an old cache, local terrain) -> 4.
+// A THREE wrapper around fetchNode()'s output (#168, #187). Since #187 the whole
+// computation (ECEF->ENU, strip->triangles, normalised UVs, boundingSphere) is
+// done in the Worker by tools/lib/rocktree/build-node.mjs — each mesh arrives
+// with transferable positions/uvs/indices; all that is left here is what demands
+// the main thread: THREE objects and a material. A node can carry several
+// meshes — each becomes its own THREE.Mesh AND its own collider
+// (`${path}#${i}`: addNodeCollider() tracks a key, not a node).
 function buildNodeMesh(path, meshes) {
 	const built = [];
 	meshes.forEach((m, i) => {
@@ -2877,10 +2868,10 @@ function buildNodeMesh(path, meshes) {
 		geometry.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
 		geometry.setIndex(new THREE.BufferAttribute(m.indices, 1));
 		if (m.uvs) geometry.setAttribute('uv', new THREE.BufferAttribute(m.uvs, 2));
-		// boundingSphere du Worker (même algorithme que computeBoundingSphere) :
-		// sinon Three la calcule PARESSEUSEMENT au premier frustum culling de
-		// chaque mesh — un parcours O(n) par mesh, en pleine vague, pile quand
-		// la frame est déjà chargée (#187).
+		// The Worker's boundingSphere (the same algorithm as
+		// computeBoundingSphere): otherwise Three computes it LAZILY at each
+		// mesh's first frustum culling — an O(n) pass per mesh, in the middle of
+		// a wave, exactly when the frame is already loaded (#187).
 		geometry.boundingSphere = new THREE.Sphere(
 			new THREE.Vector3(...m.boundingSphere.center), m.boundingSphere.radius,
 		);
@@ -2888,18 +2879,17 @@ function buildNodeMesh(path, meshes) {
 		let material;
 		if (m.bitmap && m.uvs) {
 			const texture = new THREE.CanvasTexture(m.bitmap);
-			// PAS d'inversion de V et flipY coupé : le protocole rocktree a son
-			// origine UV en HAUT-gauche (mesuré sur #158, voir le commentaire du
-			// décodeur de référence) — c'est la convention d'une image telle que
-			// createImageBitmap() la stocke. Le flipY par défaut de CanvasTexture
-			// remettrait l'origine en bas et retournerait chaque tuile.
+			// NO V inversion and flipY off: the rocktree protocol has its UV
+			// origin at the TOP-left (measured in #158, see the reference
+			// decoder's comment) — that is the convention of an image as
+			// createImageBitmap() stores it. CanvasTexture's default flipY would
+			// put the origin back at the bottom and turn every tile over.
 			texture.flipY = false;
-			// Pas de mipmaps sur les tuiles live (#187) : leur génération à
-			// l'upload était le pire item du budget de drain (4,6 ms pour une
-			// 512², mesuré) — et le niveau d'octree constant fait que la
-			// minification reste modérée (la tuile la plus lointaine de la
-			// fenêtre de 600 m max est à ~2-3× sa taille écran, pas ~100×).
-			// Vérifié à l'image : pas de moiré notable à distance de fenêtre.
+			// No mipmaps on live tiles (#187): generating them at upload was the
+			// worst item in the drain budget (4.6 ms for a 512^2, measured) — and
+			// the constant octree level keeps minification moderate (the furthest
+			// tile of a 600 m window is at ~2-3x its screen size, not ~100x).
+			// Checked on the picture: no notable moire at window range.
 			texture.generateMipmaps = false;
 			texture.minFilter = THREE.LinearFilter;
 			material = createRocktreeMaterial(liveEdgeUniforms, { map: texture });
@@ -2908,9 +2898,9 @@ function buildNodeMesh(path, meshes) {
 		}
 		const mesh = new THREE.Mesh(geometry, material);
 		mesh.name = `rocktree-${path}-${i}`;
-		// Terrain statique en repère ENU local : la matrice est l'identité et ne
-		// changera jamais — sans ce flag, Three recompose la matrice de ~1600
-		// meshes à CHAQUE updateMatrixWorld de frame (#187).
+		// Static terrain in the local ENU frame: the matrix is the identity and
+		// will never change — without this flag, Three recomposes the matrix of
+		// ~1600 meshes at EVERY frame's updateMatrixWorld (#187).
 		mesh.matrixAutoUpdate = false;
 		mesh.updateMatrix();
 		built.push({ mesh, colliderPath: `${path}#${i}`, vertices: m.positions, indices: m.indices });
@@ -2918,9 +2908,9 @@ function buildNodeMesh(path, meshes) {
 	return built;
 }
 
-// Une ligne de console par exemplaire. C'est du debug, pas de l'UI : le joueur
-// n'apprend la masse et le pack de sa cible qu'en vol (PHASE 08 : la fiche
-// pré-hack les donne UNKNOWN).
+// One console line per individual. This is debug, not UI: the player only
+// learns their target's mass and pack in flight (PHASE 08: the pre-hack sheet
+// gives them as UNKNOWN).
 function logBuild(build) {
 	const { spec, profile } = build;
 	console.log(
@@ -2935,59 +2925,57 @@ function signalCountFor(slug) {
 	return signalCountFrom(t?.signalDensity?.level);
 }
 
-// La même échelle, à partir du NIVEAU nu. Un vol en direct n'a pas d'entrée de
-// cache terrain — sa densité vient du relevé que le scanner vient de faire sur
-// la zone tracée, et voyage avec le point (#218). Les deux chemins doivent
-// compter les signaux pareil, sinon le TARGET SCAN ne dit pas la même chose que
-// le GLOBAL SCANNER qui vient de l'annoncer.
+// The same scale, from the bare LEVEL. A live flight has no terrain cache entry
+// — its density comes from the survey the scanner has just made of the drawn
+// area, and travels with the pin (#218). The two paths must count signals the
+// same way, otherwise the TARGET SCAN does not say what the GLOBAL SCANNER has
+// just announced.
 function signalCountFrom(level) {
-	if (!Number.isFinite(level)) return 4;            // pas de densité connue (cache ancien, terrain local)
-	// 4..5 : au moins 3 ambiants (count - 1), jamais deux (issue #250, retour
-	// opérateur — un ciel à un seul ambiant se voyait vide).
+	if (!Number.isFinite(level)) return 4;            // no known density (old cache, local terrain)
+	// 4..5: at least 3 ambients (count - 1), never two (issue #250, operator
+	// feedback — a sky with a single ambient read as empty).
 	return 4 + Math.round(Math.max(0, Math.min(1, level)));
 }
 
-// Un préchargement par zone, conservé d'un passage au TARGET SCAN à l'autre.
-// Revenir en arrière puis revenir sur la même zone ne rejoue donc aucun
-// téléchargement : Monaco pèse 510 Mo et ~4,6 s en local, bien plus sur un
-// vrai réseau. Sûr parce que preloadScene() ne monte rien dans la scène et
-// capture sa propre base d'URL — deux zones peuvent charger en parallèle sans
-// se marcher dessus.
+// One preload per area, kept from one pass through the TARGET SCAN to the next.
+// Going back and then returning to the same area therefore replays no download:
+// Monaco weighs 510 MB and ~4.6 s locally, far more on a real network. Safe
+// because preloadScene() mounts nothing into the scene and captures its own URL
+// base — two areas can load in parallel without treading on each other.
 const preloads = new Map();
 
 function preloadFor(slug) {
 	let p = preloads.get(slug);
 	if (!p) {
 		p = preloadScene(slug);
-		// Un préchargement abandonné qui échoue ne doit pas remonter en
-		// « unhandled rejection » : celui qui l'attend vraiment verra l'erreur,
-		// les autres non.
+		// An abandoned preload that fails must not surface as an "unhandled
+		// rejection": whoever really awaits it will see the error, the others
+		// will not.
 		p.catch(() => {});
 		preloads.set(slug, p);
 	}
 	return p;
 }
 
-// Les meshes préchargés retiennent leurs planches de texture (~135 Mo par
-// zone) : dès qu'une zone est engagée, les autres n'ont plus de raison d'être
-// et sont libérées. Elles ne sont dans aucune scène — il suffit de rendre la
-// mémoire.
+// Preloaded meshes hold on to their texture sheets (~135 MB per area): as soon
+// as one area is committed, the others have no reason to exist and are freed.
+// They are in no scene — giving the memory back is all it takes.
 function dropPreloadsExcept(keepSlug) {
 	for (const [slug, p] of preloads) {
 		if (slug === keepSlug) continue;
 		preloads.delete(slug);
 		p.then((loaded) => {
 			const meshes = loaded.meshes ?? [];
-			// #147 : sans ce retrait, tileMaterials (loader.js) gardait ces
-			// matières vivantes malgré dispose() ci-dessous — dispose() ne libère
-			// que le GPU, pas le buffer de pixels JS que uMap.value référence.
+			// #147: without this removal, tileMaterials (loader.js) kept these
+			// materials alive despite the dispose() below — dispose() only frees
+			// the GPU, not the JS pixel buffer uMap.value references.
 			releaseTileMaterials(meshes.map((m) => m.material));
 			for (const m of meshes) {
 				m.geometry.dispose();
 				m.material.uniforms?.uMap?.value?.dispose();
 				m.material.dispose();
 			}
-			console.log(`[load] préchargement abandonné libéré: ${slug}`);
+			console.log(`[load] abandoned preload freed: ${slug}`);
 		}, () => {});
 	}
 }
@@ -3001,21 +2989,22 @@ async function chooseScene() {
 		// had no machine to show.
 		flightBuildSeed = nominalBuildSeed(PROFILE?.family);
 		await bootLive(OPTS.live);
-		return null;   // pas de slug : le reste du pipeline scène ne doit pas s'exécuter
+		return null;   // no slug: the rest of the scene pipeline must not run
 	}
 
 	if (OPTS.scene) {
 		await operator.ensureDevOperator();
 		const scenes = await loadSceneList();
-		if (!scenes.some((s) => s.slug === OPTS.scene)) throw new Error(`carte inconnue: "${OPTS.scene}"`);
+		if (!scenes.some((s) => s.slug === OPTS.scene)) throw new Error(`unknown map: "${OPTS.scene}"`);
 		const previewHack = normalizeHackType(OPTS.hack);
 		if (previewHack) await runHack(ui, { hackType: previewHack, family: OPTS.family || undefined });
 		return { slug: OPTS.scene, target: undefined, family: OPTS.family || undefined };
 	}
 
-	// Le bootstrap, inchangé (issue #60) : la clé rendue par la création part dans
-	// localStorage sans un écran de plus. ARCHIVE > OPERATOR > [ SHOW KEY ] est le
-	// chemin, délibéré, du jour où l'on veut emporter son profil ailleurs.
+	// The bootstrap, unchanged (issue #60): the key returned by the creation goes
+	// into localStorage with no extra screen. ARCHIVE > OPERATOR > [ SHOW KEY ]
+	// is the deliberate path for the day you want to take your profile
+	// elsewhere.
 	// The briefing runs INSIDE the bootstrap, right after the control vector is
 	// registered — the only moment where a player has just been made and has
 	// not yet chosen anything.
@@ -3023,8 +3012,8 @@ async function chooseScene() {
 
 	const { needsBootstrap, choices, needsKey } = await operator.loadOperator();
 	if (needsKey) {
-		// Un serveur `shared` qui ne nous reconnaît pas : pas de liste où se
-		// choisir, une clé à présenter ou un nouvel opérateur à créer.
+		// A `shared` server that does not recognise us: no list to choose from,
+		// either a key to present or a new operator to create.
 		const r = await operatorKey(ui);
 		if (r?.create) await register();
 	} else if (needsBootstrap) {
@@ -3035,46 +3024,46 @@ async function chooseScene() {
 		else await operator.selectOperator(pick.id);
 	}
 
-	// Rapier (chunk WASM séparé depuis #21, voir physics.js) se charge et se
-	// compile PENDANT que le joueur lit le terminal : au premier FLY il est
-	// déjà là. Sans attente ni conséquence en cas d'échec ici — preloadScene()
-	// et bootLive() refont l'appel (même promesse mémorisée) et, eux, en
-	// rendent compte.
+	// Rapier (a separate WASM chunk since #21, see physics.js) loads and compiles
+	// WHILE the player reads the terminal: by the first FLY it is already there.
+	// Nothing waits on it and a failure here has no consequence — preloadScene()
+	// and bootLive() make the call again (the same memoised promise) and they do
+	// report it.
 	initPhysics().catch(() => {});
 
-	// Pas de démarrage de musique ici : c'est startup(), dans le geste du PRESS
-	// ANY KEY, qui s'en charge. Un appel de plus ici tournerait au chargement,
-	// AVANT tout geste : il consommerait le garde de startMenuMusic() et
-	// lancerait la source sur un contexte encore suspendu, laissant le geste
-	// suivant sans rien à démarrer.
+	// No music start here: startup() does it, inside the PRESS ANY KEY gesture.
+	// One more call here would run at load time, BEFORE any gesture: it would
+	// consume startMenuMusic()'s guard and start the source on a context that is
+	// still suspended, leaving the next gesture with nothing to start.
 
-	// #253 : REDEPLOY a laissé la zone du dernier vol dans sessionStorage avant
-	// de recharger la page. Si elle est là, on saute SELECT OPERATION MODE et le
-	// terminal pour retomber directement dans le TARGET SCAN de cette zone.
+	// #253: REDEPLOY left the last flight's zone in sessionStorage before
+	// reloading the page. If it is there, SELECT OPERATION MODE and the terminal
+	// are skipped and we drop straight back into that zone's TARGET SCAN.
 	//
-	// Un échec (zone disparue, carte introuvable) recharge la page plutôt que de
-	// retomber dans le terminal DANS CE MÊME chargement : fieldLoop() a pu poser
-	// introFrozen/MODE.live/flyArea/flyTarget/PROFILE avant d'échouer (ex. runHack()
-	// rejette — voir hack.js, « Rejetée -> on démonte et on propage »), et rien ne
-	// les nettoie ici. Un rechargement retombe sur un module tout neuf ; consumeQuickRestart()
-	// a déjà vidé sessionStorage, donc ce rechargement atterrit bien sur le terminal
-	// normal, pas sur un nouvel essai de la même zone en boucle.
+	// A failure (the zone gone, the map not found) reloads the page rather than
+	// falling back into the terminal WITHIN THIS SAME load: fieldLoop() may have
+	// set introFrozen/MODE.live/flyArea/flyTarget/PROFILE before failing (for
+	// example runHack() rejecting — see hack.js, "Rejected -> tear down and
+	// propagate"), and nothing cleans them up here. A reload lands on a brand new
+	// module; consumeQuickRestart() has already emptied sessionStorage, so that
+	// reload really does land on the normal terminal, not on another attempt at
+	// the same zone in a loop.
 	const quickRestart = consumeQuickRestart();
 	if (quickRestart) {
 		try {
 			const choice = await fieldLoop(ui, { quickRestart });
 			if (choice) return choice;
 		} catch (err) {
-			console.warn('[field] REDEPLOY : zone indisponible, rechargement', err);
+			console.warn('[field] REDEPLOY: zone unavailable, reloading', err);
 			location.href = location.pathname;
-			return new Promise(() => {}); // la navigation est en cours ; ne rien rendre entre-temps
+			return new Promise(() => {}); // navigation is under way; return nothing in the meantime
 		}
 	}
 
-	// Boucle de MODE (PHASE 26). La racine du jeu est désormais SELECT
-	// OPERATION MODE ; la Home de FIELD est un cran plus bas et peut donc
-	// remonter ici. Les deux boucles rendent `null` pour dire « je remonte »,
-	// et n'importe quoi d'autre pour dire « on vole ».
+	// The MODE loop (PHASE 26). The game's root is now SELECT OPERATION MODE;
+	// FIELD's Home is one level below and can therefore come back up here. Both
+	// loops return `null` to mean "I am going back up", and anything else to mean
+	// "we are flying".
 	for (;;) {
 		const mode = await selectOperationMode(ui, {
 			last: loadLastMode(),
@@ -3093,9 +3082,9 @@ async function chooseScene() {
 			continue;
 		}
 
-		// JUKEBOX ne mène nulle part : on écoute, on remonte. Et la radio, elle,
-		// ne remonte pas avec nous — elle continue de jouer dans les menus et
-		// dans le vol qui suivra (issue #120).
+		// JUKEBOX leads nowhere: you listen, you go back up. And the radio does
+		// not come back up with you — it keeps playing through the menus and into
+		// the flight that follows (issue #120).
 		if (mode === 'jukebox') {
 			await runJukebox(ui);
 			continue;
@@ -3125,45 +3114,45 @@ async function dataLoop(ui) {
 	return dataScreen(ui, { api: operator, scenes });
 }
 
-// La boucle FIELD : le jeu de la Bible, inchangé. Extraite telle quelle de
-// chooseScene() pour que le banc puisse vivre à côté sans s'y mêler.
+// The FIELD loop: the Bible's game, unchanged. Extracted as-is from
+// chooseScene() so the bench can live alongside it without mixing in.
 //
-// Rend la forme de vol, ou null pour remonter au choix de mode.
+// Returns the flight's shape, or null to go back up to the mode selection.
 async function fieldLoop(ui, { quickRestart = null } = {}) {
-	// Boucle du choix de zone : Échap au TARGET SCAN revient ici. Rien n'est
-	// démonté et rien n'est rechargé — c'est ce qui permet à l'ambiance du
-	// terminal de continuer sans la moindre coupure, et au préchargement de la
-	// zone qu'on vient de quitter de rester acquis.
+	// The zone selection loop: Escape at the TARGET SCAN comes back here. Nothing
+	// is torn down and nothing is reloaded — that is what lets the terminal's
+	// ambience carry on without the slightest break, and the preload of the area
+	// just left stay acquired.
 	for (;;) {
-		// #253 : REDEPLOY reste sur la même zone — on rejoue le choix déjà connu
-		// UNE fois plutôt que de rouvrir le terminal. Consommé immédiatement :
-		// un Échap au TARGET SCAN qui suit doit retomber sur le terminal normal,
-		// pas rejouer la même zone en boucle.
+		// #253: REDEPLOY stays on the same area — the already-known choice is
+		// replayed ONCE rather than reopening the terminal. Consumed immediately:
+		// an Escape at the TARGET SCAN that follows must fall back to the normal
+		// terminal, not replay the same area in a loop.
 		const flyChoice = quickRestart ?? await runTerminal(ui, { back: true });
 		quickRestart = null;
-		// Échap sur la Home : on remonte au choix de mode. La Home n'est plus la
-		// racine depuis PHASE 26, et il faut pouvoir repartir au banc sans
-		// recharger la page.
+		// Escape on the Home: go back up to the mode selection. The Home has not
+		// been the root since PHASE 26, and it must be possible to head back to
+		// the bench without reloading the page.
 		if (!flyChoice) return null;
 
-		// Posée dès la zone connue (avant TARGET SCAN, avant tout écran qui peut
-		// planter) : un REDEPLOY qui suit ce vol rejouera CETTE zone.
+		// Set as soon as the area is known (before TARGET SCAN, before any screen
+		// that can fail): a REDEPLOY after this flight will replay THIS area.
 		lastZone = flyChoice.live
 			? { live: flyChoice.live, place: flyChoice.place, density: flyChoice.density }
 			: { slug: flyChoice.slug };
 
-		// Vol en direct : EXACTEMENT le pipeline d'une carte cuite — TARGET SCAN,
-		// cible, exemplaire, musique, hack, rituel du Control Vector. Seul le
-		// terrain diffère : il est streamé au lieu d'être lu du disque.
+		// A live flight: EXACTLY the pipeline of a baked map — TARGET SCAN,
+		// target, individual, music, hack, the Control Vector ritual. Only the
+		// terrain differs: it is streamed instead of read from disk.
 		//
-		// #206 avait tranché l'inverse (« ni TARGET SCAN, ni hack, ni rituel »)
-		// au motif que les cibles sont un attribut d'une zone RELEVÉE. C'était
-		// une erreur de lecture du code : le relevé, le scanner vient de le
-		// faire — `lastDensity` est la densité de signal calculée sur la zone
-		// tracée, depuis Nominatim. Elle voyage désormais avec le point, et il
-		// n'y a rien à inventer. Sans cette chaîne, tout vol en direct rendait
-		// la même cellule freestyle et le même OSD, puisque rien ne tirait ni
-		// famille ni exemplaire.
+		// #206 had decided the opposite ("no TARGET SCAN, no hack, no ritual") on
+		// the grounds that targets are an attribute of a SURVEYED area. That was
+		// a misreading of the code: the scanner has just done the survey —
+		// `lastDensity` is the signal density computed over the drawn area, from
+		// Nominatim. It now travels with the pin, and there is nothing to invent.
+		// Without this chain, every live flight produced the same freestyle
+		// airframe and the same OSD, since nothing drew a family or an
+		// individual.
 		if (flyChoice.live) {
 			MODE.live = true;
 			introFrozen = true;
@@ -3179,11 +3168,11 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 			const scanWeather = await worldWeather({ lat, lon });
 			const choice = await runTargetScan(ui, { seed, count, weather: scanWeather, swarmChance });
 
-			// Échap au TARGET SCAN : retour au choix de zone. Rien n'a encore été
-			// monté — contrairement au chemin cuit, bootLive() n'est appelé
-			// qu'APRÈS le choix, parce qu'il MONTE la scène là où preloadScene()
-			// se contente de télécharger. L'annuler laisserait un terrain vivant
-			// sans vol.
+			// Escape at the TARGET SCAN: back to the zone selection. Nothing has
+			// been mounted yet — unlike the baked path, bootLive() is only called
+			// AFTER the choice, because it MOUNTS the scene where preloadScene()
+			// merely downloads. Cancelling it would leave live terrain with no
+			// flight.
 			if (choice.cancelled) {
 				MODE.live = false;
 				introFrozen = false;
@@ -3192,58 +3181,58 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 
 			const cand = scan.candidates[choice.index];
 			audio.start();
-			// Une zone en direct n'a pas de slug sur le disque. On lui en forge un,
-			// préfixé `live-` : il nomme la session au journal sans jamais pouvoir
-			// se confondre avec une zone acquise, donc REVISIT ne proposera jamais
-			// de retourner sur un terrain qu'on n'a pas gardé.
+			// A live area has no slug on disk. One is forged for it, prefixed
+			// `live-`: it names the session in the log without ever being
+			// confusable with an acquired area, so REVISIT will never offer to go
+			// back to terrain that was not kept.
 			flyArea = liveAreaId(flyChoice.place, lat, lon);
 			flyTarget = choice;
 			const buildSeed = `${seed}::${choice.index}`;
 			const build = targetBuild({ seed: buildSeed, family: cand._family });
-			// AVANT bootLive(), qui construit sa physique avec `PROFILE` s'il est
-			// posé — c'est déjà ce que fait le vol libre du banc.
+			// BEFORE bootLive(), which builds its physics with `PROFILE` if it is
+			// set — which is already what the bench's free flight does.
 			PROFILE = build.profile;
 			flightBuild = build;
 			flightBuildSeed = buildSeed;
 			benchRates = build.rates;
 			logBuild(build);
-			console.log(`[field] vol en direct → ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-			// `arm: false` : c'est le geste [ JACK IN ] qui arme le vol, pas le
-			// boot — voir armFlight() et le `commit` de runHack() plus bas.
+			console.log(`[field] live flight -> ${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+			// `arm: false`: the [ JACK IN ] gesture is what arms the flight, not
+			// the boot — see armFlight() and runHack()'s `commit` below.
 			const booting = bootLive(flyChoice.live, { arm: false });
 
-			// La musique se charge DERRIÈRE l'écran de hack (issue #33), pas
-			// devant. L'attendre laissait l'écran VIDE — le TARGET SCAN démonté,
-			// le hack pas encore monté, le HUD de chargement caché — le temps de
-			// télécharger et de décoder une piste entière : le joueur appuyait
-			// sur Entrée et il ne se passait rien. Même principe que bootLive(),
-			// qui recouvre ses trois latences au lieu de les additionner. Le
-			// hack dure plusieurs secondes au minimum : la musique entre dedans,
-			// ce qui est de toute façon sa place — elle est le premier indice
-			// sensoriel de la machine, pas un préalable à l'écran.
-			// Pas quand la radio tient l'antenne (issue #120) : le joueur a choisi sa
-			// bande-son, le hack ne la lui enlève pas en fondu.
+			// The music loads BEHIND the hack screen (issue #33), not in front of
+			// it. Awaiting it left the screen EMPTY — the TARGET SCAN torn down,
+			// the hack not yet mounted, the loading HUD hidden — for as long as
+			// it took to download and decode a whole track: the player pressed
+			// Enter and nothing happened. The same principle as bootLive(), which
+			// overlaps its three latencies instead of adding them up. The hack
+			// lasts several seconds at minimum: the music slides inside it, which
+			// is where it belongs anyway — it is the machine's first sensory clue,
+			// not a prerequisite for the screen.
+			// Not when the radio holds the antenna (issue #120): the player chose
+			// their soundtrack, and the hack does not fade it away from them.
 			if (!radio.owns) {
 				music.loadManifest()
 					.then(() => music.prepare(music.trackForFamily(cand._family, buildSeed)))
 					.then(() => music.play({ intensity: PHASE_INTENSITY.HACK, fadeMs: FADE.menuToHack }))
-					.catch((err) => console.warn('[music] piste du hack indisponible', err));
+					.catch((err) => console.warn('[music] hack track unavailable', err));
 			}
-			// Le terrain se streame DERRIÈRE l'écran de hack, exactement comme la
-			// scène cuite se charge derrière lui : c'est à ça que sert cet écran.
+			// The terrain streams BEHIND the hack screen, exactly as a baked scene
+			// loads behind it: that is what this screen is for.
 			const hack = await runHack(ui, { hackType: cand._hackType, family: cand._family, ready: booting, candidate: cand, buildSeed, commit: armFlight });
-			// Abandon au hack : contrairement à l'Échap du TARGET SCAN juste
-			// au-dessus, `booting` a déjà monté le terrain vivant dans la scène
-			// (bootLive() est placé volontairement AVANT le choix de cible, alors
-			// que preloadScene() se contente de télécharger) — on ne peut plus
-			// revenir en arrière dans ce même chargement. Même traitement que
-			// REDEPLOY quand runHack() sort mal (voir plus haut, "Un échec ...
-			// recharge la page") : introFrozen/MODE.live/flyArea/flyTarget/PROFILE
-			// sont déjà posés et rien ne les nettoie ici, donc on repart propre
-			// plutôt que de rejouer la même zone sur un préchargement mémoïsé.
+			// Abandoning at the hack: unlike the TARGET SCAN's Escape just above,
+			// `booting` has already mounted the live terrain into the scene
+			// (bootLive() is deliberately placed BEFORE the target choice, where
+			// preloadScene() merely downloads) — there is no going back within
+			// this same load. The same treatment as REDEPLOY when runHack() ends
+			// badly (see above, "A failure ... reloads the page"):
+			// introFrozen/MODE.live/flyArea/flyTarget/PROFILE are already set and
+			// nothing cleans them up here, so we start clean rather than replay
+			// the same area on a memoised preload.
 			if (hack?.aborted) {
 				location.href = location.pathname;
-				return new Promise(() => {}); // la navigation est en cours ; ne rien rendre entre-temps
+				return new Promise(() => {}); // navigation is under way; return nothing in the meantime
 			}
 			introFrozen = false;
 			accumulator = 0;
@@ -3254,23 +3243,23 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 
 		const { slug } = flyChoice;
 
-		// Override dev ?family= : court-circuite le TARGET SCAN.
+		// The dev ?family= override: short-circuits the TARGET SCAN.
 		if (OPTS.family) {
 			const previewHack = normalizeHackType(OPTS.hack);
 			if (previewHack) await runHack(ui, { hackType: previewHack, family: OPTS.family || undefined });
-			// Pas de buildSeed : l'override dev vole le profil NOMINAL de la famille.
-			// C'est ce qui garde ?family=freestyle5 identique au banc et à la
-			// référence de tools/tune-pid.mjs. `?build=<graine>` (#285) tire un
-			// exemplaire — pour vérifier en jeu ce qu'un build a de particulier.
+			// No buildSeed: the dev override flies the family's NOMINAL profile.
+			// That is what keeps ?family=freestyle5 identical to the bench and to
+			// tools/tune-pid.mjs's reference. `?build=<seed>` (#285) draws an
+			// individual — to check in game what is particular about a build.
 			return { slug, target: undefined, family: OPTS.family, buildSeed: OPTS.build || undefined };
 		}
 
-		// Session fraîche → TARGET SCAN, puis AUTOMATED ANALYSIS pendant que la carte
-		// charge en tâche de fond : au [ JACK IN ] le contrôle est immédiat. Le slug
-		// est déjà connu ici (le TARGET SCAN choisit une cible dans cette carte, pas
-		// la carte elle-même) : preloadScene() démarre tout de suite, pour courir
-		// derrière le TARGET SCAN entier et pas seulement derrière l'attente de
-		// l'AUTOMATED ANALYSIS (PHASE 13, issue #50).
+		// A fresh session -> TARGET SCAN, then AUTOMATED ANALYSIS while the map
+		// loads in the background: at [ JACK IN ] control is immediate. The slug is
+		// already known here (the TARGET SCAN picks a target within this map, not
+		// the map itself): preloadScene() starts at once, so it runs behind the
+		// whole TARGET SCAN and not only behind the AUTOMATED ANALYSIS's wait
+		// (PHASE 13, issue #50).
 		introFrozen = true;
 		const preloading = preloadFor(slug);
 
@@ -3278,25 +3267,25 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 		const count = signalCountFor(slug);
 		const swarmChance = swarmChanceFor(operator.getOperator()?.sessions);
 		const scan = generateTargetScan({ seed, count, swarmChance });
-		// La météo du monde pour cette zone, résolue avant le scan pour rendre les
-		// conditions saillantes au choix de cible (issue #76). worldWeather est caché
-		// par zone : boot() réutilise ce résultat sans nouvel aller-retour.
+		// The world's weather for this area, resolved before the scan so the
+		// conditions are salient at the target choice (issue #76). worldWeather is
+		// cached per zone: boot() reuses this result with no extra round trip.
 		const sc = (await loadSceneList()).find((s) => s.slug === slug);
 		const scanWeather = sc ? await worldWeather({ lat: sc.lat, lon: sc.lon }) : null;
 		const choice = await runTargetScan(ui, { seed, count, weather: scanWeather, swarmChance }); // { seed, count, index, swarmChance, swarmAt } | { cancelled }
 
-		// Échap au TARGET SCAN : retour au choix de zone, sans rien casser. Le
-		// préchargement lancé plus haut CONTINUE en tâche de fond : il ne touche
-		// pas à la scène Three (preloadScene ne monte rien) et il a capturé sa
-		// propre base d'URL, donc il ne peut ni corrompre ni être corrompu par le
-		// chargement d'une autre zone. Revenir sur cette même zone le retrouvera
-		// tel quel, souvent déjà fini.
+		// Escape at the TARGET SCAN: back to the zone selection, breaking nothing.
+		// The preload started above CARRIES ON in the background: it does not touch
+		// the Three scene (preloadScene mounts nothing) and it captured its own URL
+		// base, so it can neither corrupt nor be corrupted by another area's load.
+		// Coming back to this same area will find it as it was, often already
+		// finished.
 		if (choice.cancelled) {
 			introFrozen = false;
 			continue;
 		}
 
-		// La zone est engagée : les autres préchargements ne serviront plus.
+		// The area is committed: the other preloads will never be used.
 		dropPreloadsExcept(slug);
 
 		const cand = scan.candidates[choice.index];
@@ -3304,9 +3293,9 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 		audio.start();
 		flyArea = slug;
 		flyTarget = choice;
-		// L'exemplaire (PHASE 07). La graine est celle que le serveur reconstruira
-		// dans resolveTarget() — le drone que tu voles est celui que le monde a tiré,
-		// pas un que le client s'est inventé.
+		// The individual (PHASE 07). The seed is the one the server will rebuild in
+		// resolveTarget() — the drone you fly is the one the world drew, not one the
+		// client invented for itself.
 		const buildSeed = `${seed}::${choice.index}`;
 		const build = targetBuild({ seed: buildSeed, family: cand._family });
 		PROFILE = build.profile;
@@ -3314,51 +3303,50 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 		flightBuildSeed = buildSeed;
 		controller = new FlightController({ profile: PROFILE, rates: build.rates, mode: defaultFlightMode() });
 		logBuild(build);
-		// `arm: false` : même règle que le chemin en direct juste au-dessus, le
-		// geste [ JACK IN ] arme le vol (voir le `commit` de runHack()).
+		// `arm: false`: the same rule as the live path just above, the [ JACK IN ]
+		// gesture arms the flight (see runHack()'s `commit`).
 		const booting = finishBoot(preloading, { arm: false });
-		// Le morceau se décode PENDANT l'AUTOMATED ANALYSIS, en parallèle du
-		// chargement de la scène : au drop le buffer doit déjà être là. Le tirage
-		// est déterministe sur buildSeed — reprendre une session, c'est reprendre ce
-		// drone ET sa musique.
+		// The track decodes DURING the AUTOMATED ANALYSIS, in parallel with the
+		// scene's load: at the drop the buffer has to be there already. The draw is
+		// deterministic on buildSeed — resuming a session means resuming that drone
+		// AND its music.
 		//
-		// L'écran ne nomme toujours pas la famille : la musique est le premier
-		// indice sensoriel, pas une révélation. « You don't read the drone. You
-		// feel it. »
-		// La musique se charge DERRIÈRE l'écran de hack (issue #33), pas
-		// devant. L'attendre laissait l'écran VIDE — le TARGET SCAN démonté,
-		// le hack pas encore monté, le HUD de chargement caché — le temps de
-		// télécharger et de décoder une piste entière : le joueur appuyait
-		// sur Entrée et il ne se passait rien. Même principe que bootLive(),
-		// qui recouvre ses trois latences au lieu de les additionner. Le
-		// hack dure plusieurs secondes au minimum : la musique entre dedans,
-		// ce qui est de toute façon sa place — elle est le premier indice
-		// sensoriel de la machine, pas un préalable à l'écran.
-		// Pas quand la radio tient l'antenne (issue #120) : le joueur a choisi sa
-		// bande-son, le hack ne la lui enlève pas en fondu.
+		// The screen still does not name the family: the music is the first sensory
+		// clue, not a revelation. "You don't read the drone. You feel it."
+		// The music loads BEHIND the hack screen (issue #33), not in front of it.
+		// Awaiting it left the screen EMPTY — the TARGET SCAN torn down, the hack
+		// not yet mounted, the loading HUD hidden — for as long as it took to
+		// download and decode a whole track: the player pressed Enter and nothing
+		// happened. The same principle as bootLive(), which overlaps its three
+		// latencies instead of adding them up. The hack lasts several seconds at
+		// minimum: the music slides inside it, which is where it belongs anyway —
+		// it is the machine's first sensory clue, not a prerequisite for the
+		// screen.
+		// Not when the radio holds the antenna (issue #120): the player chose their
+		// soundtrack, and the hack does not fade it away from them.
 		if (!radio.owns) {
 			music.loadManifest()
 				.then(() => music.prepare(music.trackForFamily(cand._family, buildSeed)))
 				.then(() => music.play({ intensity: PHASE_INTENSITY.HACK, fadeMs: FADE.menuToHack }))
-				.catch((err) => console.warn('[music] piste du hack indisponible', err));
+				.catch((err) => console.warn('[music] hack track unavailable', err));
 		}
 		const hack = await runHack(ui, { hackType: cand._hackType, family: cand._family, ready: booting, candidate: cand, buildSeed, commit: armFlight });
-		// Abandon au hack : `booting` (finishBoot()) a déjà monté le terrain dans
-		// la scène — « Le montage dans la scène a lieu ICI et pas dans
-		// preloadScene() : à partir de cet instant la zone est engagée, on ne
-		// revient plus en arrière » (voir finishBoot()). Rejouer la même zone
-		// rendrait le préchargement mémoïsé (le cache `preloads` de preloadFor()) :
-		// `finishBoot()` a déjà vidé son `collision` (`preloaded.collision = null`,
-		// juste après `new Physics(collision, …)`) — un second passage l'appellerait
-		// avec `null` et planterait. Même traitement que REDEPLOY quand runHack()
-		// sort mal (voir plus haut, "Un échec ... recharge la page") : on repart
-		// propre plutôt que d'essayer de continuer dans ce même chargement.
+		// Abandoning at the hack: `booting` (finishBoot()) has already mounted the
+		// terrain into the scene — "Mounting into the scene happens HERE and not in
+		// preloadScene(): from this moment the area is committed, and there is no
+		// going back" (see finishBoot()). Replaying the same area would hand back
+		// the memoised preload (preloadFor()'s `preloads` cache): `finishBoot()`
+		// has already emptied its `collision` (`preloaded.collision = null`, right
+		// after `new Physics(collision, ...)`) — a second pass would call it with
+		// `null` and crash. The same treatment as REDEPLOY when runHack() ends
+		// badly (see above, "A failure ... reloads the page"): start clean rather
+		// than try to carry on within this same load.
 		if (hack?.aborted) {
 			location.href = location.pathname;
-			return new Promise(() => {}); // la navigation est en cours ; ne rien rendre entre-temps
+			return new Promise(() => {}); // navigation is under way; return nothing in the meantime
 		}
-		// [ JACK IN ] a rendu la main : ne pas rejouer l'écart d'horloge accumulé
-		// pendant le hack comme un unique pas de physique géant.
+		// [ JACK IN ] has handed control back: do not replay the wall-clock gap
+		// accumulated during the hack as one giant physics step.
 		introFrozen = false;
 		accumulator = 0;
 		lastTime = performance.now();
@@ -3367,12 +3355,12 @@ async function fieldLoop(ui, { quickRestart = null } = {}) {
 	}
 }
 
-// La boucle BENCH (PHASE 26). Rend la forme de vol, ou null pour remonter.
+// The BENCH loop (PHASE 26). Returns the flight's shape, or null to go back up.
 //
-// Beaucoup plus courte que fieldLoop(), et c'est le sujet : il n'y a ni scan,
-// ni cible, ni hack, ni rituel, ni musique de tension à installer. On règle,
-// on décolle. Le banc n'a pas de cérémonie parce qu'il n'y a personne à
-// surprendre au bout.
+// Far shorter than fieldLoop(), and that is the point: there is no scan, no
+// target, no hack, no ritual, no tension music to install. You set things up and
+// you take off. The bench has no ceremony because there is nobody at the other
+// end to surprise.
 async function benchLoop(ui) {
 	const scenes = await loadSceneList().catch(() => []);
 	const config = await runBench(ui, { scenes });
@@ -3391,9 +3379,9 @@ async function benchLoop(ui) {
 		return { slug: config.terrain.slug, target: undefined, family, buildSeed: config.airframe.seed ?? undefined };
 	}
 
-	// Vol libre : bootLive() construit lui-même sa physique et son contrôleur,
-	// donc PROFILE et les rates doivent être posés AVANT l'appel — c'est ce que
-	// fait déjà ?live= via l'override ?family=.
+	// Free flight: bootLive() builds its own physics and its own controller, so
+	// PROFILE and the rates have to be set BEFORE the call — which is what ?live=
+	// already does through the ?family= override.
 	const build = config.airframe.seed ? targetBuild({ seed: config.airframe.seed, family }) : null;
 	PROFILE = build ? build.profile : PROFILES[family];
 	flightBuild = build;
@@ -3409,15 +3397,15 @@ async function benchLoop(ui) {
 	return { prepared: true };
 }
 
-// ?scene= saute Home et menu : aucun geste utilisateur n'a lieu avant boot().
-// L'AudioContext exige un geste — on l'attrape au premier input. armBoot()
-// reste EXACTEMENT le chemin d'avant (PHASE 18) : ce bypass sert au dev et aux
-// bookmarks, il n'a pas à voir un cracktro de 7 s à chaque rechargement.
+// ?scene= skips Home and menu: no user gesture happens before boot(). The
+// AudioContext demands a gesture — it is caught on the first input. armBoot()
+// stays EXACTLY the previous path (PHASE 18): this bypass is for dev and for
+// bookmarks, and has no business watching a 7 s cracktro on every reload.
 //
-// Sans ?scene=, l'intro (issue #106) remplace armBoot() : c'est elle qui joue
-// BOOT_SIGNATURE à sa résolution (ou immédiatement, si skip), donc jamais les
-// deux — un seul motif de démarrage par chargement de page, jamais un
-// doublon. Elle passe AVANT la résolution de l'opérateur/Home.
+// Without ?scene=, the intro (issue #106) replaces armBoot(): it is what plays
+// BOOT_SIGNATURE when it resolves (or immediately, if skipped), so never both —
+// one startup motif per page load, never a duplicate. It comes BEFORE the
+// operator/Home resolution.
 if (OPTS.scene || OPTS.live) {
 	uiAudio.armBoot();
 	const kick = () => { audio.start(); };
@@ -3425,74 +3413,73 @@ if (OPTS.scene || OPTS.live) {
 	window.addEventListener('keydown', kick, { once: true });
 }
 
-// Ambiance du terminal (issue #122). Le pool `menu` n'est pas un drone : c'est
-// le lieu où l'on est assis, avant. Elle doit sonner dès le PRESS ANY KEY de
-// l'intro — ce geste est le premier de la page, donc le premier instant où le
-// navigateur laisse démarrer l'AudioContext — et non seulement une fois le
-// cracktro fini et l'opérateur choisi.
+// The terminal's ambience (issue #122). The `menu` pool is not a drone: it is
+// the place you are sitting in, beforehand. It must sound from the intro's PRESS
+// ANY KEY on — that gesture is the page's first, hence the first instant the
+// browser will let an AudioContext start — and not only once the cracktro is
+// over and the operator chosen.
 //
-// D'où deux temps séparés : le décodage n'a besoin d'aucun geste et tourne
-// pendant l'intro ; la lecture, elle, part DANS le geste. Sans cette
-// séparation on attendrait le fetch + decode à l'instant précis où l'on veut
-// entendre quelque chose.
+// Hence two separate beats: the decoding needs no gesture and runs during the
+// intro; the playback leaves INSIDE the gesture. Without that separation we
+// would be waiting on the fetch + decode at the exact instant we want to hear
+// something.
 //
-// Câblé ici plutôt que dans intro.js / terminal.js : les écrans restent des
-// clients purs, sans dépendance audio.
+// Wired here rather than in intro.js / terminal.js: the screens stay pure
+// clients, with no audio dependency.
 let menuMusicReady = null;
 let menuMusicStarted = false;
 
 function prepareMenuMusic() {
-	// La graine change à chaque chargement — le terminal n'a pas de buildSeed à
-	// respecter, et deux sessions de suite ne doivent pas ouvrir sur le même
-	// morceau.
+	// The seed changes on every load — the terminal has no buildSeed to respect,
+	// and two sessions in a row must not open on the same track.
 	menuMusicReady ??= music.loadManifest().then(() =>
 		music.prepare(music.trackForMenu(Math.random().toString(16).slice(2, 12))));
 	return menuMusicReady;
 }
 
 async function startMenuMusic() {
-	// La radio l'emporte (issue #120). Le garde `!music.playing` plus bas ne
-	// suffit pas : il court avec le fondu de la radio, pendant lequel
-	// `music.playing` peut être brièvement faux.
+	// The radio wins (issue #120). The `!music.playing` guard below is not
+	// enough: it races with the radio's fade, during which `music.playing` can be
+	// briefly false.
 	if (radio.owns) return;
 	if (menuMusicStarted) return;
 	menuMusicStarted = true;
-	// Le volume musique du joueur n'est appliqué qu'au boot de la scène
-	// (settings.setAudio), bien après le menu : sans ça la musique du terminal
-	// entrerait à fond alors que le réglage stocké dit autre chose.
+	// The player's music volume is only applied at the scene's boot
+	// (settings.setAudio), long after the menu: without this the terminal's music
+	// would come in at full while the stored setting says otherwise.
 	music.setVolume(loadMusicVolume());
 	const ready = await prepareMenuMusic();
-	// Le terminal est peut-être déjà passé : on ne démarre que s'il est encore
-	// là, sinon la musique de menu s'inviterait par-dessus le hack.
+	// The terminal may already be gone: only start if it is still there,
+	// otherwise the menu music would invite itself over the hack.
 	if (ready && !music.playing) music.play({ intensity: PHASE_INTENSITY.MENU });
 }
 
-// La radio rend l'antenne : le terminal retrouve sa musique (issue #120).
-// `menuMusicStarted` est mémoïsé pour ne jouer qu'une fois par chargement —
-// sans ce réarmement, couper la radio laisserait les menus muets jusqu'au
-// rechargement. La graine repart à zéro aussi : reprendre exactement le morceau
-// du boot sonnerait comme un bégaiement.
+// The radio hands the antenna back: the terminal gets its music again (issue
+// #120). `menuMusicStarted` is memoised so it only plays once per load —
+// without this rearm, cutting the radio would leave the menus silent until the
+// next reload. The seed starts over too: picking up exactly the boot's track
+// would sound like a stutter.
 radio.onRelease(() => {
 	menuMusicStarted = false;
 	menuMusicReady = null;
-	startMenuMusic().catch(() => { /* la musique de menu n'est jamais critique */ });
+	startMenuMusic().catch(() => { /* the menu music is never critical */ });
 });
 
 async function startup() {
-	// Synchrone dans le handler du geste : c'est ce qui autorise
-	// l'AudioContext. La lecture, elle, peut arriver après.
+	// Synchronous inside the gesture's handler: that is what authorises the
+	// AudioContext. The playback itself can arrive later.
 	const onFirstGesture = () => { audio.start(); startMenuMusic(); };
 	const store = globalThis.sessionStorage;
 	if (shouldPlayIntro(OPTS, store)) {
-		// Décodage lancé avant l'intro, lecture déclenchée par son gate.
+		// Decoding starts before the intro; playback is triggered by its gate.
 		prepareMenuMusic();
 		await runIntro(document.getElementById('ui'), { onFirstGesture });
 		markIntroSeen(store);
 	} else if (!OPTS.scene && !OPTS.live) {
-		// Rechargement de fin de vol (issue #226) : l'intro a déjà été vue dans
-		// cet onglet, on saute droit à SELECT OPERATION MODE. Le gate PRESS ANY
-		// KEY était aussi le premier geste qui débloque l'audio : sans lui, c'est
-		// la première touche ou le premier clic du menu qui le fournit.
+		// The end-of-flight reload (issue #226): the intro has already been seen
+		// in this tab, so we go straight to SELECT OPERATION MODE. The PRESS ANY
+		// KEY gate was also the first gesture that unblocks the audio: without
+		// it, the menu's first key or first click provides it.
 		prepareMenuMusic();
 		const once = (e) => {
 			if (e?.repeat) return;
@@ -3511,12 +3498,12 @@ startup()
 		// Still inside the menu button's click, which is the user gesture the
 		// browser's autoplay policy demands before an AudioContext will run.
 		audio.start();
-		// ?live= : bootLive() a déjà tout fait à l'intérieur de chooseScene()
-		// (pas de manifest à charger, pas de TARGET SCAN) — chooseScene()
-		// renvoie null pour le dire (#168), rien de plus à faire ici.
+		// ?live=: bootLive() has already done everything inside chooseScene() (no
+		// manifest to load, no TARGET SCAN) — chooseScene() returns null to say
+		// so (#168), and there is nothing more to do here.
 		if (choice === null) return;
-		// Session fraîche : PROFILE / controller / boot() ont déjà été
-		// lancés dans chooseScene() et le hack a couvert le chargement.
+		// A fresh session: PROFILE / controller / boot() were already started
+		// inside chooseScene(), and the hack covered the load.
 		if (choice.prepared) return;
 		hud.show();
 		const { slug, target, family, buildSeed } = choice;
@@ -3558,27 +3545,27 @@ startup()
 // (PHASE 06), the target's camera, the props, the OSD — was armed DURING the
 // load by armFlight(), just below.
 async function openFlightSession() {
-	// `return;` dans le `.then((choice) => { if (choice === null) return; ... })`
-	// juste au-dessus ne coupe QUE ce callback, pas la chaîne : `.then(openFlightSession)`
-	// s'exécute quand même avec `undefined` (mesuré — #168, #170). En mode
-	// ?live=, bootLive() a déjà tout ouvert (pas de session serveur, pas de
-	// caméra de cible, droneOsd reste null — voir le commentaire sur OPTS.live) ;
-	// sans cette garde, session.open() échoue silencieusement (aucun opérateur
-	// chargé) puis applyTargetCamera()/droneOsdLayout() réécrivent un état que
-	// bootLive() avait délibérément laissé de côté.
-	// `?live=` est un raccourci de DEV : rien n'y est monté, pas même une
-	// caméra. Il garde donc sa sortie immédiate.
+	// The `return;` in the `.then((choice) => { if (choice === null) return; ... })`
+	// just above cuts ONLY that callback, not the chain: `.then(openFlightSession)`
+	// runs all the same with `undefined` (measured — #168, #170). In ?live= mode
+	// bootLive() has already opened everything (no server session, no target
+	// camera, droneOsd stays null — see the comment on OPTS.live); without this
+	// guard session.open() fails silently (no operator loaded) and then
+	// applyTargetCamera()/droneOsdLayout() overwrite a state bootLive()
+	// deliberately left aside.
+	// `?live=` is a DEV shortcut: nothing is mounted on it, not even a camera. So
+	// it keeps its immediate return.
 	//
-	// `MODE.live` ne l'est plus. #206 en a fait un vrai mode joueur — une
-	// reconnaissance FIELD — et lui a fait hériter de cette garde telle quelle.
-	// Conséquence non vue : la section caméra + OSD plus bas ne tournait JAMAIS,
-	// donc une reconnaissance volait la machine par défaut SANS AUCUN OSD. Un
-	// drone a un OSD ; l'absence d'OSD est un choix qui se pose au banc
-	// (ligne HUD), pas un accident du chemin live (#217).
+	// `MODE.live` no longer is one. #206 made it a real player mode — FIELD
+	// reconnaissance — and had it inherit this guard as-is. The unforeseen
+	// consequence: the camera + OSD section below NEVER ran, so a reconnaissance
+	// flew the default machine WITH NO OSD AT ALL. A drone has an OSD; going
+	// without one is a choice you make at the bench (the HUD row), not an
+	// accident of the live path (#217).
 	//
-	// La reconnaissance emprunte désormais le chemin du BANC : tout tourne, sauf
-	// session.open(). C'est le chemin éprouvé, on ne s'en fabrique pas un
-	// deuxième.
+	// Reconnaissance now takes the BENCH's path: everything runs, except
+	// session.open(). That is the proven path, and we do not build ourselves a
+	// second one.
 	// Dev-only ?live= shortcut. A LIVE flight chosen from the terminal opens a session below (#218).
 	// Every flight starts in FPV (D11), this path included.
 	if (OPTS.live) { setView('fpv'); return; }
@@ -3587,13 +3574,13 @@ async function openFlightSession() {
 	// what guarantees that no path can ever fly without a camera or without an
 	// OSD, however it reached the flight.
 	await armFlight();
-	// Le drop. La musique passe du filtre fermé de l'écran de hack au plein
-	// spectre : c'est la décharge, et c'est le seul moment de l'arc qui doit
-	// s'entendre comme un événement plutôt que comme une dérive.
+	// The drop. The music goes from the hack screen's closed filter to full
+	// spectrum: that is the release, and it is the only moment of the arc that
+	// must be heard as an event rather than as a drift.
 	//
-	// Rien à décharger si c'est la radio qui joue (issue #120) : elle est déjà
-	// à plein spectre, et elle n'a pas été duckée — culmination.js saute son
-	// duck pour la même raison. Les deux gestes vont ensemble.
+	// Nothing to release if the radio is playing (issue #120): it is already at
+	// full spectrum and it was never ducked — culmination.js skips its duck for
+	// the same reason. The two gestures go together.
 	if (!radio.owns) music.drop();
 	// The flight clock starts HERE and not at the arming: between the two sits
 	// the [ JACK IN ] prompt, which has no duration — the player can stare at
@@ -3601,7 +3588,7 @@ async function openFlightSession() {
 	// (introFrozen), so that the OSD already mounted under the last hack screen
 	// reads 0 there rather than the time spent in front of the prompt.
 	sessionStartedAt = Date.now();
-	// D16 : briefed, never flown, not the bench — the only flight that gets the
+	// D16: briefed, never flown, not the bench — the only flight that gets the
 	// three hints.
 	hintFlight = !MODE.bench && firstFlightPending(localStorage);
 	hintAirborneAt = null;
@@ -3637,25 +3624,25 @@ async function armFlightOnce() {
 	spawnY = physics.spawn.y;
 	spawnX = physics.spawn.x;
 	spawnZ = physics.spawn.z;
-	// Résolue dans le try, lue après : une ouverture de session ratée ne doit
-	// pas laisser le vol sans caméra ni sans OSD.
+	// Resolved inside the try, read afterwards: a failed session open must not
+	// leave the flight without a camera or without an OSD.
 	let tgt = null;
-	// NOTHING HERE IS LOGGED. C'est LE point d'étanchéité du banc : aucune
-	// session n'est ouverte, donc rien n'est jamais posté, rien n'apparaît au
-	// SESSION LOG ni au TARGET LOG, aucun Randomart n'est tiré et les
-	// compteurs du pied de page de la Home ne bougent pas — ce dont dépend
-	// l'échelle BUILD NOTES, qui compte des sessions.
+	// NOTHING HERE IS LOGGED. This is THE bench's point of watertightness: no
+	// session is opened, so nothing is ever posted, nothing appears in the
+	// SESSION LOG or the TARGET LOG, no Randomart is drawn and the counters in
+	// the Home's footer do not move — which the BUILD NOTES scale depends on,
+	// since it counts sessions.
 	//
-	// Tout ce qui suit (caméra, OSD drone, OSD FPVTP!) continue de tourner :
-	// une machine de banc a une caméra et un OSD comme les autres. Le chemin
-	// est celui qu'emprunte déjà une ouverture de session ratée, où `tgt`
-	// reste null — il est éprouvé, on ne s'en fabrique pas un deuxième.
+	// Everything that follows (camera, drone OSD, FPVTP! OSD) still runs: a bench
+	// machine has a camera and an OSD like any other. The path is the one a
+	// failed session open already takes, where `tgt` stays null — it is proven,
+	// and we do not build ourselves a second one.
 	try {
-		// Le banc reste étanche. Le vol EN DIRECT, lui, ouvre bien une session
-		// depuis #218 : il a une cible, un exemplaire et un hack comme un vol de
-		// terrain, donc il laisse la même trace. Sa zone est préfixée `live-`,
-		// ce qui rend REVISIT impossible dessus — on ne revisite pas un terrain
-		// qu'on n'a pas gardé.
+		// The bench stays watertight. A LIVE flight, however, does open a session
+		// since #218: it has a target, an individual and a hack like a field
+		// flight, so it leaves the same trace. Its area is prefixed `live-`,
+		// which makes REVISIT impossible on it — you do not revisit terrain you
+		// did not keep.
 		if (!MODE.bench) {
 			await session.open({
 				area: flyArea,
@@ -3665,53 +3652,54 @@ async function armFlightOnce() {
 			// The resolved target arms the video link with the opposing signal's RSSI.
 			tgt = session.current()?.target;
 			if (tgt?.family && PROFILE && tgt.family !== PROFILE.family) {
-				console.warn(`[target] famille serveur ${tgt.family} ≠ profil client ${PROFILE.family} — skew de version ?`);
+				console.warn(`[target] server family ${tgt.family} != client profile ${PROFILE.family} — version skew?`);
 			}
-			// Le serveur régénère le scan et donc le buildSeed. S'ils divergent,
-			// le drone volé n'est pas celui enregistré : ça ne casse pas le vol,
-			// mais l'archive mentirait, donc on le dit.
+			// The server regenerates the scan and hence the buildSeed. If they
+			// diverge, the drone being flown is not the one recorded: that does
+			// not break the flight, but the archive would lie, so we say so.
 			if (tgt?.buildSeed && flyTarget && tgt.buildSeed !== `${flyTarget.seed}::${flyTarget.index}`) {
-				console.warn(`[target] buildSeed serveur ${tgt.buildSeed} ≠ client ${flyTarget.seed}::${flyTarget.index}`);
+				console.warn(`[target] server buildSeed ${tgt.buildSeed} != client ${flyTarget.seed}::${flyTarget.index}`);
 			}
 			if (tgt?.signal) {
 				link.setSignal({ rssiDbm: tgt.signal.rssiDbm });
 				console.log(`[link] target signal ${tgt.signal.rssiDbm} dBm (${tgt.signal.mode})`);
-				// Issue #74 : la cible pilote le RENDU du lien, pas seulement son
-				// RSSI. Une cible DIGITAL s'affichait en macroblocs analogiques si
-				// le curseur du joueur était sur analogique.
+				// Issue #74: the target drives the link's RENDERING, not only its
+				// RSSI. A DIGITAL target used to show analogue macroblocks if the
+				// player's setting was on analogue.
 				//
-				// Deux précisions qui comptent :
+				// Two points that matter:
 				//
-				// - `signal.mode` porte `_videoHint`, qui vaut toujours ANALOG ou
-				//   DIGITAL. Le `UNKNOWN` que la fiche affiche parfois est ce
-				//   qu'on a RÉVÉLÉ au joueur, pas ce que la cible est. Le rendu
-				//   montre donc ce que la fiche taisait — c'est voulu : on
-				//   reconnaît un lien numérique en le regardant.
-				// - la sévérité reste au joueur. À severity 0 il a coupé la
-				//   modélisation du lien, et une cible n'a pas à la rallumer : on
-				//   reste LINK_OFF. Le réglage garde aussi le mode sur le chemin
-				//   dev sans cible (?scene=), où ce bloc ne s'exécute pas.
+				// - `signal.mode` carries `_videoHint`, which is always ANALOG or
+				//   DIGITAL. The `UNKNOWN` the sheet sometimes shows is what was
+				//   REVEALED to the player, not what the target is. So the
+				//   rendering shows what the sheet withheld — deliberately: you
+				//   recognise a digital link by looking at it.
+				// - the severity stays the player's. At severity 0 they turned the
+				//   link model off, and a target has no business turning it back
+				//   on: we stay LINK_OFF. The setting also keeps the mode on the
+				//   dev path with no target (?scene=), where this block does not
+				//   run.
 				if (lensLinkMode !== LINK_OFF) {
 					const m = String(tgt.signal.mode ?? '').toUpperCase();
 					if (m === 'DIGITAL' || m === 'ANALOG') {
 						lensLinkMode = m === 'DIGITAL' ? LINK_DIGITAL : LINK_ANALOG;
 						lens.setLink({ mode: lensLinkMode, severity: loadLink().severity });
-						console.log(`[link] rendu ${m} imposé par la cible`);
+						console.log(`[link] ${m} rendering imposed by the target`);
 					}
 				}
 			}
 		}
 	} catch (e) {
-		console.warn('[session] ouverture échouée, ce vol ne sera pas enregistré', e);
+		console.warn('[session] open failed, this flight will not be recorded', e);
 	}
 
-	// La graine : la cible si on en a une, l'exemplaire du banc s'il y en a un,
-	// la famille du profil sinon (mode dev, ?scene=). Il y a toujours une
-	// caméra et toujours un OSD.
+	// The seed: the target if there is one, the bench's individual if there is
+	// one, the profile's family otherwise (dev mode, ?scene=). There is always a
+	// camera and always an OSD.
 	//
-	// L'exemplaire du banc entre ici pour que INDIVIDUAL veuille dire quelque
-	// chose de bout en bout : deux tirages de la même famille doivent différer
-	// par leur caméra et leur OSD, pas seulement par leurs rates.
+	// The bench's individual comes in here so that INDIVIDUAL means something end
+	// to end: two draws of the same family must differ in their camera and their
+	// OSD, not only in their rates.
 	const benchSeed = MODE.bench && MODE.config?.airframe.seed
 		? `bench::${MODE.config.airframe.seed}` : null;
 	const seed = session.current()?.id ?? benchSeed ?? `dev::${PROFILE.family}`;
@@ -3727,29 +3715,29 @@ async function armFlightOnce() {
 			: null),
 	);
 
-	// L'essaim (issue #29) : celui que la cible résolue porte, ou celui que
-	// `?swarm=` a posé sur un chemin de dev. Rien du tout sinon — un cluster
-	// tombe une session sur dix. La cible passe AVANT le drapeau : une session
-	// serveur qui tire un cluster écrase `?swarm=n`, exactement comme
-	// `ambient.setScan()` juste au-dessus préfère le scan de la session au scan
-	// de dev. Le drapeau est un raccourci pour les chemins qui n'ont pas de
-	// session, pas un override de ce que le serveur a résolu.
+	// The swarm (issue #29): the one the resolved target carries, or the one
+	// `?swarm=` set on a dev path. Nothing at all otherwise — a cluster comes up
+	// one session in ten. The target comes BEFORE the flag: a server session that
+	// draws a cluster overrides `?swarm=n`, exactly as `ambient.setScan()` just
+	// above prefers the session's scan to the dev scan. The flag is a shortcut
+	// for the paths that have no session, not an override of what the server
+	// resolved.
 	const flightSwarm = tgt?.swarm ?? devSwarm ?? null;
-	// Le bus `others` (src/audio-others.js) : UNE écriture par vol, ici, parce
-	// que c'est ici qu'on sait. Sans essaim, les ambiants récupèrent le plafond
-	// entier — leur niveau de #250 — au lieu de provisionner dans neuf vols sur
-	// dix une part que personne ne prendra. Avec essaim, la part partagée, qui
-	// est ce qui rend le plafond structurel.
+	// The `others` bus (src/audio-others.js): ONE write per flight, here, because
+	// here is where it is known. With no swarm the ambients get the whole ceiling
+	// — their level from #250 — instead of reserving, in nine flights out of ten,
+	// a share nobody will take. With a swarm, the shared portion, which is what
+	// makes the ceiling structural.
 	setSwarmPresent(!!(swarm && flightSwarm));
 	swarm?.setSwarm(flightSwarm);
 	swarm?.reset(physics.position);
 
 	applyTargetCamera(targetCamera({ seed, family }));
 
-	// Le drone du joueur (issue #264) — ICI et pas dans boot() : la recette lit
-	// l'uptilt de la caméra de la cible, qui vient d'être résolue à la ligne
-	// au-dessus. Le profil est celui qui VOLE (physics.profile), pas `PROFILE` :
-	// un changement de cellule au banc passe par physics.setProfile().
+	// The player's drone (issue #264) — HERE and not in boot(): the recipe reads
+	// the uptilt of the target's camera, which was resolved on the line above.
+	// The profile is the one that FLIES (physics.profile), not `PROFILE`: an
+	// airframe change at the bench goes through physics.setProfile().
 	lens.setOnboard(null);
 	playerDrone?.dispose();
 	playerDrone = new PlayerDrone({
@@ -3782,13 +3770,13 @@ async function armFlightOnce() {
 	setView('fpv');
 
 	droneOsd?.dispose();
-	// La panne NO_OSD (voir drone-osd-model.mjs) renvoie null : certaines
-	// cibles n'ont simplement pas d'OSD, ou le leur est éteint/HS.
-	// HUD CLEAR au banc : une machine montée sans OSD, pour filmer (#217). On
-	// ne tire pas de disposition du tout — c'est exactement l'état que
-	// `droneOsdLayout()` rend déjà pour sa panne NO_OSD, donc rien en aval n'a
-	// à connaître ce réglage. Le réglage est du BANC : une reconnaissance FIELD
-	// ne le lit pas, elle a toujours son OSD.
+	// The NO_OSD failure (see drone-osd-model.mjs) returns null: some targets
+	// simply have no OSD, or theirs is switched off or broken.
+	// HUD CLEAR at the bench: a machine built without an OSD, for filming (#217).
+	// No layout is drawn at all — that is exactly the state `droneOsdLayout()`
+	// already returns for its NO_OSD failure, so nothing downstream has to know
+	// about this setting. The setting is the BENCH's: FIELD reconnaissance does
+	// not read it, it always has its OSD.
 	const hudClear = MODE.bench && MODE.config?.hud === 'CLEAR';
 	const osdLayout = hudClear ? null : droneOsdLayout({ seed, family, mode });
 	droneOsd = osdLayout ? new DroneOsd(osdLayout) : null;
@@ -3797,14 +3785,14 @@ async function armFlightOnce() {
 	console.log(`[camera] ${camSpec.aspectName} ${Math.round(camSpec.fovDeg)}° uptilt ${Math.round(camSpec.uptiltDeg)}° res ${Math.round(camSpec.resScale * 100)}%`);
 }
 
-// Onglet fermé en plein vol : best-effort pour matérialiser le CRASHED. Si ça
-// rate (vrai crash navigateur), la réconciliation serveur s'en charge au
-// prochain chargement du terminal.
+// The tab closed mid-flight: best-effort to make the CRASHED real. If that
+// fails (a genuine browser crash), the server's reconciliation handles it on the
+// terminal's next load.
 window.addEventListener('beforeunload', () => {
 	if (session.current()?.result === 'PENDING') session.beacon('CRASHED');
-	// Le `droneOsd?.dispose()` d'openFlightSession() est un DÉBUT de vol, pas
-	// un démontage : les ambiants n'y ont rien à faire. Le seul démontage de
-	// page est ici (issue #250).
+	// openFlightSession()'s `droneOsd?.dispose()` is the START of a flight, not
+	// a teardown: the ambients have no business there. The only page teardown is
+	// here (issue #250).
 	ambient?.dispose();
 	swarm?.dispose();
 	lens.setOnboard(null);

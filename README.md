@@ -32,8 +32,13 @@ during the flight and nothing is written to your disk.
 Controls: a USB gamepad or radio is detected automatically in Mode 2, and you
 can remap and calibrate it under `Tab`, with live bars to identify each axis. On
 the keyboard, `W`/`S` is throttle, `A`/`D` is yaw, the arrows or the mouse do
-roll and pitch, `R` respawns, `M` switches flight mode (acro, angle, altitude),
-`C` is the free camera, `Tab` opens settings.
+roll and pitch, `M` switches flight mode (acro, angle, altitude), `C` is the
+free camera, `T` flips the machine back over, `Tab` opens settings.
+
+Without a gamepad the flight starts in angle mode, because a keyboard on an
+acro quad is 820 degrees per second from a single tap. Press `M` for acro once
+you want it. There is no respawn in FIELD: crash and the machine is gone, and
+you start a new one. BENCH is the mode where nothing is lost.
 
 ## How it works
 

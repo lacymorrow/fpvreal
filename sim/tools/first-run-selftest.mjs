@@ -83,7 +83,7 @@ t('the 45 s empty-terrain rejection reaches the screen verbatim', () => {
 
 t('every message a player can see is English and actionable', () => {
 	for (const m of [TERRAIN_UNREACHABLE, TERRAIN_EMPTY, PHYSICS_OOM, PHYSICS_UNAVAILABLE, NO_WEBGL2]) {
-		assert.ok(!/[éèêàçùîôûï]/i.test(m), `English: ${m}`);
+		assert.ok(!/[\u00c0-\u00ff]/i.test(m), `English: ${m}`);
 		assert.ok(/reload|close|update|try|allow/i.test(m), `says what to do: ${m}`);
 	}
 });
@@ -141,7 +141,7 @@ t('no WebGL2: the page says so, in words, with no bundle and no stylesheet', () 
 	// words have to reach the screen.
 	assert.ok(/style="/.test(text), 'carries its own styles inline');
 	assert.ok(!/class="/.test(text), 'leans on no stylesheet class');
-	assert.ok(!/[éèêàçùîôûï]/i.test(text), 'English');
+	assert.ok(!/[\u00c0-\u00ff]/i.test(text), 'English');
 });
 
 t('WebGL2 present: the probe leaves no trace at all', () => {
