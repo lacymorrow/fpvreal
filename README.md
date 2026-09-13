@@ -45,12 +45,12 @@ during the flight and nothing is written to your disk.
 
 The game is 100% free. If you appreciate my work, please consider helping me cover the hosting costs and burn some tokens!
 
-| | |
-|---|---|
-| **One line, any coin** | `fpvtp@cake.cash` |
-| **Monero** | `42RnnFdtNasaiUQGEASPGRXjHcr2pDocwXCwGUAhwyp7KbAhbKwCHrEfeYMkUMpo7gQdEABWy9LoRd4iEUFMq2SXKdHPqKt` |
-| **Bitcoin** · silent payment | `sp1qq2tuvemuzgu6hudsu7jf2h90gl6xemav67s3x3f34l76qtfl6dzgcq43r30lvckcz4qat2x8ju5a36sdqr2r3fe72cqpudvlqh797agdkcvkvkl4` |
-| **Bitcoin** | `bc1qmwm3rcvzkwaft40yrtynym3yww20t2atfr45yg` |
+| | | |
+|:--:|---|---|
+| <img src="docs/brand/mark-cake.svg" width="22" alt=""> | **Cake Wallet** · one line, any coin | `fpvtp@cake.cash` |
+| <img src="docs/brand/mark-monero.svg" width="22" alt=""> | **Monero** · private by construction | `42RnnFdtNasaiUQGEASPGRXjHcr2pDocwXCwGUAhwyp7KbAhbKwCHrEfeYMkUMpo7gQdEABWy9LoRd4iEUFMq2SXKdHPqKt` |
+| <img src="docs/brand/mark-bitcoin.svg" width="22" alt=""> | **Bitcoin** · silent payment, every tip lands somewhere new | `sp1qq2tuvemuzgu6hudsu7jf2h90gl6xemav67s3x3f34l76qtfl6dzgcq43r30lvckcz4qat2x8ju5a36sdqr2r3fe72cqpudvlqh797agdkcvkvkl4` |
+| <img src="docs/brand/mark-bitcoin.svg" width="22" alt=""> | **Bitcoin** · for wallets that do not know silent payments yet | `bc1qmwm3rcvzkwaft40yrtynym3yww20t2atfr45yg` |
 
 ## Controls
 
