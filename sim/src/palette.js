@@ -1,21 +1,21 @@
-// PHASE 19 (issue #56) — le pont entre tokens.css et le peu de code qui peint
-// lui-même.
+// PHASE 19 (issue #56) — the bridge between tokens.css and the little code that
+// paints for itself.
 //
-// Une couche vectorielle Leaflet ne comprend pas `var(--warm-white)` : elle veut
-// une couleur résolue, en chaîne. Plutôt que de recopier les valeurs dans le JS
-// — c'est exactement ce qui avait fait diverger `#7ddc8a` et `#7ddc9a` avant
-// cette phase — on lit la feuille de style, qui reste la source unique.
+// A Leaflet vector layer does not understand `var(--warm-white)`: it wants a
+// resolved colour, as a string. Rather than copying the values into the JS —
+// which is exactly what made `#7ddc8a` and `#7ddc9a` diverge before this
+// phase — the stylesheet is read, and stays the single source.
 //
-// Ce qui N'EST PAS ici : la palette canvas de drone-osd.js. Cet OSD est peint
-// dans l'image du drone et traverse la liaison vidéo — c'est de la matière
-// filmée, pas de l'interface. Ses couleurs appartiennent au matériel, pas aux
-// tokens, et la Bible §42 veut que ce qui passe par la caméra reste brut.
+// What is NOT here: drone-osd.js's canvas palette. That OSD is painted into the
+// drone's image and crosses the video link — it is filmed material, not
+// interface. Its colours belong to the hardware, not to the tokens, and
+// Bible §42 wants whatever passes through the camera to stay raw.
 
 const cache = new Map();
 
-// Les valeurs de repli servent au rendu hors navigateur (tests Node) et à
-// l'instant où une couche se construirait avant que la feuille soit appliquée.
-// Elles doivent rester alignées sur tokens.css ; palette-selftest.mjs le vérifie.
+// The fallback values serve rendering outside a browser (Node tests) and the
+// instant when a layer would be built before the sheet is applied. They must
+// stay aligned with tokens.css; palette-selftest.mjs checks it.
 const FALLBACK = {
 	'--black': '#0a0908',
 	'--dark-grey': '#121110',
@@ -25,7 +25,7 @@ const FALLBACK = {
 	'--green': '#7aa96b',
 	'--yellow': '#d4b155',
 	'--orange': '#cf7b3e',
-	'--red': '#c8504a',
+	'--red': '#d4635c',
 	// The one demo colour a daily screen may touch, and only under the cursor:
 	// DATA marks the SELECTED item with it (issue #26, Bible §19).
 	'--magenta': '#e34de0',
@@ -38,11 +38,11 @@ export function token(name) {
 		v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 	}
 	if (!v) return FALLBACK[name] ?? '';
-	// On ne met en cache qu'une valeur réellement résolue : sinon un appel trop
-	// tôt figerait le repli pour toute la session.
+	// Only a genuinely resolved value is cached: otherwise a call made too early
+	// would freeze the fallback for the whole session.
 	cache.set(name, v);
 	return v;
 }
 
-// Uniquement pour les tests : la feuille ne change pas en cours de partie.
+// For the tests only: the sheet does not change during a session.
 export function resetPaletteCache() { cache.clear(); }

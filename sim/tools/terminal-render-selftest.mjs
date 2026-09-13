@@ -387,21 +387,37 @@ const openAreaActions = async () => {
 	await openLocal();
 	btn('ALL TERRAIN…').click();
 	await new Promise((r) => setTimeout(r, 0));
-	dom.root.querySelectorAll('.terminal-area')[0].click();
+	// The LAST row: FIELD stays mounted underneath (only `hidden`), so its own
+	// compact list is still in the tree and comes first.
+	dom.root.querySelectorAll('.terminal-area').at(-1).click();
 	await new Promise((r) => setTimeout(r, 0));
+	// WRAPPED: `await` on an async function that RETURNED this promise would
+	// unwrap it, and wait on a screen that has not been closed yet.
+	return { p };
+};
+
+// ALL TERRAIN… stacks screens on top of FIELD, and each one answers Escape in
+// turn. Pressing it a bounded number of times unwinds the stack whatever depth
+// the test left it at; the presses that land after FIELD is gone reach a
+// detached nav and do nothing.
+const unwind = async (p) => {
+	for (let i = 0; i < 4; i++) { dom.key('Escape'); await new Promise((r) => setTimeout(r, 0)); }
 	return p;
 };
 
 await ta('all terrain: REMOVE TERRAIN is one operation, one label, and it is armed', async () => {
 	reset();
-	const p = await openAreaActions();
-	const remove = btn('REMOVE TERRAIN');
+	const { p } = await openAreaActions();
+	// The FIRST row's actions are hidden but still in the tree, so the removal
+	// is looked up inside the row that was actually opened.
+	const row = dom.root.querySelectorAll('.terminal-area-actions').at(-1);
+	const remove = row.querySelectorAll('button').find((b) => b.textContent.includes('REMOVE'));
 	// The scanner has always called this `[ REMOVE TERRAIN ]`; this row called it
 	// `REMOVE`, as a bare inline link, and deleted hundreds of megabytes on one
 	// press. Same operation, same words, same treatment.
 	assert.ok(remove, 'the row offers REMOVE TERRAIN');
 	assert.equal(remove.textContent, '[ REMOVE TERRAIN ]', 'a CTA, with its brackets');
-	assert.equal(btn('REMOVE'), remove, 'and there is no second, differently spelled removal');
+	assert.ok(!text().includes('REMOVE\n'), 'and no second, differently spelled removal is offered');
 
 	remove.click();
 	await new Promise((r) => setTimeout(r, 0));
@@ -411,7 +427,7 @@ await ta('all terrain: REMOVE TERRAIN is one operation, one label, and it is arm
 	remove.click();
 	await new Promise((r) => setTimeout(r, 0));
 	assert.deepEqual(deleted, ['/__map-api/scenes/paristest'], 'the second press is the confirmation');
-	await close(p);
+	await unwind(p);
 });
 
 await ta('forecast: an area name is rendered as text, never as markup', async () => {
@@ -423,14 +439,15 @@ await ta('forecast: an area name is rendered as text, never as markup', async ()
 	reset();
 	const HOSTILE = '<img src=x onerror=alert(1)>PARIS';
 	scenesReply = [{ ...SCENES[0], name: HOSTILE }];
-	const p = await openAreaActions();
-	btn('FORECAST').click();
+	const { p } = await openAreaActions();
+	dom.root.querySelectorAll('.terminal-area-actions').at(-1)
+		.querySelectorAll('button').find((b) => b.textContent === 'FORECAST').click();
 	await new Promise((r) => setTimeout(r, 0));
-	assert.ok(text().includes(HOSTILE.toUpperCase()), 'the name is on screen, verbatim');
+	const box = dom.root.querySelectorAll('.terminal-box').at(-1);
+	assert.match(box.textContent, /^FORECAST \/\//, 'the forecast screen is the one on top');
+	assert.ok(box.textContent.includes(HOSTILE.toUpperCase()), 'the name is on screen, verbatim');
 	assert.equal(dom.root.querySelectorAll('img').length, 0, 'and it built no element');
-	dom.key('Escape');
-	await new Promise((r) => setTimeout(r, 0));
-	await close(p);
+	await unwind(p);
 });
 
 // --- OPERATOR KEY -----------------------------------------------------------

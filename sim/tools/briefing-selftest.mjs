@@ -134,8 +134,8 @@ t('a nameless pad still reads as a gamepad', () => {
 t('THE TERMINAL names the five modes and the two global keys', () => {
 	const screen = briefingScreens({ input: { kind: 'keyboard' }, keyRows })[1];
 	const labels = screen.rows.map((r) => r[0]);
-	// Le briefing est la carte des voies : une voie absente d'ici n'existe pas
-	// pour l'opérateur qui débute (issue #120).
+	// The briefing is the map of the paths: a path missing from here does not
+	// exist for the operator who is starting out (issue #120).
 	assert.deepEqual(labels.slice(0, 5), ['FIELD', 'BENCH', 'DATA', 'JUKEBOX', 'SETTINGS']);
 	assert.match(screen.rows.find((r) => r[0] === 'JUKEBOX')[1], /KEEPS PLAYING/);
 	assert.equal(screen.rows.find((r) => r[0] === 'ESC')[1], 'BACK, EVERYWHERE');

@@ -1,17 +1,16 @@
-// Selftest de rendu des écrans FROIDS — ceux que la Home carte-first a rangés
-// derrière DATA (#208, renommé par #26). Même intention que
-// terminal-render-selftest.mjs : on vérifie l'ARBRE et le CÂBLAGE, pas
-// l'apparence.
+// Render selftest of the COLD screens — the ones the map-first Home filed
+// behind DATA (#208, renamed by #26). Same intent as
+// terminal-render-selftest.mjs: it checks the TREE and the WIRING, not the
+// appearance.
 //
-// Ces trois écrans n'étaient pas testables avant : ils se construisaient en
-// innerHTML, que fake-dom refuse. Les convertir en createElement était de toute
-// façon nécessaire — c'est ce qui permet à BUILD NOTES d'avoir un retrait
-// suspendu par ligne.
+// These three screens were not testable before: they were built with innerHTML,
+// which fake-dom refuses. Converting them to createElement was necessary
+// anyway — it is what lets BUILD NOTES have a hanging indent per line.
 //
-// Chacun des trois tests correspond à un défaut vu au rendu réel, en Chromium
-// headless piloté en CDP, sur la branche phase-27-ui-rework.
+// Each of the three tests matches a defect seen in a real render, in headless
+// Chromium driven over CDP, on the phase-27-ui-rework branch.
 //
-// Lancer : node tools/data-render-selftest.mjs
+// Run: node tools/data-render-selftest.mjs
 
 import assert from 'node:assert/strict';
 import { installFakeDom } from './lib/fake-dom.mjs';
@@ -36,8 +35,8 @@ const reset = () => { dom.root.replaceChildren(); dom.setActive(null); };
 const btn = (label) => dom.root.querySelectorAll('button').find((b) => b.textContent.includes(label));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-// Une session qui a porté une cible : c'est d'elle que le Target Log est
-// dérivé (PHASE 17, spec D1) — il n'y a pas de stock `targetLog`.
+// A session that carried a target: the Target Log is DERIVED from it
+// (PHASE 17, spec D1) — there is no stored `targetLog`.
 const session = (over = {}) => ({
 	id: 'paristest-0001', area: 'paristest', seq: 1, targetSeq: 1,
 	target: { family: 'heavy5', rssiDbm: -56, mode: 'ANALOG' },
@@ -47,28 +46,28 @@ const session = (over = {}) => ({
 const operator = (over = {}) => ({
 	name: 'neo', createdAt: '2026-09-01T10:00:00.000Z', sessions: [session()], ...over,
 });
-// `key` : la clé d'opérateur telle que le navigateur la garde (#60). Absente
-// par défaut — c'est le cas d'un serveur `local`, où elle n'existe pas.
+// `key`: the operator key as the browser keeps it (#60). Absent by default —
+// that is the case of a `local` server, where it does not exist.
 let storedKey = null;
 const api = (op) => ({
 	getOperator: () => op, patch: () => {}, flush: async () => {},
 	hasKey: () => Boolean(storedKey), getKey: () => storedKey,
 });
 
-// Ouvre la racine, prend la voie DATA, puis monte l'écran comme le fait la
-// boucle de main.js — DATA est au même niveau que FIELD et BENCH (D3), elle
-// ne se traverse plus depuis un onglet de FIELD.
+// Opens the root, takes the DATA path, then mounts the screen the way
+// main.js's loop does — DATA is at the same level as FIELD and BENCH (D3), it
+// is no longer reached through a FIELD tab.
 //
-// Rend la promesse de DATA : il FAUT la dénouer en fin de test — un écran
-// laissé ouvert garde ses abonnements, et le selftest passerait sans jamais
-// rendre la main.
+// Returns DATA's promise: it MUST be unwound at the end of the test — a screen
+// left open keeps its subscriptions, and the selftest would pass without ever
+// handing back.
 const openData = async (op, entry) => {
 	reset();
 	const mode = selectOperationMode(dom.root, { last: 'data' });
 	btn('DATA').click();
-	assert.equal(await mode, 'data', 'la racine mène bien à DATA');
-	// Enveloppée : `await` sur une async qui RENDRAIT cette promesse la
-	// déballerait, et attendrait un écran qui ne se referme jamais.
+	assert.equal(await mode, 'data', 'the root does lead to DATA');
+	// WRAPPED: `await` on an async function that RETURNED this promise would
+	// unwrap it, and wait on a screen that never closes.
 	const home = dataScreen(dom.root, { api: api(op), scenes: [] });
 	await tick();
 	btn(entry).click();
@@ -76,53 +75,53 @@ const openData = async (op, entry) => {
 	return { home };
 };
 
-// Remonte de DEPTH écrans par Échap. Le dernier referme DATA lui-même : il
-// n'y a plus de bouton MODE à cliquer (D4), Échap est la remontée partout.
-// Fermer compte : menu-nav.js tient un setInterval de scrutation manette que
-// seul detach() arrête — un écran laissé ouvert garde le processus en vie.
-const DEPTH_SOUS_ECRAN = 2;   // l'écran lui-même, puis DATA
-const closeAll = async (home, depth = DEPTH_SOUS_ECRAN) => {
+// Goes back up DEPTH screens with Escape. The last one closes DATA itself:
+// there is no MODE button left to click (D4), Escape is the way back up
+// everywhere. Closing matters: menu-nav.js holds a gamepad-polling setInterval
+// that only detach() stops — a screen left open keeps the process alive.
+const SUBSCREEN_DEPTH = 2;   // the screen itself, then DATA
+const closeAll = async (home, depth = SUBSCREEN_DEPTH) => {
 	for (let i = 0; i < depth; i++) { dom.key('Escape'); await tick(); await tick(); }
 	await home;
 };
 
 // --- la page DATA -----------------------------------------------------------
 
-// Les neuf sections de la spec, dans l'ordre. C'est la seule chose que ce test
-// fige de l'écran : ce qu'il MONTRE et dans quel ordre — un graphe se juge à
-// l'œil, une section disparue ne se juge nulle part ailleurs qu'ici.
+// The spec's nine sections, in order. It is the only thing this test freezes
+// about the screen: what it SHOWS and in what order — a graph is judged by eye,
+// a vanished section is judged nowhere but here.
 const SECTIONS = ['RHYTHM', 'LIFE', 'SPEED × ALTITUDE', 'HOW THEY DIED',
 	'STICKS', 'FAMILIES', 'GEOGRAPHY', 'PROFILE', 'RECORDS'];
 
-await ta('data : les neuf sections, dans l\'ordre, et RECORDS au bout', async () => {
+await ta('data: the nine sections, in order, with RECORDS at the end', async () => {
 	reset();
 	const p = dataScreen(dom.root, { api: api(operator()), scenes: [] });
 	await tick();
 	const page = dom.root.querySelector('.data-page');
-	assert.ok(page, 'la page qui défile');
+	assert.ok(page, 'the scrolling page');
 	const titles = page.querySelectorAll('.data-section').map((b) => b.children[0].textContent);
 	assert.deepEqual(titles, SECTIONS);
-	// RECORDS garde le journal brut et tout ce qui se lit plutôt que se dessine.
+	// RECORDS keeps the raw log and everything that is read rather than drawn.
 	for (const entry of ['SESSION LOG', 'LAST SESSION', 'OPERATOR', 'BUILD NOTES']) {
-		assert.ok(btn(entry), `« ${entry} » est dans RECORDS`);
+		assert.ok(btn(entry), `"${entry}" is in RECORDS`);
 	}
-	// D2 : le TARGET LOG a été absorbé par FAMILIES — il n'a plus d'entrée.
-	assert.equal(btn('TARGET LOG'), undefined, 'le TARGET LOG a disparu du menu');
-	// D6 : SETTINGS est monté à la racine ; le répéter ici ferait deux portes
-	// pour un seul panneau.
+	// D2: the TARGET LOG was absorbed by FAMILIES — it has no entry any more.
+	assert.equal(btn('TARGET LOG'), undefined, 'the TARGET LOG has left the menu');
+	// D6: SETTINGS moved up to the root; repeating it here would make two doors
+	// for one panel.
 	assert.equal(dom.root.querySelectorAll('button').find((b) => b.textContent === 'SETTINGS'), undefined);
-	// D15 : Échap est nommé, et il dit où il mène.
+	// D15: Escape is named, and it says where it leads.
 	const keys = dom.root.querySelector('.terminal-keys');
-	assert.ok(keys, 'la ligne des touches');
+	assert.ok(keys, 'the key line');
 	assert.equal(keys.textContent, '[ESC] OPERATION MODE');
 	await closeAll(p, 1);
 });
 
-await ta('data : sans piste, les sections qui en ont besoin disent NO TRACK', async () => {
-	// Le critère d'acceptation de l'issue : jamais une erreur, jamais un trou
-	// dans les graphes qui n'ont pas besoin d'une piste. Ici aucune route
-	// `/tracks` ne répond — c'est l'état de toute build tant que #24 n'a pas
-	// atterri, et c'est aussi celui d'un vol trop vieux pour être retenu (D3).
+await ta('data: with no track, the sections that need one say NO TRACK', async () => {
+	// The issue's acceptance criterion: never an error, never a hole in the
+	// graphs that do not need a track. Here no `/tracks` route answers — that is
+	// the state of every build until #24 lands, and also that of a flight too
+	// old to be kept (D3).
 	reset();
 	const p = dataScreen(dom.root, { api: api(operator()), scenes: [] });
 	await tick(); await tick();
@@ -130,47 +129,47 @@ await ta('data : sans piste, les sections qui en ont besoin disent NO TRACK', as
 	const sectionOf = (name) => page.querySelectorAll('.data-section')
 		.find((b) => b.children[0].textContent === name);
 	for (const name of ['HOW THEY DIED', 'STICKS', 'PROFILE']) {
-		assert.match(sectionOf(name).textContent, /NO TRACK/, `${name} ne dit pas NO TRACK`);
+		assert.match(sectionOf(name).textContent, /NO TRACK/, `${name} does not say NO TRACK`);
 	}
-	// Et les cinq qui n'en ont pas besoin gardent leur relevé : les agrégats de
-	// session suffisent, et ils ne sont jamais jetés.
+	// And the five that do not need one keep their readout: the session
+	// aggregates are enough, and they are never thrown away.
 	assert.match(sectionOf('RHYTHM').textContent, /SESSIONS PER WEEK/);
 	assert.match(sectionOf('LIFE').textContent, /DURATION PER SESSION/);
 	assert.doesNotMatch(sectionOf('RHYTHM').textContent, /NO TRACK/);
 	await closeAll(p, 1);
 });
 
-await ta('data : FAMILIES a absorbé le TARGET LOG — une famille s\'ouvre sur ses cibles', async () => {
+await ta('data: FAMILIES absorbed the TARGET LOG — a family opens onto its targets', async () => {
 	reset();
 	const p = dataScreen(dom.root, { api: api(operator()), scenes: [] });
 	await tick();
 	const page = dom.root.querySelector('.data-page');
 	const fam = () => page.querySelectorAll('.data-section').find((b) => b.children[0].textContent === 'FAMILIES');
-	assert.doesNotMatch(fam().textContent, /TARGET 001/, 'fermée, la famille ne liste rien');
+	assert.doesNotMatch(fam().textContent, /TARGET 001/, 'closed, the family lists nothing');
 	const open = fam().querySelectorAll('button')[0];
-	assert.ok(open, 'la famille rencontrée est un lien');
+	assert.ok(open, 'the family met is a link');
 	open.click();
 	await tick();
-	assert.match(fam().textContent, /TARGET 001/, 'ouverte, elle liste la cible rencontrée');
+	assert.match(fam().textContent, /TARGET 001/, 'open, it lists the target met');
 	assert.match(fam().textContent, /PARISTEST/);
-	// Un second clic referme : c'est un dépli, pas un écran de plus.
+	// A second click closes it: this is a fold-out, not one more screen.
 	fam().querySelectorAll('button')[0].click();
 	await tick();
 	assert.doesNotMatch(fam().textContent, /TARGET 001/);
 	await closeAll(p, 1);
 });
 
-// --- ce que DATA remonte ----------------------------------------------------
+// --- what DATA hands back ---------------------------------------------------
 //
-// C'est le contrat que main.js:dataLoop() consomme (D3) : DATA résout
-// VERS LE HAUT, en la forme que la boucle FIELD sait faire voler. Sans ce test,
-// un REVISIT pouvait remonter un slug nu et la boucle décollait sur `undefined`.
+// This is the contract main.js:dataLoop() consumes (D3): DATA resolves UPWARDS,
+// in the shape the FIELD loop knows how to fly. Without this test a REVISIT
+// could hand back a bare slug and the loop took off on `undefined`.
 
-// La zone doit être encore sur disque pour que REVISIT soit proposé : c'est le
-// gate `model.areas.some(...)` de lastSessionScreen.
+// The area must still be on disk for REVISIT to be offered: that is
+// lastSessionScreen's `model.areas.some(...)` gate.
 const INSTALLED = [{ slug: 'paristest', name: 'paristest', bytes: 109e6 }];
 
-await ta('data : un REVISIT remonte { slug }, la forme que la boucle FIELD vole', async () => {
+await ta('data: a REVISIT hands back { slug }, the shape the FIELD loop flies', async () => {
 	reset();
 	const p = dataScreen(dom.root, { api: api(operator()), scenes: INSTALLED });
 	await tick();
@@ -178,46 +177,46 @@ await ta('data : un REVISIT remonte { slug }, la forme que la boucle FIELD vole'
 	btn('LAST SESSION').click();
 	await tick();
 	btn('REVISIT AREA').click();
-	// Un slug nu remonterait ici sans le normaliseur de done() : c'est ce que
-	// rend lastSessionScreen, et ce n'est pas ce que la boucle attend.
+	// A bare slug would come back here without done()'s normaliser: that is what
+	// lastSessionScreen returns, and not what the loop expects.
 	assert.deepEqual(await p, { slug: 'paristest' });
-	assert.equal(dom.root.children.length, 0, 'et rien ne reste dans #ui');
+	assert.equal(dom.root.children.length, 0, 'and nothing is left in #ui');
 });
 
-await ta('data : Échap remonte null, pas undefined', async () => {
+await ta('data: Escape hands back null, not undefined', async () => {
 	reset();
 	const p = dataScreen(dom.root, { api: api(operator()), scenes: INSTALLED });
 	await tick();
-	// `if (!pick) continue;` dans main.js : null et undefined y passeraient tous
-	// les deux, mais la fonction promet une forme — elle la tient.
+	// `if (!pick) continue;` in main.js: null and undefined would both pass, but
+	// the function promises a shape — and it keeps it.
 	dom.key('Escape');
 	assert.equal(await p, null);
 });
 
 // --- OPERATOR ---------------------------------------------------------------
 
-await ta('operator : le compteur de cibles vient des sessions, pas d\'une clé morte', async () => {
-	// `op.targetLog` n'existe plus depuis PHASE 17 : le lire rendait toujours 0,
-	// et l'écran contredisait le pied de la Home (« 9 TARGETS LOGGED ») et le
-	// Target Log lui-même. Deux sessions, une seule avec cible.
+await ta('operator: the target counter comes from the sessions, not a dead key', async () => {
+	// `op.targetLog` has not existed since PHASE 17: reading it always returned
+	// 0, and the screen contradicted the Home footer ("9 TARGETS LOGGED") and
+	// the Target Log itself. Two sessions, only one with a target.
 	const { home } = await openData(operator({ sessions: [session(), session({ id: 'x', seq: 2, targetSeq: 0, target: null })] }), 'OPERATOR');
 	const t = dom.root.textContent;
 	assert.match(t, /OPERATOR \/\/ NEO/);
 	assert.match(t, /SESSIONS\s+2/);
-	assert.match(t, /TARGETS\s+1/, 'une seule des deux sessions a porté une cible');
+	assert.match(t, /TARGETS\s+1/, 'only one of the two sessions carried a target');
 	assert.doesNotMatch(t, /TARGETS\s+0/);
 	await closeAll(home);
 });
 
-// La clé (#60) est un mécanisme TECHNIQUE, montré ici pour la même raison que le
-// Control Vector l'est sur SON écran : parce qu'on peut vouloir la relire. Les
-// deux ne se mélangent ni à l'écran ni dans le code (Bible §33) — c'est
-// justement ce que ces deux tests fixent.
-// La Home et DATA restent MONTÉES derrière (seulement `hidden`) : leur texte
-// est dans dom.root. On ne lit donc que la boîte du dernier écran ouvert.
+// The key (#60) is a TECHNICAL mechanism, shown here for the same reason the
+// Control Vector is shown on ITS screen: because you may want to read it back.
+// The two mix neither on screen nor in the code (Bible §33) — which is exactly
+// what these two tests pin down.
+// The Home and DATA stay MOUNTED behind (only `hidden`): their text is in
+// dom.root. So only the last opened screen's box is read.
 const topBox = () => { const b = dom.root.querySelectorAll('.terminal-box'); return b[b.length - 1]; };
 
-await ta('operator : sans clé (serveur local), aucun SHOW KEY à l\'écran', async () => {
+await ta('operator: with no key (local server), no SHOW KEY on screen', async () => {
 	storedKey = null;
 	const { home } = await openData(operator(), 'OPERATOR');
 	assert.equal(btn('SHOW KEY'), undefined);
@@ -225,20 +224,21 @@ await ta('operator : sans clé (serveur local), aucun SHOW KEY à l\'écran', as
 	await closeAll(home);
 });
 
-await ta('operator : avec une clé, elle est masquée jusqu\'à SHOW KEY', async () => {
+await ta('operator: with a key, it is masked until SHOW KEY', async () => {
 	storedKey = 'K7QP-3MZX-AAAA-BBBB-CCCC-DDDD-EE';
 	const { home } = await openData(operator(), 'OPERATOR');
-	assert.match(topBox().textContent, /OPERATOR KEY\s+•/, 'masquée au premier rendu');
+	assert.match(topBox().textContent, /OPERATOR KEY\s+•/, 'masked on the first render');
 	assert.doesNotMatch(topBox().textContent, /K7QP/);
 	btn('SHOW KEY').click();
 	await tick();
 	assert.match(topBox().textContent, /K7QP-3MZX-AAAA-BBBB-CCCC-DDDD-EE/);
-	// La SEULE chose que le jeu dise jamais de la clé : l'inscription, elle, ne
-	// fait rien noter à personne (amendement du 2026-09-07).
+	// The ONLY thing the game ever says about the key: registration itself asks
+	// nobody to write anything down (amendment of 2026-09-07).
 	assert.match(topBox().textContent, /THIS PROFILE LIVES IN THIS BROWSER/);
-	// La clé n'a rien à voir avec le Control Vector, retiré du jeu (#33). On
-	// garde l'assertion : elle verrouille que cet écran parle de la CLÉ et de
-	// rien d'autre, et le mot ne doit pas revenir par une régression de copie.
+	// The key has nothing to do with the Control Vector, removed from the game
+	// (#33). The assertion stays: it locks in that this screen speaks of the KEY
+	// and nothing else, and the phrase must not come back through a copy
+	// regression.
 	assert.doesNotMatch(topBox().textContent, /CONTROL VECTOR/);
 	storedKey = null;
 	await closeAll(home);
@@ -246,41 +246,40 @@ await ta('operator : avec une clé, elle est masquée jusqu\'à SHOW KEY', async
 
 // --- BUILD NOTES ------------------------------------------------------------
 
-await ta('build notes : une ligne de note = un élément, pour le retrait suspendu', async () => {
-	// En un seul <pre>, une note trop longue se repliait en colonne 0 et se
-	// lisait comme une entrée de premier niveau. Le retrait suspendu de
-	// `.terminal-note` n'est possible que si chaque ligne est son propre nœud.
+await ta('build notes: one note line = one element, for the hanging indent', async () => {
+	// In a single <pre>, a note that was too long wrapped back to column 0 and
+	// read as a top-level entry. `.terminal-note`'s hanging indent is only
+	// possible if every line is its own node.
 	const { home } = await openData(operator(), 'BUILD NOTES');
 	assert.match(dom.root.textContent, /BUILD NOTES/);
 	const notes = dom.root.querySelectorAll('.terminal-note');
-	assert.ok(notes.length > 0, 'au moins une ligne de note portée par son propre élément');
-	// Aucune ligne ne doit transporter son retrait en espaces littéraux : ils ne
-	// survivent pas au repli, c'est exactement le défaut qu'on corrige.
-	for (const p of notes) assert.doesNotMatch(p.textContent, /^ /, 'retrait en CSS, pas en espaces');
-	assert.ok(dom.root.querySelectorAll('.terminal-note-block').length > 0, 'les notes sont groupées par version');
+	assert.ok(notes.length > 0, 'at least one note line carried by its own element');
+	// No line may carry its indent as literal spaces: they do not survive the
+	// wrap, which is exactly the defect being fixed.
+	for (const p of notes) assert.doesNotMatch(p.textContent, /^ /, 'indent in CSS, not in spaces');
+	assert.ok(dom.root.querySelectorAll('.terminal-note-block').length > 0, 'the notes are grouped by version');
 	await closeAll(home);
 });
 
-await ta('build notes : [ BACK ] existe ET Escape en sort', async () => {
-	// Seul écran de la maison qui n'appelait pas menuNav : sans curseur ni
-	// clavier, et sur une liste assez longue pour passer sous la ligne de
-	// flottaison, son unique BACK était hors de vue. L'écran se refermait sur
-	// l'opérateur.
+await ta('build notes: [ BACK ] exists AND Escape leaves', async () => {
+	// The only screen in the house that did not call menuNav: with no cursor and
+	// no keyboard, and on a list long enough to run below the fold, its single
+	// BACK was out of sight. The screen closed in on the operator.
 	const { home } = await openData(operator(), 'BUILD NOTES');
-	assert.ok(btn('BACK'), 'un BACK');
-	// `BUILD NOTES` est aussi le LIBELLÉ du lien dans RECORDS : on vise donc
-	// `CURRENT BUILD`, que seul l'écran lui-même affiche.
+	assert.ok(btn('BACK'), 'a BACK');
+	// `BUILD NOTES` is also the LABEL of the link in RECORDS: so this aims at
+	// `CURRENT BUILD`, which only the screen itself displays.
 	assert.match(dom.root.textContent, /CURRENT BUILD/);
 	dom.key('Escape');
 	await tick();
-	assert.doesNotMatch(dom.root.textContent, /CURRENT BUILD/, 'Escape referme l\'écran');
-	assert.match(dom.root.textContent, /SESSION LOG · LAST SESSION/, 'et rend la main à DATA');
-	await closeAll(home, 1);   // l'Escape du test a déjà refermé BUILD NOTES
+	assert.doesNotMatch(dom.root.textContent, /CURRENT BUILD/, 'Escape closes the screen');
+	assert.match(dom.root.textContent, /SESSION LOG · LAST SESSION/, 'and hands back to DATA');
+	await closeAll(home, 1);   // the test's Escape has already closed BUILD NOTES
 });
 
 // --- SESSION LOG ------------------------------------------------------------
 
-await ta('session log : Échap est nommé, comme sur tout écran qui l\'écoute', async () => {
+await ta('session log: Escape is named, as on every screen that listens for it', async () => {
 	reset();
 	const p = runSessionLog(dom.root, { operator: operator(), scenes: [] });
 	await tick();
@@ -290,13 +289,88 @@ await ta('session log : Échap est nommé, comme sur tout écran qui l\'écoute'
 	await p;
 });
 
-// Comme bench-render-selftest : on rend les globals avant de conclure. Sans ça
-// les abonnements posés par menuNav sur le faux window gardent le processus en
-// vie et le test « passe » sans jamais rendre la main.
+await ta('session log: an empty list says so at DATA level, not at 22 px', async () => {
+	// A bare <pre> inherits the DISPLAY level from `.bootstrap-box`: "NO SESSIONS
+	// MATCH THIS FILTER" therefore printed LARGER than the 13 px rows it
+	// replaced. An empty state is information, not a headline (Bible §39).
+	reset();
+	const p = runSessionLog(dom.root, { operator: operator({ sessions: [] }), scenes: [] });
+	await tick();
+	const empty = dom.root.querySelector('.terminal-empty');
+	assert.ok(empty, 'the empty state goes through the one shared treatment');
+	assert.match(empty.textContent, /NO SESSIONS MATCH THIS FILTER/);
+	btn('BACK').click();
+	await p;
+});
+
+// --- SESSION DETAIL ---------------------------------------------------------
+//
+// The record talks to the REAL src/operator.js: that is what fetches the
+// complete session. `_setFetch` exists for this, and an operator created
+// through the same route sets the cache getSession() needs.
+const { runSessionDetail } = await import('../src/session-log.js');
+const operatorApi = await import('../src/operator.js');
+
+const HOSTILE = '<img src=x onerror=alert(1)>';
+const mountDetail = async (over = {}) => {
+	reset();
+	const full = {
+		id: 'paristest-0001', operatorId: 'neo-0000', area: 'paristest', seq: 1,
+		start: '2026-09-04T18:00:00.000Z', end: '2026-09-04T18:07:00.000Z',
+		result: 'CRASHED', photos: [], comment: null, target: null,
+		flightTelemetry: { durationS: 420, maxSpeedMs: 12, maxRateDps: 300, maxAltitudeM: 40, distanceM: 900 },
+		...over,
+	};
+	const calls = [];
+	operatorApi._setFetch(async (url, opts) => {
+		calls.push(`${opts?.method ?? 'GET'} ${url}`);
+		if (opts?.method === 'POST') {
+			return { ok: true, status: 200, json: async () => ({ operator: { id: 'neo-0000', name: 'neo', sessions: [full] }, key: 'k' }) };
+		}
+		if (opts?.method === 'DELETE') return { ok: true, status: 200, json: async () => ({ removed: full.id }) };
+		return { ok: true, status: 200, json: async () => ({ session: full }) };
+	});
+	await operatorApi.createOperator('neo');
+	const p = runSessionDetail(dom.root, full.id, { scenes: [] });
+	await tick(); await tick();
+	return { p, calls };
+};
+
+await ta('session detail: the operator note is TEXT, never markup', async () => {
+	// The note is typed by a player and rendered, on a shared server, in ANOTHER
+	// operator's browser — the one holding the bearer key (src/operator.js).
+	// Interpolated into innerHTML it was a stored injection. fake-dom refusing
+	// every non-empty innerHTML is half the guard; this is the other half.
+	const { p, calls } = await mountDetail({ comment: `${HOSTILE}NOTE` });
+	assert.ok(dom.root.textContent.includes(`${HOSTILE}NOTE`), 'the note is on screen, verbatim');
+	assert.equal(dom.root.querySelectorAll('img').length, 0, 'and it built no element');
+	dom.key('Escape');
+	await p;
+	assert.ok(calls.some((c) => c.startsWith('GET')), 'the record did read the complete session');
+});
+
+await ta('session detail: DELETE SESSION asks for a second press', async () => {
+	// A session is a flight's only record, and it went on one distracted press.
+	// Same guard as RESET SETTINGS and REMOVE TERRAIN (#213).
+	const { p, calls } = await mountDetail();
+	const del = btn('DELETE SESSION');
+	assert.equal(del.textContent, '[ DELETE SESSION ]');
+	del.click();
+	await tick();
+	assert.equal(del.textContent, '[ DELETE SESSION — CONFIRM ]', 'the first press arms');
+	assert.ok(!calls.some((c) => c.startsWith('DELETE')), 'and nothing is deleted');
+	del.click();
+	await tick();
+	assert.ok(calls.some((c) => c.startsWith('DELETE')), 'the second press is the confirmation');
+	assert.deepEqual(await p, { deleted: 'paristest-0001' });
+});
+
+// Like bench-render-selftest: the globals are handed back before concluding.
+// Without that the subscriptions menuNav puts on the fake window keep the
+// process alive and the test "passes" without ever handing back.
 dom.restore();
-console.log(`\n${n} tests data-render OK`);
-// Plus de `process.exit(0)` ici : menu-nav.js balaie désormais les navs dont
-// l'écran a quitté le DOM (#210), donc plus aucune scrutation manette ne
-// survit à cette suite et Node rend la main tout seul. Si ce fichier se
-// remettait à pendre, c'est ce balayage qu'il faut regarder — pas rajouter la
-// sortie forcée.
+console.log(`\n${n} data-render tests OK`);
+// No `process.exit(0)` here any more: menu-nav.js now sweeps the navs whose
+// screen has left the DOM (#210), so no gamepad polling survives this suite and
+// Node hands back on its own. If this file starts hanging again, that sweep is
+// what to look at — not a forced exit put back.

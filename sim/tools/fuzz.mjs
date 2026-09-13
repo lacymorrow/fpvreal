@@ -113,6 +113,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // requirePoly() in server/api.mjs, mirrored here rather than imported: the
 // server file drags the whole API in, and what matters is the RULE — a ring
 // that gets past it is a trace someone really drew.
+// server/api.mjs:751. Mirrored rather than imported, same reason as the ring
+// gate below: what matters is the RULE, and importing the API drags the whole
+// server in.
+const MAX_GRID_CELLS = 4_000_000;
+
 const acceptsPoly = (p) => {
 	if (!Array.isArray(p) || p.length % 2 !== 0 || p.length < 6 || p.length > 400) return false;
 	if (!p.every(Number.isFinite)) return false;
@@ -351,10 +356,15 @@ const targets = [
 		// -1..1, sometimes past the endpoint on an uncalibrated radio. Finite,
 		// though — a NaN axis is not something hardware produces, and what the
 		// controller does with one is covered by flight-recovery instead.
+		// Bounded, too: the Gamepad API defines an axis as a double in [-1, 1]
+		// and a badly scaled driver overshoots it by a little. It does not
+		// report 1e308 — and one of those makes an accepted calibration whose
+		// travel overflows to Infinity read NaN, which is a finding about a
+		// caller that cannot exist.
 		const signals = [];
 		for (let i = 0; i < 10; i++) {
 			const v = nearNumber(r, -1, 1);
-			signals.push(Number.isFinite(v) ? v : 0);
+			signals.push(Number.isFinite(v) ? Math.max(-4, Math.min(4, v)) : 0);
 		}
 		return { cal, signals };
 	},
@@ -1256,24 +1266,35 @@ const targets = [
 
 {
 	name: 'map-poly-cost',
-	known: 'polygonGrid() allocates and scans one byte per tile of the trace\'s bounding box, and requirePoly() lets a trace 179 degrees wide through',
-	note: 'the SIZE of a trace requirePoly() accepts — POST /__map-api/describe promises to answer instantly, on every mouse move',
+	known: 'MAX_GRID_CELLS bounds how many tiles a trace sweeps but not what each one costs — tileIntersectsPolygon walks the whole ring per tile, and requirePoly allows 200 vertices',
+	note: 'the COST of a trace requireZone()/requireAffordable() accept — POST /__map-api/describe is documented "instantanée, appelable à chaque déplacement de la souris" and the scanner does exactly that',
 	gen(r) {
-		return { ring: drawnRing(r, pick(r, [0.05, 0.5, 5, 50, 80])), zoom: int(r, 13, 20) };
+		// Ring size matters as much as ring extent here, so both are drawn.
+		const n = pick(r, [3, 12, 60, 200]);
+		const ring = drawnRing(r, pick(r, [0.002, 0.02, 0.2, 2, 20]));
+		while (ring.length < n * 2) ring.push(ring[ring.length - 2] + 1e-5, ring[ring.length - 1] + 1e-5);
+		return { ring: ring.slice(0, n * 2), zoom: int(r, 13, 20) };
 	},
 	check({ ring, zoom }) {
 		if (!Number.isInteger(zoom) || zoom < 13 || zoom > 20) return null;
 		if (!acceptsPoly(ring)) return null;
 		// Counted, never allocated: a target that actually ran the grid would be
-		// the denial of service it is reporting. tileGrid() is pure arithmetic.
+		// the denial of service it is reporting. tileGrid() is pure arithmetic,
+		// and it is the same call requireAffordable() makes.
 		const b = tiles.polygonBounds(ring);
 		const grid = tiles.tileGrid(b, zoom);
 		const cells = grid.cols * grid.rows;
-		// ~1e6 cells is ~200 ms of tileIntersectsPolygon on this machine, already
-		// well past "instantané, appelable à chaque déplacement de la souris".
-		if (cells > 1e6) {
-			return `a trace the server accepts asks polygonGrid for ${cells.toExponential(2)} cells (${grid.cols}x${grid.rows}) at zoom ${zoom}`
-				+ ` — ${(b.north - b.south).toFixed(2)}° by ${(b.east - b.west).toFixed(2)}°`;
+		if (cells > MAX_GRID_CELLS) return null;   // refused by requireAffordable, and rightly
+		// polygonGrid() runs tileIntersectsPolygon() once per cell, and that
+		// walks the whole ring: the cost is cells x vertices, not cells. Measured
+		// on this machine at ~17 ns per unit (3.1 M cells x 200 vertices = 10.7 s),
+		// so 2e7 is about a third of a second — already far past "instantaneous",
+		// and the route is called on mouse move.
+		const work = cells * (ring.length / 2);
+		if (work > 2e7) {
+			return `a trace the server accepts costs ${cells.toExponential(2)} cells x ${ring.length / 2} vertices`
+				+ ` = ~${(work * 1.7e-8).toFixed(1)} s of blocked event loop at zoom ${zoom}`
+				+ ` (${(b.north - b.south).toFixed(3)}° by ${(b.east - b.west).toFixed(3)}°)`;
 		}
 		return null;
 	},

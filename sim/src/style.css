@@ -1,19 +1,20 @@
-/* PHASE 19 (issue #56) — tout le pigment, toute la graduation et toute la
-   typographie viennent de tokens.css. Aucun littéral de couleur ici : c'est ce
-   que vérifie tools/palette-selftest.mjs.
+/* PHASE 19 (issue #56) — every pigment, every step of the scale and all the
+   typography come from tokens.css. No colour literal here: that is what
+   tools/palette-selftest.mjs checks.
 
-   La grammaire, écran par écran (Bible §38) : traits d'un pixel, angles droits,
-   très peu d'ombres, aucun coin arrondi, aucun aplat. L'état actif ne se marque
-   jamais par une couleur — il se marque par une inversion de clarté.
+   The grammar, screen by screen (Bible §38): one-pixel rules, right angles,
+   very few shadows, no rounded corners, no fills. An active state is never
+   marked by a colour — it is marked by an inversion of lightness.
 
-   Trois niveaux typographiques et pas un de plus (Bible §39) :
-     DISPLAY  Departure Mono — les <pre> du terminal, FPVTP!, TARGET ACQUIRED,
-              JACK IN, et tous les blocs ASCII (elle seule dessine ┌ ─ │).
-     UI       IBM Plex Mono 500 — titres de panneau, liens, boutons.
-     DATA     IBM Plex Mono 400 tabulaire — les relevés chiffrés.
+   Three typographic levels and not one more (Bible §39):
+     DISPLAY  Departure Mono — the terminal's <pre>, FPVTP!, TARGET ACQUIRED,
+              JACK IN, and every ASCII block (it alone draws ┌ ─ │).
+     UI       IBM Plex Mono 500 — panel titles, links, buttons.
+     DATA     IBM Plex Mono 400 tabular — the numeric readouts.
 
-   Un bloc ASCII est en Departure Mono de bout en bout : les deux familles ont
-   des chasses différentes, les mélanger sur une même ligne casserait les cadres. */
+   An ASCII block is in Departure Mono end to end: the two families have
+   different advance widths, and mixing them on one line would break the
+   frames. */
 
 @import './tokens.css';
 
@@ -36,13 +37,12 @@ html, body {
 canvas { display: block; }
 
 /* ---------- curseur de menu (issue #123) ---------- */
-/* Le focus natif EST le curseur du jeu (src/menu-nav.js) : une seule vérité
-   pour Tab, souris, clavier et manette. L'anneau système — bleu, hors palette,
-   différent sur chaque machine — disparaît partout au profit du marqueur
-   ▌ (U+258C), natif dans Departure Mono : pleine hauteur de cellule, encre au
-   bord gauche, écart au centre optique nul — il forme un filet vertical contre
-   la rangée focalisée. Les champs de saisie gardent leur propre signe (le
-   filet de bordure qui passe en pleine encre, règles existantes plus bas). */
+/* Native focus IS the game's cursor (src/menu-nav.js): one truth for Tab,
+   mouse, keyboard and gamepad. The system ring — blue, off-palette, different
+   on every machine — disappears everywhere in favour of the ▌ marker (U+258C),
+   native in Departure Mono: full cell height, ink on the left edge, no optical
+   offset — it forms a vertical rule against the focused row. Text fields keep
+   their own sign (the border rule going to full ink, existing rules below). */
 :focus { outline: none; }
 button:focus { position: relative; }
 button:focus::before {
@@ -55,13 +55,13 @@ button:focus::before {
 	font-size: inherit;
 	letter-spacing: 0;
 	color: var(--ink);
-	/* Le marqueur est le curseur, pas une cible : un clic dessus doit toucher
-	   ce qu'il y a derrière, pas agrandir le bouton. */
+	/* The marker is the cursor, not a target: a click on it must reach what is
+	   behind it, not enlarge the button. */
 	pointer-events: none;
 	animation: cursor-blink var(--dur-blink) step-end infinite;
 }
-/* Un contrôle réglable (slider, select, checkbox) porte le marqueur sur sa
-   ligne entière : c'est la ligne que ←/→ règle (issue #123, Settings). */
+/* An adjustable control (slider, select, checkbox) carries the marker on its
+   whole row: the row is what ←/→ adjusts (issue #123, Settings). */
 .panel label:focus-within { position: relative; }
 .panel label:focus-within::before {
 	content: '▌';
@@ -88,35 +88,34 @@ button:focus::before {
 }
 
 /* ---------- mouvement des menus (issue #224) ---------- */
-/* Quiet by default (Bible §45) : les menus bougent comme un terminal, pas
-   comme une page web. Un écran s'imprime de haut en bas (src/motion.js
-   tamponne le délai de chaque bloc), le curseur cligne, une touche pressée
-   s'inverse un instant, un compteur roule. En pas, jamais en fondu long ;
-   jamais de cyan/magenta ici. */
+/* Quiet by default (Bible §45): menus move like a terminal, not like a web
+   page. A screen prints from top to bottom (src/motion.js stamps each block's
+   delay), the cursor blinks, a pressed key inverts for a moment, a counter
+   rolls. In steps, never in long fades; never cyan/magenta here. */
 @keyframes cursor-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 @keyframes reveal-in { 0% { opacity: 0; } 50% { opacity: .45; } 100% { opacity: 1; } }
 [data-reveal] { animation: reveal-in var(--dur-2) steps(2, end) both; }
-/* #67 — l'impression inverse : l'écran qui s'en va. Les mêmes deux pas, à
-   l'envers, sur la durée la plus courte — un écran s'éteint plus vite qu'il ne
-   s'allume. `pointer-events: none` pendant la sortie : ce qui est en train de
-   disparaître n'accepte plus de clic.
-   Entre deux écrans de terminal, SEUL LE CONTENU s'en va : le fond noir tient
-   jusqu'au démontage. Le faire fondre laissait voir la scène 3D déjà chargée
-   dessous — un flash de la carte alors qu'on n'est pas encore sur le drone.
-   `[data-exit="screen"]` est l'exception assumée : le dernier écran d'un
-   enchaînement, celui qui donne sur le vol, emmène son fond avec lui, parce
-   que ce qu'on découvre dessous est justement le sujet. */
+/* #67 — the reverse printing: the screen going away. The same two steps,
+   backwards, over the shortest duration — a screen goes out faster than it
+   comes on. `pointer-events: none` during the exit: what is disappearing no
+   longer accepts a click.
+   Between two terminal screens, ONLY THE CONTENT leaves: the black background
+   holds until unmount. Fading it showed the 3D scene already loaded
+   underneath — a flash of the map while you are not on the drone yet.
+   `[data-exit="screen"]` is the deliberate exception: the last screen of a
+   chain, the one that opens onto the flight, takes its background with it,
+   because what is revealed underneath is precisely the subject. */
 @keyframes reveal-out { 0% { opacity: 1; } 50% { opacity: .45; } 100% { opacity: 0; } }
 [data-exit] { pointer-events: none; }
 [data-exit="content"] > .bootstrap-box { animation: reveal-out var(--dur-1) steps(2, end) both; }
 [data-exit="screen"] { animation: reveal-out var(--dur-2) steps(2, end) both; }
-/* L'encre d'un bouton s'allume en une touche, pas instantanément. */
+/* A button's ink comes up in one step, not instantly. */
 .bootstrap button, .terminal-nav button.terminal-link, .sc-result, .sc-btn, .sc-cta {
 	transition: color var(--dur-1) linear, background-color var(--dur-1) linear, border-color var(--dur-1) linear;
 }
-/* Une touche pressée : inversée le temps d'un pas (src/motion.js,
-   installClickFlash). Sous la souris le bouton est déjà inversé par :hover,
-   alors le flash part dans l'autre sens — il se voit dans les deux cas. */
+/* A pressed key: inverted for the length of one step (src/motion.js,
+   installClickFlash). Under the mouse the button is already inverted by
+   :hover, so the flash goes the other way — it shows in both cases. */
 @keyframes key-flash { 0%, 100% { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); } }
 @keyframes key-flash-off { 0%, 100% { background: transparent; color: var(--ink); } }
 button.flash { animation: key-flash var(--dur-1) steps(1, end); }
@@ -126,10 +125,10 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	button.flash, button.flash:hover, button:focus::before,
 	.panel label:focus-within::before, #pad-map tr:focus-within td:first-child::before { animation: none; }
 	.bootstrap button, .terminal-nav button.terminal-link, .sc-result, .sc-btn, .sc-cta { transition: none; }
-	/* Ce qui tourne SANS FIN est ce que le mouvement réduit vise en premier, et
-	   c'était précisément ce qui restait : l'invite du gate, le balayage d'une
-	   progression sans compteur, et les deux barres qui glissent. L'information
-	   reste — la barre saute à sa valeur, le balayage devient une barre pleine. */
+	/* What runs ENDLESSLY is what reduced motion targets first, and that was
+	   precisely what was left: the gate's prompt, the sweep of a progress with
+	   no counter, and the two bars that slide. The information stays — the bar
+	   jumps to its value, the sweep becomes a full bar. */
 	.intro-gate { animation: none; }
 	.sc-bar[data-indeterminate="1"] i { animation: none; }
 	#loading-bar, .sc-bar i { transition: none; }
@@ -148,13 +147,13 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	z-index: var(--z-loading);
 }
 #loading .box { width: min(420px, 80vw); text-align: center; }
-/* Le verrouillage du boot est celui de l'intro (.lockup, plus bas), à l'échelle
-   d'un écran de chargement : assez grand pour être la marque, assez petit pour
-   laisser la barre et ses relevés sous lui. Sa zone de respect (4 modules) est
-   la seule marge — rien d'autre n'en pose ici. */
+/* The boot lockup is the intro's (.lockup, further down), at the scale of a
+   loading screen: big enough to be the mark, small enough to leave the bar and
+   its readouts under it. Its clear space (4 modules) is the only margin —
+   nothing else sets one here. */
 .loading-lockup { margin: 0 auto; }
-/* Spécificité voulue : `.lockup` pose la taille du cracktro plus bas dans la
-   feuille et l'emporterait sinon sur une simple classe. */
+/* Deliberate specificity: `.lockup` sets the cracktro's size further down the
+   sheet and would otherwise win over a plain class. */
 #loading .loading-lockup { --mark-size: clamp(72px, 12vw, 128px); }
 #loading p { margin: 0 0 1.2em; color: var(--dim); min-height: 1.4em; }
 #loading .bar { height: 2px; background: var(--rule); overflow: hidden; }
@@ -164,15 +163,15 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 .err { color: var(--red); }
 
 /* ---------- hud ---------- */
-/* L'OSD de vol s'est scindé en deux couches à la PHASE 12 : celle du drone est
-   peinte dans un canvas (drone-osd.js) et traverse la liaison, celle de la
-   station est ci-dessous. Les règles de l'ancien HUD unique n'ont plus de
-   cible dans le DOM et sont parties avec lui. */
+/* The flight OSD split into two layers at PHASE 12: the drone's is painted in
+   a canvas (drone-osd.js) and crosses the link, the station's is below. The
+   rules of the old single HUD have no target left in the DOM and left with
+   it. */
 
-/* PHASE 12 — la couche locale. Au-dessus de tout, bandes noires comprises :
-   elle ne traverse pas la liaison, donc rien ne la dégrade. Le traitement
-   ci-dessous est purement décoratif — il empêche seulement la couche de
-   flotter au-dessus de l'image comme un overlay de navigateur. */
+/* PHASE 12 — the local layer. Above everything, black bars included: it does
+   not cross the link, so nothing degrades it. The treatment below is purely
+   decorative — it only stops the layer from floating over the image like a
+   browser overlay. */
 #fpvtp-osd {
 	position: absolute;
 	inset: 0;
@@ -184,8 +183,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	letter-spacing: var(--track-data);
 	color: var(--ink);
 	text-shadow: var(--shadow);
-	/* Très doux, et sur la couche seule : ce n'est pas le vignettage de
-	   l'objectif, qui lui est dans le shader et deux boîtes plus haut. */
+	/* Very soft, and on the layer alone: this is not the lens vignette, which is
+	   in the shader and two boxes further up. */
 	mask-image: radial-gradient(ellipse 120% 120% at 50% 50%, #000 60%, rgba(0, 0, 0, .82) 100%); /* palette-ok: stops d'un masque alpha, pas du pigment */
 }
 #fpvtp-osd .corner { position: absolute; }
@@ -193,8 +192,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 #fpvtp-osd .tr { top: var(--space-3); right: var(--space-3); text-align: right; }
 #fpvtp-osd .bl { bottom: var(--space-3); left: var(--space-3); }
 #fpvtp-osd .br { bottom: var(--space-3); right: var(--space-3); text-align: right; }
-/* Le crédit fournisseur est une mention légale, pas une information de vol :
-   il se tient en retrait du reste de l'OSD. */
+/* The provider credit is a legal notice, not flight information: it stands
+   back from the rest of the OSD. */
 #fo-credit { font-size: var(--fs-micro); color: var(--faint); letter-spacing: var(--track-data); }
 /* L'identifiant de la zone est ce que l'OSD a de plus important : il le dit en
    pleine encre pendant que ses voisins descendent en gris (Bible §38 — pas de
@@ -224,10 +223,10 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 #fo-view:hover, #fo-view:focus-visible { color: var(--ink); }
 #fo-view[hidden] { display: none; }
-/* Les trois occupent la même place et un seul est visible à la fois
-   (fpvtp-osd.js : verdict > crash > pause). Le fond n'est pas décoratif :
-   sans lui le texte se pose sur n'importe quelle image, et un ciel blanc
-   l'efface. L'ancien HUD unique en avait un, celui-ci le garde. */
+/* All three occupy the same place and only one is visible at a time
+   (fpvtp-osd.js: verdict > crash > pause). The background is not decorative:
+   without it the text sits on any image at all, and a white sky erases it. The
+   old single HUD had one, this one keeps it. */
 #fo-pause, #fo-status {
 	position: absolute;
 	left: 50%;
@@ -241,8 +240,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	padding: var(--space-3) var(--space-5);
 	background: var(--scrim-soft);
 }
-/* Vert et rouge parce qu'ils disent le résultat du vol — le seul emploi que la
-   Bible §38 autorise pour une couleur fonctionnelle. */
+/* Green and red because they say the flight's result — the only use Bible §38
+   allows for a functional colour. */
 #fo-status[data-kind="lost"] { color: var(--red); }
 #fo-pause small, #fo-status small {
 	display: block;
@@ -252,9 +251,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	letter-spacing: var(--track-ui-tight);
 	color: var(--dim);
 }
-/* La coupure du lien (#216). Sous le réticule, hors des quatre coins : ce
-   n'est ni un verdict (#fo-status) ni un état de la sim (#fo-pause), c'est un
-   geste disponible. Discret tant qu'il n'est qu'un rappel. */
+/* Cutting the link (#216). Under the reticle, outside the four corners: it is
+   neither a verdict (#fo-status) nor a state of the sim (#fo-pause), it is an
+   available gesture. Discreet for as long as it is only a reminder. */
 #fo-cut {
 	position: absolute;
 	left: 50%;
@@ -270,9 +269,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	padding: var(--space-2) var(--space-4);
 	background: var(--scrim-soft);
 }
-/* Le retournement (#105). Même face et même place que #fo-cut, un cran plus
-   haut : les deux apparaissent ensemble sur une machine sur le dos, et celle
-   qui la rend se lit avant celle qui la perd. */
+/* The turtle (#105). Same face and same place as #fo-cut, one notch higher:
+   the two appear together on a machine on its back, and the one that gives it
+   back reads before the one that loses it. */
 #fo-turtle {
 	position: absolute;
 	left: 50%;
@@ -288,8 +287,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	padding: var(--space-2) var(--space-4);
 	background: var(--scrim-soft);
 }
-/* La jauge du maintien : une règle qui se remplit, pas une barre de
-   chargement. Elle n'existe que pendant le geste. */
+/* The hold gauge: a rule that fills, not a loading bar. It exists only during
+   the gesture. */
 #fo-cut-bar {
 	display: block;
 	height: var(--rule-w);
@@ -318,7 +317,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	background: var(--scrim-soft);
 }
 
-/* Fin de vol (PHASE 14) : pas un écran de mort, un lien qui s'éteint. */
+/* End of flight (PHASE 14): not a death screen, a link going out. */
 #flight-end {
 	position: absolute; inset: 0;
 	display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -330,13 +329,13 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 #flight-end div:empty { height: .6em; }
 
-/* #57 — l'empreinte de la machine perdue, DANS le flux, juste sous l'aperçu 3D
-   (#67) : c'est la même machine vue de deux façons, et la lire à côté du dessin
-   en faisait deux objets posés l'un contre l'autre.
-   Elle se lit à la même taille que le reste de l'écran de fin : à 11 px elle
-   était une vignette au moment où l'on demande de la regarder. Departure Mono
-   est une police pixel, nette aux multiples de 11 seulement — il n'y a donc
-   pas de taille intermédiaire, c'est 22 ou 11. */
+/* #57 — the lost machine's fingerprint, IN the flow, just under the 3D
+   preview (#67): it is the same machine seen two ways, and reading it beside
+   the drawing made them two objects propped against each other.
+   It reads at the same size as the rest of the end screen: at 11px it was a
+   thumbnail at the very moment you are asked to look at it. Departure Mono is
+   a pixel font, crisp at multiples of 11 only — so there is no intermediate
+   size, it is 22 or 11. */
 #flight-end .flight-end-art {
 	margin: .4em 0 0;
 	font-family: var(--font-ascii);
@@ -348,11 +347,11 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	color: var(--dim);
 	opacity: .8;
 }
-/* Le prix de l'empilement est la hauteur : onze lignes font 254 px à 22 px, et
-   [ENTER] DISCONNECT doit rester à l'écran — #flight-end ne défile pas et `exitAt`
-   ne bouge pas. Sous 820 px de haut, l'empreinte redescend au seul autre corps
-   net de la police. Contrainte VERTICALE, donc requête sur la hauteur : c'est
-   la colonne qui déborde, jamais la largeur (19 colonnes, 250 px). */
+/* The price of stacking is height: eleven lines make 254px at 22px, and
+   [ENTER] DISCONNECT has to stay on screen — #flight-end does not scroll and
+   `exitAt` does not move. Under 820px tall, the fingerprint drops to the only
+   other crisp body of the font. A VERTICAL constraint, hence a height query:
+   it is the column that overflows, never the width (19 columns, 250px). */
 @media (max-height: 820px) {
 	#flight-end .flight-end-art { font-size: var(--fs-micro); }
 }
@@ -382,8 +381,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	   here is meant to be read by scrolling sideways. */
 	width: min(600px, 92vw);
 	overflow-x: hidden;
-	/* Le panneau défile quand il dépasse (issue #123) : à 785 px de contenu sur
-	   un portable 1366×768 il était rogné en haut et en bas, sans recours. */
+	/* The panel scrolls when it overflows (issue #123): at 785px of content on a
+	   1366×768 laptop it was clipped top and bottom, with no recourse. */
 	max-height: 92vh;
 	overflow-y: auto;
 	padding: var(--space-5);
@@ -391,17 +390,17 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	   and as signal loss — Settings is no longer a dialog box laid over the
 	   game, it is a screen of the machine. The rule lifts it off the scrim. */
 	background-color: var(--black);
-	/* Ombres de défilement (issue #33). Le panneau défile depuis #123, mais
-	   RIEN ne le disait : sur l'onglet KEYBOARD ses seize lignes poussent
-	   `RESET KEYS` sous la ligne de flottaison, et à 125-150 % de mise à
-	   l'échelle — le réglage d'usine d'un portable Windows — le bouton est
-	   simplement absent pour qui ne devine pas qu'il faut défiler.
-	   La technique est en CSS pur : deux couches en `local` défilent AVEC le
-	   contenu et masquent l'ombre quand on touche le bord, deux couches en
-	   `scroll` restent collées au cadre. Aucune ombre en haut quand on est en
-	   haut, aucune en bas quand on est en bas — un dégradé fixe, lui,
-	   mentirait à l'arrivée. Sur ce fond noir l'ombre est CLAIRE : la même
-	   encre que les filets, qui s'éteint. */
+	/* Scroll shadows (issue #33). The panel has scrolled since #123, but
+	   NOTHING said so: on the KEYBOARD tab its sixteen rows push `RESET KEYS`
+	   below the fold, and at 125-150% scaling — the factory setting of a
+	   Windows laptop — the button is simply absent to anyone who does not
+	   guess that it scrolls.
+	   The technique is pure CSS: two `local` layers scroll WITH the content and
+	   hide the shadow when you reach the edge, two `scroll` layers stay stuck
+	   to the frame. No shadow at the top when you are at the top, none at the
+	   bottom when you are at the bottom — a fixed gradient would lie on
+	   arrival. On this black ground the shadow is LIGHT: the same ink as the
+	   rules, going out. */
 	background-image:
 		linear-gradient(var(--black) 40%, transparent),
 		linear-gradient(transparent, var(--black) 60%),
@@ -414,14 +413,15 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	border: var(--rule-w) solid var(--rule);
 	display: flex; flex-direction: column; gap: var(--space-3);
 }
-/* La barre du panneau, elle, se voit (issue #33). La règle globale plus bas
-   pose un pouce sans piste sur huit pixels : discret partout ailleurs, mais
-   ici c'est le seul indice qu'il reste de la matière sous le cadre, et il
-   passait inaperçu. Piste dessinée, pouce à l'encre pleine des filets. */
+/* The panel's scrollbar, though, does show (issue #33). The global rule
+   further down puts a trackless thumb on eight pixels: discreet everywhere
+   else, but here it is the only remaining clue that there is more matter under
+   the frame, and it went unnoticed. Track drawn, thumb at the rules' full
+   ink. */
 .panel { scrollbar-color: var(--rule-strong) var(--rule); }
 @supports selector(::-webkit-scrollbar) {
-	/* Même bascule que la règle globale plus bas : rendue à `auto` pour que
-	   Chrome cesse de préférer la propriété standard aux pseudo-éléments. */
+	/* Same switch as the global rule further down: handed back to `auto` so that
+	   Chrome stops preferring the standard property to the pseudo-elements. */
 	.panel { scrollbar-color: auto; }
 	.panel::-webkit-scrollbar { width: 10px; }
 	.panel::-webkit-scrollbar-track { background: var(--rule); }
@@ -483,20 +483,66 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 #pad-name { margin: 0 0 1em; font-size: var(--fs-data); color: var(--dim); word-break: break-all; }
 #pad-map { width: 100%; border-collapse: collapse; font-size: var(--fs-data); font-variant-numeric: tabular-nums; }
 #pad-map td { padding: var(--space-1) 6px var(--space-1) 0; }
+/* The browser's dropdown is browser furniture: rounded corners, a gradient, a
+   system arrow. Bible §38 ("no rounded corners") / §44 ("no browser
+   furniture") — it is flattened, exactly as `.bench-select` already is, and for
+   the same reason. And no chevron drawn in its place: that would need an image,
+   therefore a colour literal outside tokens.css (palette-selftest refuses it,
+   and %23-encoding it to slip underneath would be precisely the drift it
+   watches for). A one-pixel frame is enough to say the thing is operable —
+   that is already what says it for `.bootstrap input`. */
 #pad-map select, .panel select {
+	appearance: none; -webkit-appearance: none;
 	background: var(--dark-grey); color: var(--ink);
-	border: var(--rule-w) solid var(--rule-strong);
-	padding: 2px var(--space-1); font: inherit;
+	border: var(--rule-w) solid var(--rule-strong); border-radius: 0;
+	padding: var(--space-0) var(--space-1); font: inherit;
 }
 .panel select { flex: 1; }
 .panel select:disabled { opacity: var(--op-disabled); }
+.panel select:focus, #pad-map select:focus { outline: none; border-color: var(--warm-white); }
 .axisbar { position: relative; height: 4px; background: var(--rule); width: 100%; min-width: 90px; }
 .axisbar i { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--warm-white); }
 .panel label { display: flex; align-items: center; gap: .7em; margin: .5em 0; font-size: var(--fs-data); }
-.panel input[type=range] { flex: 1; accent-color: var(--warm-white); }
+/* The slider, flat as well: a one-pixel track and a rectangular thumb.
+   `accent-color` gave it the system's round pill — the same round pill BENCH
+   removed from its own sliders, one screen away. Same rules, deliberately
+   duplicated rather than merged into one selector list: `.bench-slider` sizes
+   itself for a dense table, these sit in a settings row, and a shared rule
+   would have to win both arguments. */
+.panel input[type=range] {
+	appearance: none; -webkit-appearance: none;
+	flex: 1; background: none; height: 1.4em; cursor: pointer;
+}
+.panel input[type=range]::-webkit-slider-runnable-track {
+	height: var(--rule-w); background: var(--rule-strong);
+}
+.panel input[type=range]::-moz-range-track { height: var(--rule-w); background: var(--rule-strong); }
+.panel input[type=range]::-webkit-slider-thumb {
+	appearance: none; -webkit-appearance: none;
+	width: 5px; height: 13px; margin-top: -6px; /* scale-ok: the margin centres the thumb on its track, it is half of it */
+	background: var(--ink); border: 0; border-radius: 0;
+}
+.panel input[type=range]::-moz-range-thumb {
+	width: 5px; height: 13px;
+	background: var(--ink); border: 0; border-radius: 0;
+}
+.panel input[type=range]:focus { outline: none; }
+.panel input[type=range]:focus::-webkit-slider-thumb { background: var(--warm-white); }
+.panel input[type=range]:focus::-moz-range-thumb { background: var(--warm-white); }
 .panel input[type=range]:disabled { opacity: var(--op-disabled); }
 .panel label.check { justify-content: flex-start; }
-.panel label.check input { accent-color: var(--warm-white); width: 14px; height: 14px; }
+/* And the checkbox: a square that fills, not the system's rounded tick. The
+   row already carries the ▌ cursor when it is focused (see the top of this
+   file), so the box itself only has to say on or off. */
+.panel label.check input[type=checkbox] {
+	appearance: none; -webkit-appearance: none;
+	width: 13px; height: 13px; margin: 0;
+	background: var(--dark-grey);
+	border: var(--rule-w) solid var(--rule-strong); border-radius: 0;
+	cursor: pointer;
+}
+.panel label.check input[type=checkbox]:checked { background: var(--ink); border-color: var(--ink); }
+.panel label.check input[type=checkbox]:focus { outline: none; border-color: var(--warm-white); }
 .panel button {
 	margin-top: 1.6em; width: 100%; padding: var(--space-2);
 	background: transparent; color: var(--ink);
@@ -505,16 +551,16 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase;
 	cursor: pointer;
 }
-/* Un bouton de panneau s'inverse au survol, comme le MÊME bouton s'inverse
-   partout ailleurs (terminal, scanner, bootstrap) : `terminal-cta` ne peut pas
-   changer de comportement selon son ancêtre. */
+/* A panel button inverts on hover, the way the SAME button inverts everywhere
+   else (terminal, scanner, bootstrap): `terminal-cta` cannot change behaviour
+   according to its ancestor. */
 .panel button:hover:not(:disabled) { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
 .panel .presets { display: flex; gap: .5em; margin: .5em 0; }
 .panel .presets button { margin-top: 0; padding: var(--space-1); font-size: var(--fs-micro); }
-/* L'état actif s'écrit en vidéo inverse, jamais en couleur (Bible §38). */
+/* The active state is written in reverse video, never in colour (Bible §38). */
 .panel .presets button.on { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
 .panel .presets button:disabled { opacity: var(--op-disabled); cursor: default; }
-/* Bloc en lecture seule : la fiche caméra de la cible et l'aide clavier. */
+/* Read-only block: the target's camera sheet and the keyboard help. */
 .panel .spec { font-size: var(--fs-data); color: var(--dim); line-height: 1.7; margin-bottom: var(--space-2); }
 .panel .spec b { color: var(--ink); font-weight: 400; }
 /* Inline with its slider rather than on its own line, unlike every other
@@ -533,18 +579,18 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 
 .bootstrap {
 	position: fixed; inset: 0;
-	/* `place-items: center` seul CENTRE puis COUPE : un écran plus haut que la
-	   fenêtre (BUILD NOTES, TARGET LOG sur un opérateur qui a volé) perdait son
-	   titre en haut ET son [ BACK ] en bas, sans rien pour aller les chercher —
-	   `html, body` sont en `overflow: hidden`. `safe center` retombe sur `start`
-	   dès que ça déborde, donc on garde le centrage des écrans courts, qui sont
-	   la règle, sans enfermer les longs. */
+	/* `place-items: center` alone CENTRES then CLIPS: a screen taller than the
+	   window (BUILD NOTES, TARGET LOG on an operator who has flown) lost its
+	   title at the top AND its [ BACK ] at the bottom, with nothing to reach
+	   them — `html, body` are `overflow: hidden`. `safe center` falls back to
+	   `start` as soon as it overflows, so short screens stay centred, which is
+	   the rule, without trapping the long ones. */
 	display: grid; justify-items: center; align-content: safe center;
 	overflow-y: auto; overscroll-behavior: contain;
 	padding: var(--space-5) 0;
-	/* Le même noir que le rituel et que la perte de signal (issue #224) : du
-	   crash au rapport puis à la Home, un seul noir continu, sans saut de
-	   teinte. Les panneaux posés dessus (Settings, carte) gardent leur gris. */
+	/* The same black as the ritual and as the signal loss (issue #224): from the
+	   crash to the report and on to the Home, one continuous black, with no
+	   shift of hue. The panels laid on top (Settings, map) keep their grey. */
 	background: var(--black);
 	z-index: var(--z-screen);
 }
@@ -552,9 +598,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	width: min(840px, 88vw);
 	display: flex; flex-direction: column; gap: var(--space-4);
 }
-/* Les <pre> sont la machine qui parle : niveau DISPLAY, sur la grille 11 px de
-   Departure Mono pour rester nets. Tout ce que l'opérateur manipule autour —
-   liens, boutons, champs — reste au niveau UI. */
+/* The <pre> blocks are the machine speaking: DISPLAY level, on Departure
+   Mono's 11px grid so they stay crisp. Everything the operator handles around
+   them — links, buttons, fields — stays at the UI level. */
 .bootstrap-box pre {
 	margin: 0;
 	font-family: var(--font-display);
@@ -565,18 +611,20 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 .bootstrap-box pre.bootstrap-vec { font-size: var(--fs-display-m); }
 .bootstrap-row { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui); }
-/* Un échec est une information : il se dit en rouge, pas en accent. Avant la
-   PHASE 19 cette ligne était cyan — la couleur demo servait de couleur d'erreur. */
+/* A failure is information: it is said in red, not in an accent colour. Before
+   PHASE 19 this line was cyan — the demo colour served as the error colour. */
 .bootstrap-err { color: var(--red); min-height: 1.4em; font-family: var(--font-ui); font-size: var(--fs-ui); letter-spacing: var(--track-ui); }
-.bootstrap input, .bootstrap textarea {
+/* One text field in the whole bootstrap chain: the operator name. There is no
+   <textarea> anywhere in the game — the rules that styled one were dressing a
+   control that does not exist. */
+.bootstrap input {
 	background: var(--dark-grey); color: var(--ink);
 	border: var(--rule-w) solid var(--rule-strong);
 	padding: var(--space-3) var(--space-4);
 	font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-ui-l);
 	letter-spacing: var(--track-ui-tight);
 }
-.bootstrap input:focus, .bootstrap textarea:focus { outline: none; border-color: var(--warm-white); }
-.bootstrap textarea { resize: vertical; min-height: 4.5em; }
+.bootstrap input:focus { outline: none; border-color: var(--warm-white); }
 .bootstrap-btn, .bootstrap button {
 	align-self: flex-start;
 	padding: var(--space-3) var(--space-4);
@@ -590,14 +638,14 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	background: var(--warm-white); color: var(--black); border-color: var(--warm-white);
 }
 .bootstrap button:disabled { opacity: var(--op-disabled); cursor: default; }
-/* Le contrôle encadré du terminal (voir commentaire plus bas) : un filet
-   d'ink plutôt que le gris de repos des autres CTA, pour rester le seul
-   bouton qui accroche l'œil sans sortir de la palette. */
+/* The terminal's framed control (see the comment further down): a rule of ink
+   rather than the resting grey of the other CTAs, so that it stays the one
+   button that catches the eye without leaving the palette. */
 .terminal-scanner-cta { border-color: var(--ink); }
-/* Un OUTIL — DRAW BOX, DRAW SHAPE — arme un mode, il ne décide de rien : pas de
-   crochets, et le format compact du rail du scanner (.sc-btn), auquel il est
-   rigoureusement identique. Les deux mêmes boutons existaient sous deux
-   apparences selon l'écran qui les portait. */
+/* A TOOL — DRAW BOX, DRAW SHAPE — arms a mode, it decides nothing: no
+   brackets, and the compact format of the scanner rail (.sc-btn), to which it
+   is rigorously identical. The same two buttons used to exist under two
+   appearances depending on which screen carried them. */
 .bootstrap button.terminal-tool {
 	padding: var(--space-2) var(--space-3);
 	border-color: var(--rule-strong);
@@ -625,13 +673,13 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 /* Survol : la ligne s'allume, elle ne change pas de teinte. */
 .terminal-nav button.terminal-link:hover { background: var(--warm-white); color: var(--black); }
-/* Le filtre ACTIF d'une liste (journal de session, jukebox) : vidéo inverse,
-   comme tout état actif du jeu. Il s'écrivait entre crochets, forme déjà prise
-   par les touches clavier de keyHints(). */
+/* The ACTIVE filter of a list (session log, jukebox): reverse video, like
+   every active state in the game. It used to be written in brackets, a form
+   already taken by keyHints()'s keyboard keys. */
 .terminal-nav button.terminal-link[data-on="true"] { background: var(--warm-white); color: var(--black); }
-/* Le pied de page compte des sessions et des octets : c'est de la donnée, pas
-   la machine qui parle — il redescend donc du niveau DISPLAY hérité des <pre>
-   vers le niveau DATA. */
+/* The footer counts sessions and bytes: that is data, not the machine
+   speaking — so it comes down from the DISPLAY level inherited from <pre> to
+   the DATA level. */
 .bootstrap-box pre.terminal-foot {
 	color: var(--light-grey);
 	font-family: var(--font-data); font-size: var(--fs-data);
@@ -656,37 +704,37 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	white-space: pre-wrap;
 }
 
-/* Dans la colonne gauche, `nowrap` faisait couper le pied en plein mot. Il se
-   replie — c'est une ligne d'état, pas une table : rien n'y est aligné sur une
-   colonne, donc le repli ne lui coûte rien. */
+/* In the left column, `nowrap` cut the footer mid-word. It wraps — it is a
+   status line, not a table: nothing in it is aligned on a column, so wrapping
+   costs it nothing. */
 .terminal-left pre.terminal-foot { white-space: normal; }
 
-/* BUILD NOTES : un numéro de version, puis ses lignes en retrait. Le retrait
-   est suspendu — première ligne à 2ch, repli à 4ch — pour qu'une note qui
-   déborde reste visiblement subordonnée à sa version au lieu de remonter en
-   colonne 0 et de se faire passer pour une entrée de plus. */
+/* BUILD NOTES: a version number, then its indented lines. The indent is
+   hanging — first line at 2ch, wrap at 4ch — so that a note that overflows
+   stays visibly subordinate to its version instead of coming back to column 0
+   and passing for one more entry. */
 .terminal-note-block { display: flex; flex-direction: column; }
 .bootstrap-box pre.terminal-note { padding-left: 4ch; text-indent: -2ch; }
 
-/* La Home carte-first. Un seul axe : l'endroit, puis les deux choses qui
-   décollent, puis le cache. Ce n'est PAS un tableau de bord (Bible §30, §44) —
-   la carte est là parce que c'est le lieu, pas parce que c'est une métrique. */
-/* FIELD est un seul écran (Bible §4 : « le GLOBAL SCANNER est le menu principal
-   après l'initialisation »). Deux colonnes : à gauche ce qu'on lit et ce qu'on
-   choisit, à droite le monde. La colonne gauche bascule du menu au rail du
-   scanner dès qu'une zone est tracée ; la carte, elle, ne bouge JAMAIS — c'est
-   toute la raison d'être de cette mise en page, pas un effet de bord. */
+/* The map-first Home. A single axis: the place, then the two things that take
+   off, then the cache. This is NOT a dashboard (Bible §30, §44) — the map is
+   there because it is the place, not because it is a metric. */
+/* FIELD is a single screen (Bible §4: "the GLOBAL SCANNER is the main menu
+   after initialisation"). Two columns: on the left what you read and what you
+   choose, on the right the world. The left column switches from the menu to
+   the scanner's rail as soon as an area is drawn; the map NEVER moves — that
+   is the whole reason for this layout, not a side effect. */
 .terminal-field {
 	align-content: stretch; justify-items: stretch; padding: 0; overflow: hidden;
-	/* `#ui` est en `pointer-events: none` et seuls button/input/select/label
-	   reprennent la main (ligne 87-88) : c'est ce qui laisse les clics traverser
-	   le HUD jusqu'à la scène. Une carte est un <div>, pas un contrôle — elle
-	   n'entre dans aucune de ces catégories, et les contrôles de zoom de Leaflet
-	   sont des <a>. L'ancienne règle `.scanner` portait donc `pointer-events:
-	   auto` sur tout l'écran ; en la supprimant avec le plein cadre, la carte est
-	   devenue visible mais SOURDE — on la voyait sans pouvoir la déplacer.
-	   FIELD est un écran plein cadre comme le scanner l'était : il reprend la
-	   main sur le pointeur, entièrement. */
+	/* `#ui` is `pointer-events: none` and only button/input/select/label take
+	   them back (lines 87-88): that is what lets clicks pass through the HUD to
+	   the scene. A map is a <div>, not a control — it falls into none of those
+	   categories, and Leaflet's zoom controls are <a>. So the old `.scanner`
+	   rule carried `pointer-events: auto` on the whole screen; removing it with
+	   the full frame made the map visible but DEAF — you could see it without
+	   being able to pan it.
+	   FIELD is a full-frame screen the way the scanner was: it takes the
+	   pointer back, entirely. */
 	pointer-events: auto;
 }
 .terminal-field .terminal-box {
@@ -699,28 +747,27 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	overflow-y: auto; min-width: 0;
 	border-right: var(--rule-w) solid var(--rule-strong);
 }
-/* Le rail du scanner remplit la colonne : il porte déjà son propre défilement
-   et son propre rembourrage. `min-height: 0` n'est pas décoratif — sans lui un
-   enfant flex ne descend jamais sous sa hauteur de contenu, et `overflow-y`
-   n'a rien à faire défiler. Le filet passe à droite : le rail est à GAUCHE de
-   l'écran maintenant, un filet à gauche le décollerait du bord. */
+/* The scanner rail fills the column: it already carries its own scrolling and
+   its own padding. `min-height: 0` is not decorative — without it a flex child
+   never goes below its content height, and `overflow-y` has nothing to scroll.
+   The rule goes on the right: the rail is on the LEFT of the screen now, and a
+   rule on the left would peel it off the edge. */
 .terminal-left > .scanner-panel {
 	margin: 0; padding: 0; border: 0;
 	flex: 0 0 auto; min-height: 0; overflow: visible;
 }
-/* La recherche, au-dessus des onglets : commune aux deux (#222). Ses règles
-   d'input sont celles du rail, pour que le champ AREA NAME et la recherche se
-   reconnaissent. */
+/* The search, above the tabs: shared by both (#222). Its input rules are the
+   rail's, so that the AREA NAME field and the search recognise each other. */
 .terminal-search { display: flex; flex-direction: column; gap: var(--space-2); }
 .terminal-search:empty { display: none; }
-/* Les onglets LOCAL · LIVE (#222) : deux mots sur un filet, l'actif en vidéo
-   inverse — le même signe d'état que les commutateurs du scanner. */
+/* The LOCAL · LIVE tabs (#222): two words on a rule, the active one in reverse
+   video — the same state sign as the scanner's switches. */
 .terminal-tabs {
 	display: flex; gap: var(--space-3);
 	border-bottom: var(--rule-w) solid var(--rule); padding-bottom: var(--space-2);
 }
-/* `.bootstrap button` encadre tout bouton : l'onglet est un mot, pas un
-   cadre — même spécificité, donc `.bootstrap` dans le sélecteur. */
+/* `.bootstrap button` frames every button: a tab is a word, not a frame —
+   same specificity, hence `.bootstrap` in the selector. */
 .bootstrap button.terminal-tab {
 	background: none; border: 0; padding: 2px var(--space-2);
 	color: var(--light-grey); font-family: var(--font-ui); font-weight: 500;
@@ -741,24 +788,36 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 .bootstrap.briefing { z-index: var(--z-screen-over); }
 .terminal-right { position: relative; min-width: 0; }
 .terminal-map { position: absolute; inset: 0; }
-/* Sous 1100px on empile. Le rail remplace toujours le bloc de texte, jamais la
-   carte : la promesse « la carte ne bouge pas » tient aussi empilée. */
+/* Below 1100px it stacks. The rail always replaces the text block, never the
+   map: the promise "the map does not move" holds when stacked too. */
 @media (max-width: 1100px) {
 	.terminal-field .terminal-box { grid-template-columns: 1fr; grid-template-rows: 38vh 1fr; }
 	.terminal-left { border-right: 0; border-top: var(--rule-w) solid var(--rule-strong); }
 	.terminal-field .terminal-box > .terminal-right { grid-row: 1; }
 	.terminal-field .terminal-box > .terminal-left { grid-row: 2; }
 }
-/* Sans emprise connue, ou sans terrain du tout : on le dit dans le cadre plutôt
-   que de dessiner une carte fausse. */
+/* "There is nothing here", written ONE way (terminal.js emptyState, Bible §39).
+   It used to render at five different type levels across the game: a bare <pre>
+   inherits the DISPLAY face from `.bootstrap-box`, so "NO SESSIONS MATCH THIS
+   FILTER" came out at 22px inside a list of 13px rows, while the same statement
+   elsewhere was UI 15px, or DATA 13px, or coloured. An empty state is
+   information, not a headline and not an alarm: DATA level, --light-grey, no
+   colour. */
+.bootstrap-box pre.terminal-empty,
+.terminal-empty {
+	color: var(--light-grey);
+	font-family: var(--font-data); font-size: var(--fs-data);
+	letter-spacing: var(--track-data);
+	margin: var(--space-2) 0 0; white-space: pre-wrap;
+}
+/* With no known extent, or no terrain at all: it is said inside the frame
+   rather than drawing a false map. Position only — the type comes from
+   `.terminal-empty` above, like every other empty state. */
 .terminal-map-none {
 	position: absolute; inset: 0; margin: 0;
 	display: flex; align-items: center; justify-content: center;
-	color: var(--faint);
-	font-family: var(--font-data); font-size: var(--fs-data);
-	letter-spacing: var(--track-data);
 }
-/* Les deux verbes de la Home, sur une ligne : voler là, ou aller voir ailleurs. */
+/* The Home's two verbs, on one line: fly there, or go and look elsewhere. */
 .terminal-acts { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .terminal-acts .terminal-cta { align-self: auto; }
 /* Un intertitre, pas un titre : il nomme la liste sans peser autant que la
@@ -769,35 +828,35 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	letter-spacing: var(--track-ui);
 	margin: var(--space-2) 0 0;
 }
-/* La liste compacte sélectionne, elle ne fait pas voler : pas de défilement, pas
-   de recherche, pas d'actions — tout ça vit dans MORE…. */
-/* `flex: none` : la colonne gauche est une flex column à défilement, et dès
-   que la recherche déroule ses résultats la liste se faisait écraser à zéro
-   pixel — LOCAL TERRAIN titrait une liste vide. */
+/* The compact list selects, it does not fly: no scrolling, no search, no
+   actions — all of that lives in MORE…. */
+/* `flex: none`: the left column is a scrolling flex column, and as soon as the
+   search unrolled its results the list was crushed to zero pixels — LOCAL
+   TERRAIN was titling an empty list. */
 .terminal-areas-compact { max-height: none; overflow: visible; gap: 0; flex: none; }
-/* La zone que la carte cadre et que [ FLY ] volera. Un filet à gauche plutôt
-   qu'un aplat : le blanc plein est réservé au curseur. */
+/* The area the map frames and that [ FLY ] will fly. A rule on the left rather
+   than a fill: solid white is reserved for the cursor. */
 .terminal-areas-compact button.terminal-area[data-selected] {
-	/* Un filet, tracé comme tous les filets du jeu (--rule-w), et pas une ombre
-	   portée qui doublait l'épaisseur de la maison. Le padding gauche du bouton
-	   absorbe la bordure : la colonne ne bouge pas d'un pixel. */
+	/* A rule, drawn like every rule in the game (--rule-w), and not a box shadow
+	   that doubled the house thickness. The button's left padding absorbs the
+	   border: the column does not move by a pixel. */
 	border-left: var(--rule-w) solid var(--ink);
 	padding-left: calc(1.2em - var(--rule-w));
 }
-/* Sur l'écran complet, la météo est en DISPLAY à dessein : c'est la ligne qu'on
-   vient y lire (#76). Sur la Home elle redescend au niveau UI — la couleur
-   continue de porter l'information, mais la Home reste calme (Bible §30, §45).
-   Et le nom cesse d'être une colonne fixe : à deux zones, un min-width de 260 px
-   pousse la météo hors du cadre et la fait tronquer pour rien. */
+/* On the full screen the weather is DISPLAY on purpose: it is the line you
+   come there to read (#76). On the Home it comes back down to the UI level —
+   colour still carries the information, but the Home stays calm (Bible §30,
+   §45). And the name stops being a fixed column: with two areas, a min-width
+   of 260px pushes the weather out of the frame and truncates it for nothing. */
 .terminal-areas-compact .terminal-area-weather {
 	font-family: var(--font-ui); font-size: var(--fs-ui);
 	letter-spacing: var(--track-ui);
 }
-/* Dans la colonne gauche de l'écran fusionné (#211), un nom long — CONSERVATOIRE
-   NATIONAL DES ARTS ET METIERS — dépassait la colonne et se faisait couper NET
-   par l'overflow, sans rien qui dise que c'était coupé. Il se tronque avec une
-   ellipse et rend la place au reste de la ligne, comme fit() le fait pour les
-   tables du journal. */
+/* In the merged screen's left column (#211), a long name — CONSERVATOIRE
+   NATIONAL DES ARTS ET METIERS — overflowed the column and was cut DEAD by the
+   overflow, with nothing to say it had been cut. It truncates with an ellipsis
+   and gives the space back to the rest of the line, the way fit() does for the
+   log's tables. */
 .terminal-areas-compact .terminal-area > span:first-child {
 	min-width: 0; flex: 1 1 auto;
 	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -817,9 +876,9 @@ button.terminal-area {
 	border: 0; background: none; text-align: left; cursor: pointer; color: var(--ink);
 	padding: var(--space-0) 0 var(--space-0) 1.2em;
 }
-/* Le survol inverse ; le focus, lui, est le marqueur ▌ et rien d'autre — c'est
-   la règle de #123, et cette rangée était le seul endroit à le dire deux fois,
-   donc le seul où clavier et souris ne se voyaient pas pareil. */
+/* Hover inverts; focus, on the other hand, is the ▌ marker and nothing else —
+   that is #123's rule, and this row was the only place saying it twice, hence
+   the only place where keyboard and mouse did not look alike. */
 button.terminal-area:hover {
 	background: var(--warm-white); color: var(--black);
 }
@@ -828,50 +887,51 @@ button.terminal-area:hover .terminal-area-weather {
 	color: inherit;
 }
 button.terminal-area:focus::before { left: 0; }
-/* Le nom tient une COLONNE de 260 px — c'est ce qui aligne les rangées entre
-   elles — mais il peut rétrécir, et lui seul le peut (issue #214). Avec un
-   simple `min-width: 260px`, un nom long (CONSERVATOIRE NATIONAL DES ARTS ET
-   MÉTIERS) poussait la ligne au-delà du cadre et c'est la MÉTÉO qui se faisait
-   rogner — or la météo est précisément ce qu'on vient lire sur cet écran (#76),
-   et elle est en DISPLAY pour ça.
-   Le partage est donc renversé : la MÉTÉO prend sa largeur naturelle
-   (`flex: 0 0 auto`, plus bas), et le NOM est le seul à rendre de la place.
-   `flex: 0 1000 260px` : base 260 px — c'est la colonne, et elle ne bouge PAS
-   tant que la ligne tient, sinon les poids et les météos ne s'alignent plus
-   d'une rangée à l'autre ; aucune croissance ; et un facteur de rétrécissement
-   ÉNORME devant celui de la météo, ce qui donne l'ordre de sacrifice voulu —
-   le nom rend tout avant que la météo ne rende quoi que ce soit. Un simple
-   `1` de chaque côté les ferait rétrécir ensemble, au prorata. `min-width: 0` lève le minimum intrinsèque, sans quoi un mot long
-   refuse de se réduire et l'ellipse ne se déclenche jamais.
-   Mesuré au rendu réel dans un cadre de 720 px : le nom
-   de 43 caractères se tronque, la colonne reste à 260 px sur les rangées
-   normales, et aucune des quatre rangées témoins ne rogne sa météo ni ne
-   déborde du cadre. Avant, un simple `min-width: 260px` gardait la colonne
-   coûte que coûte et c'était la météo qui sautait — or c'est elle qu'on vient
-   lire ici (#76), et elle est en DISPLAY pour ça. Même arbitrage que la liste
-   compacte de la Home (#211), posé avec la colonne que l'écran complet garde. */
+/* The name holds a 260px COLUMN — that is what lines the rows up with each
+   other — but it can shrink, and it alone can (issue #214). With a plain
+   `min-width: 260px`, a long name (CONSERVATOIRE NATIONAL DES ARTS ET METIERS)
+   pushed the line past the frame and it was the WEATHER that got clipped — and
+   the weather is precisely what you come to this screen to read (#76), which is
+   why it is in DISPLAY.
+   So the sharing is reversed: the WEATHER takes its natural width
+   (`flex: 0 0 auto`, below), and the NAME is the only one that gives space
+   back. `flex: 0 1000 260px`: 260px basis — that is the column, and it does NOT
+   move for as long as the line fits, otherwise the weights and the weather no
+   longer line up from row to row; no growth; and an ENORMOUS shrink factor next
+   to the weather's, which gives the intended order of sacrifice — the name
+   gives everything before the weather gives anything. A plain `1` on each side
+   would shrink them together, pro rata. `min-width: 0` lifts the intrinsic
+   minimum, without which a long word refuses to shrink and the ellipsis never
+   fires.
+   Measured on a real render in a 720px frame: the 43-character name truncates,
+   the column stays at 260px on the normal rows, and none of the four sample
+   rows clips its weather or overflows the frame. Before, a plain
+   `min-width: 260px` kept the column at all costs and it was the weather that
+   went — and the weather is what you come here to read (#76), which is why it
+   is in DISPLAY. Same arbitration as the Home's compact list (#211), applied
+   with the column the full screen keeps. */
 .terminal-area > span:first-child {
 	flex: 0 1000 260px; min-width: 0;
 	overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Rangée d'actions (OPEN · FORECAST · REMOVE) : masquée tant que la carte de
-   la rangée au-dessus n'est pas activée (Entrée/clic) — Échap la referme. */
+/* Action row (OPEN · FORECAST · REMOVE TERRAIN): hidden until the card of the
+   row above is activated (Enter/click) — Escape closes it. */
 .terminal-area-actions { padding-left: 1.2em; margin: var(--space-0) 0 0; display: flex; align-items: center; gap: var(--space-2); }
 .terminal-area-actions[hidden] { display: none; }
 .terminal-area-size { white-space: pre; color: var(--light-grey); font-family: var(--font-data); font-size: var(--fs-data); letter-spacing: var(--track-data); font-variant-numeric: tabular-nums; }
-/* Le temps qu'il fait sur la zone. Retour utilisateur du 2026-08-29 : « au
-   lancement d'un vol on ne pense pas aux conditions ». Il fallait donc le
-   rendre saillant sans le rendre criard — c'est une ligne de relevé, pas une
-   alarme. D'où le niveau DISPLAY, en pleine encre, encadré à gauche par un
-   filet : il se distingue par la forme et non par la couleur. Departure Mono
-   porte aussi les quatre flèches ↑ → ↓ ← du vent, que Plex Mono n'a pas. */
+/* The weather over the area. User feedback of 2026-08-29: "when launching a
+   flight you do not think about the conditions". So it had to be made salient
+   without being made loud — it is a readout line, not an alarm. Hence the
+   DISPLAY level, in full ink, framed on the left by a rule: it stands out by
+   shape and not by colour. Departure Mono also carries the wind's four arrows
+   ↑ → ↓ ←, which Plex Mono does not have. */
 .terminal-area-weather {
-	/* `flex: 0 1 auto` et non `flex: 1` : la ligne prend sa largeur NATURELLE au
-	   lieu d'absorber ce qui reste, et c'est le nom (facteur de rétrécissement
-	   1000 fois plus grand) qui rend la place avant elle (issue #214). Elle
-	   garde tout de même le droit de céder en tout dernier — sur une fenêtre si
-	   étroite que le nom réduit à rien ne suffit plus, mieux vaut une météo
-	   tronquée qu'une rangée qui déborde du cadre. */
+	/* `flex: 0 1 auto` and not `flex: 1`: the line takes its NATURAL width
+	   instead of absorbing what is left, and it is the name (shrink factor 1000
+	   times larger) that gives space back before it does (issue #214). It still
+	   keeps the right to yield last of all — on a window so narrow that the name
+	   reduced to nothing is no longer enough, a truncated weather line beats a
+	   row that overflows the frame. */
 	flex: 0 1 auto; min-width: 0;
 	font-family: var(--font-ascii);
 	font-size: var(--fs-display-s);
@@ -881,28 +941,27 @@ button.terminal-area:focus::before { left: 0; }
 	padding-left: var(--space-3);
 	white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* La couleur n'apparaît que si la météo change la décision de voler
-   (weather.js pose data-severity) : sinon la ligne reste en encre neutre. */
+/* Colour only appears if the weather changes the decision to fly (weather.js
+   sets data-severity): otherwise the line stays in neutral ink. */
 .terminal-area-weather[data-severity="watch"] { color: var(--yellow); }
 .terminal-area-weather[data-severity="marginal"] { color: var(--orange); }
 .terminal-area-weather[data-severity="nogo"] { color: var(--red); }
 
 /* ---------- listes navigables (issue #123) ---------- */
-/* Les rangées du SESSION LOG et du TARGET SCAN étaient peintes dans un <pre> :
-   ni cliquables, ni atteignables au Tab, ni lisibles par une aide technique.
-   Chaque rangée est un vrai bouton, au même niveau DISPLAY que le <pre>
-   qu'elle remplace, avec la colonne du curseur réservée à gauche — le
-   marqueur ▌ s'y pose sans décaler le texte, comme le faisait l'ancien `>`. */
+/* The SESSION LOG and TARGET SCAN rows used to be painted in a <pre>: not
+   clickable, not reachable with Tab, not readable by assistive technology.
+   Every row is a real button, at the same DISPLAY level as the <pre> it
+   replaces, with the cursor's column reserved on the left — the ▌ marker lands
+   there without shifting the text, as the old `>` did. */
 .terminal-list {
 	display: flex; flex-direction: column;
 	max-height: 55vh; overflow-y: auto;
 }
-/* Une rangée de journal est une TABLE : des colonnes de largeur fixe qu'on
-   balaie, pas une phrase qu'on lit. Mesuré : à --fs-display-s (22px Departure
-   Mono, tracking .12em) un caractère fait 16,6px, donc la boîte tient 56
-   signes — quand une ligne de session en fait 69 et une ligne de cible 97. Le
-   journal descend donc du niveau DISPLAY vers DATA, exactement comme
-   `pre.terminal-foot` et pour la même raison : c'est de la donnée dense. */
+/* A log row is a TABLE: fixed-width columns you scan, not a sentence you read.
+   Measured: at --fs-display-s (22px Departure Mono, .12em tracking) a character
+   is 16.6px, so the box holds 56 signs — when a session line is 69 and a target
+   line 97. So the log comes down from the DISPLAY level to DATA, exactly like
+   `pre.terminal-foot` and for the same reason: it is dense data. */
 button.terminal-row,
 .bootstrap-box pre.terminal-log {
 	font-family: var(--font-data);
@@ -911,10 +970,10 @@ button.terminal-row,
 	letter-spacing: var(--track-data);
 	font-variant-numeric: tabular-nums;
 	color: var(--ink);
-	/* Une colonne qui se replie n'est plus une colonne : on ne replie pas, et
-	   si la fenêtre est vraiment trop étroite la table défile pour elle seule
-	   plutôt que de pousser la page entière (Bible §38, angles droits, pas de
-	   débordement horizontal du cadre). */
+	/* A column that wraps is no longer a column: it does not wrap, and if the
+	   window really is too narrow the table scrolls on its own rather than
+	   pushing the whole page (Bible §38, right angles, no horizontal overflow
+	   of the frame). */
 	white-space: pre; overflow-x: auto;
 }
 button.terminal-row {
@@ -922,14 +981,14 @@ button.terminal-row {
 	text-align: left; cursor: pointer;
 }
 button.terminal-row:hover { background: var(--warm-white); color: var(--black); }
-/* Dans une liste qui défile, le marqueur vit DANS la colonne réservée : à
-   -0.9em il serait rogné par l'overflow. */
+/* In a scrolling list, the marker lives INSIDE the reserved column: at -0.9em
+   it would be clipped by the overflow. */
 button.terminal-row:focus::before { left: 0; }
 
 /* ---------- session log (PHASE 17) ---------- */
-/* Vignettes des captures d'une session. Grille souple : le détail d'une session
-   ne doit jamais forcer un défilement horizontal. Même sobriété que la Home —
-   pas de coins arrondis, pas d'ombre. */
+/* Thumbnails of a session's captures. A soft grid: a session's record must
+   never force a horizontal scroll. Same restraint as the Home — no rounded
+   corners, no shadow. */
 .session-shots { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-1) 0; }
 .session-shots img {
 	width: 180px; height: auto;
@@ -961,48 +1020,47 @@ button.terminal-row:focus::before { left: 0; }
 canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 
 /* ---------- global scanner (PHASE 03) ---------- */
-/* Même grammaire que le terminal : monospace, traits d'un pixel, angles droits,
-   aucun aplat de couleur. La carte est le seul élément « photographique » de
-   l'écran, et elle est passée en monochrome pour ne pas hurler. */
+/* Same grammar as the terminal: monospace, one-pixel rules, right angles, no
+   colour fills. The map is the only "photographic" element on the screen, and
+   it has been turned monochrome so that it does not shout. */
 
-/* `.scanner` n'existe plus : depuis #211 le scanner n'a pas de plein cadre à
-   lui, il se monte dans les deux colonnes de la Home. `.scanner-panel` garde
-   son allure de rail, `.scanner-map` sa géométrie. */
-/* Le fond monochrome, partagé par le GLOBAL SCANNER et la mini-carte de la
-   Home : une seule carte dans le jeu (Bible §4). Ces règles sont portées par
-   `.map-mono`, posée sur les deux — les dupliquer serait la garantie qu'elles
-   divergent au premier réglage. `.scanner-map` ne garde que sa géométrie. */
+/* `.scanner` no longer exists: since #211 the scanner has no full frame of its
+   own, it mounts into the Home's two columns. `.scanner-panel` keeps its rail
+   look, `.scanner-map` its geometry. */
+/* The monochrome ground, shared by the GLOBAL SCANNER and the Home's small
+   map: one map in the game (Bible §4). These rules are carried by `.map-mono`,
+   set on both — duplicating them would guarantee they diverge at the first
+   adjustment. `.scanner-map` keeps only its geometry. */
 .map-mono { position: relative; background: var(--dark-grey); }
-/* La tache de couverture (issue #245) : un canvas dans son pane, sous les
-   cadres de zone. `pointer-events: none` parce que c'est un fond — la carte
-   dessous doit rester déplaçable et les cadres cliquables. Le flou finit de
-   fondre les dégradés en tache ; il est petit parce que les cellules sont
-   déjà des dégradés radiaux qui se recouvrent. Non filtré par `.sc-invert` /
-   `.sc-gray`, qui ne portent que sur la couche de tuiles : l'encre reste
-   celle du terminal. */
+/* The coverage stain (issue #245): a canvas in its own pane, under the area
+   frames. `pointer-events: none` because it is a background — the map beneath
+   must stay pannable and the frames clickable. The blur finishes melting the
+   gradients into a stain; it is small because the cells are already
+   overlapping radial gradients. Not filtered by `.sc-invert` / `.sc-gray`,
+   which only apply to the tile layer: the ink stays the terminal's. */
 .map-coverage { pointer-events: none; filter: blur(1.5px); }
 .scanner-map { height: 100%; }
-/* MONO : le filtre porte sur les tuiles de la couche seulement, pas sur les
-   vecteurs — la grille, la zone et les repères gardent l'encre du terminal.
-   Le fond OSM est inversé (blanc sur noir) ; les couches déjà sombres ou
-   photographiques sont seulement désaturées. */
+/* MONO: the filter applies to the layer's tiles only, not to the vectors — the
+   grid, the area and the markers keep the terminal's ink. The OSM ground is
+   inverted (white on black); layers that are already dark or photographic are
+   only desaturated. */
 .map-mono .sc-invert { filter: grayscale(1) invert(1) contrast(1.08) brightness(.9); }
-/* Un pixel de recouvrement entre tuiles. Sous filtre, le raccord de deux tuiles
-   voisines s'éclaircit et dessine un faux quadrillage de 256 px par-dessus le
-   vrai — mesuré ici à devicePixelRatio 0,9, et invisible sans filtre. Le décalage
-   d'un pixel, lui, ne se voit pas à l'échelle d'une carte. */
+/* One pixel of overlap between tiles. Under a filter, the join of two
+   neighbouring tiles lightens and draws a false 256px grid over the real one —
+   measured here at devicePixelRatio 0.9, and invisible without the filter. The
+   one-pixel offset, on the other hand, does not show at the scale of a map. */
 .map-mono .leaflet-tile { width: 257px !important; height: 257px !important; }
 .map-mono .sc-gray { filter: grayscale(1) contrast(1.15) brightness(.85); }
 .map-mono .leaflet-container { background: var(--dark-grey); font: inherit; }
-/* `.leaflet-container` dans le sélecteur n'est pas décoratif : Leaflet injecte
-   sa propre feuille en <style> inline À L'EXÉCUTION, avec exactement
+/* `.leaflet-container` in the selector is not decorative: Leaflet injects its
+   own sheet as an inline <style> AT RUNTIME, with exactly
    `.leaflet-container .leaflet-control-attribution { background: rgba(255,255,255,.8) }`
-   — même spécificité que `.map-mono .leaflet-control-attribution`, mais plus
-   tard dans la cascade, donc gagnante. Mesuré : le fond calculé était blanc sur
-   les DEUX cartes, et l'attribution se lisait comme un bandeau de navigateur en
-   travers du bas. Le troisième niveau reprend la main quel que soit l'ordre.
-   `.map-mono.leaflet-container` sans espace : Leaflet pose sa classe sur le
-   conteneur qu'on lui donne, donc c'est le MÊME élément que `.map-mono`. */
+   — the same specificity as `.map-mono .leaflet-control-attribution`, but later
+   in the cascade, so it wins. Measured: the computed background was white on
+   BOTH maps, and the attribution read like a browser banner across the bottom.
+   The third level takes over whatever the order.
+   `.map-mono.leaflet-container` with no space: Leaflet puts its class on the
+   container it is given, so this is the SAME element as `.map-mono`. */
 .map-mono.leaflet-container .leaflet-control-attribution {
 	background: var(--scrim); color: var(--faint);
 	font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-data);
@@ -1010,9 +1068,9 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	padding: 1px var(--space-2);
 }
 .map-mono .leaflet-control-attribution a { color: var(--dim); }
-/* L'attribution OSM embarque un drapeau en couleur. Le jeu est N&B (Bible §38) :
-   il passe au gris comme le reste, sans être retiré — l'attribution doit rester
-   lisible, c'est la contrepartie des tuiles. */
+/* The OSM attribution embeds a colour flag. The game is black and white
+   (Bible §38): it goes grey like the rest, without being removed — the
+   attribution must stay legible, that is the price of the tiles. */
 .map-mono .leaflet-control-attribution img,
 .map-mono .leaflet-control-attribution svg { filter: grayscale(1) brightness(.7); }
 .map-mono .leaflet-bar,
@@ -1021,12 +1079,23 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	background: var(--dark-grey); color: var(--ink);
 }
 .map-mono .leaflet-bar a:hover { background: var(--warm-white); color: var(--black); }
-/* Poignées Geoman : des carrés, pas des pastilles. */
+/* The keyboard stop that had nothing to show for itself. `:focus { outline:
+   none }` at the top of this file is global, and the ▌ marker that replaces it
+   is given to buttons and to panel rows — but Leaflet's zoom controls and the
+   attribution are <a>, so tabbing across the map hit invisible stops. They take
+   the inverse video every other focused control in the game takes; the ▌ would
+   sit outside the map's own frame, which is why these two get the fill instead. */
+.map-mono .leaflet-bar a:focus-visible,
+.map-mono .leaflet-control-attribution a:focus-visible {
+	outline: none;
+	background: var(--warm-white); color: var(--black);
+}
+/* Geoman handles: squares, not pills. */
 .map-mono .leaflet-div-icon,
 .map-mono .marker-icon {
 	border-radius: 0 !important; background: var(--dark-grey);
 	border: var(--rule-w) solid var(--warm-white);
-	width: 8px; height: 8px; margin: -4px 0 0 -4px; /* scale-ok: la marge CENTRE la poignée sur son point, elle vaut sa moitié */
+	width: 8px; height: 8px; margin: -4px 0 0 -4px; /* scale-ok: the margin CENTRES the handle on its point, it is half of it */
 }
 .sc-pin {
 	color: var(--ink); font-family: var(--font-ui); font-weight: 500;
@@ -1041,7 +1110,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	display: flex; flex-direction: column; gap: var(--space-4);
 	font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui);
 }
-/* Le titre de l'écran, seul élément DISPLAY du panneau. */
+/* The screen's title, the panel's only DISPLAY element. */
 .sc-title {
 	margin: 0;
 	font-family: var(--font-display); font-weight: 400;
@@ -1073,10 +1142,10 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .sc-cta { border: 0; padding: var(--space-2) 0; }
 .sc-btn:hover:not(:disabled), .sc-cta:hover:not(:disabled) { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
 .sc-btn:disabled, .sc-cta:disabled { opacity: var(--op-disabled); cursor: default; }
-/* La liste des périphériques que le navigateur énumère (issue #162). Une
-   ligne par manette : identifiant, classe déduite, axes, boutons. Le
-   périphérique actif porte le même marqueur ▌ que le curseur des menus, pour
-   qu'« actif » se lise partout de la même façon. */
+/* The list of devices the browser enumerates (issue #162). One line per
+   gamepad: id, derived class, axes, buttons. The active device carries the same
+   ▌ marker as the menu cursor, so that "active" reads the same way
+   everywhere. */
 #pad-list { display: flex; flex-direction: column; gap: var(--space-0); margin: var(--space-1) 0; }
 #pad-list button.pad-entry {
 	border: 0; background: none; text-align: left; cursor: pointer;
@@ -1088,15 +1157,15 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	white-space: normal; overflow-wrap: anywhere;
 }
 #pad-list button.pad-entry:hover { color: var(--ink); }
-/* Le périphérique ACTIF s'écrit en vidéo inverse, comme tout état actif du jeu.
-   Il portait la même encre pleine que le survol : la souris passant dessus, on
-   ne pouvait plus dire lequel des deux était branché. */
+/* The ACTIVE device is written in reverse video, like every active state in the
+   game. It used to carry the same full ink as hover: with the mouse passing
+   over, you could no longer tell which of the two was plugged in. */
 #pad-list button.pad-entry[data-active] { background: var(--warm-white); color: var(--black); }
 
-/* Assistant de calibrage (issue #277). Pendant la mesure, la consigne est la
-   SEULE chose que le pilote doit lire : la liste des périphériques et le
-   tableau de remap s'effacent, et la consigne prend la taille d'affichage.
-   22 px est un multiple de 11 — Departure Mono n'est nette qu'à ces tailles. */
+/* Calibration wizard (issue #277). During the measurement the instruction is
+   the ONLY thing the pilot has to read: the device list and the remap table go
+   away, and the instruction takes the display size. 22px is a multiple of 11 —
+   Departure Mono is only crisp at those sizes. */
 /* Bouton puis note EN DESSOUS : la note fait trois lignes, et la centrer
    verticalement contre un petit bouton la rendait illisible. */
 #cal-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin: var(--space-2) 0; }
@@ -1108,33 +1177,33 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	letter-spacing: var(--track-display); color: var(--ink);
 	margin: var(--space-2) 0;
 }
-/* Jaune = « surveille » : la consigne est à refaire, rien n'est perdu. La
-   ligne garde sa hauteur même vide, pour que la barre ne saute pas. */
+/* Yellow = "watch it": the instruction has to be redone, nothing is lost. The
+   line keeps its height even when empty, so that the bar does not jump. */
 #cal-hint { color: var(--light-grey); margin: 0; }
 #cal-message { color: var(--yellow); margin: var(--space-1) 0 var(--space-2); min-height: 1.2em; }
 #cal-screen .axisbar { margin-bottom: var(--space-3); }
 #cal-summary { margin: var(--space-2) 0; color: var(--light-grey); white-space: pre; }
 
-/* La machine qui réagit au manche (issue #281). Monochrome : le trait prend
-   currentColor, donc la couleur vient d'ici et jamais du module de dessin —
-   même règle que les portraits d'archive et les icônes pixel.
-   Hauteur réservée en permanence : sans elle, la machine qui apparaît à la fin
-   de la mesure ferait sauter tout ce qui la suit dans le panneau. */
+/* The machine that answers the stick (issue #281). Monochrome: the stroke
+   takes currentColor, so the colour comes from here and never from the drawing
+   module — the same rule as the archive portraits and the pixel icons.
+   Height reserved permanently: without it, the machine appearing at the end of
+   the measurement would make everything after it in the panel jump. */
 #cal-drone {
 	display: flex; justify-content: center;
 	min-height: 200px; margin: var(--space-2) 0;
-	/* L'encre vive, pas le gris de commentaire : les arêtes lointaines
-	   s'atténuent déjà jusqu'à 35 % d'opacité, et sur un gris à mi-chemin du
-	   fond il ne reste rien à voir. Rendu dans le panneau et regardé. */
+	/* Live ink, not the comment grey: distant edges already fade to 35%
+	   opacity, and on a grey halfway to the ground there is nothing left to
+	   see. Rendered in the panel and looked at. */
 	color: var(--warm-white);
 }
 #cal-drone .cal-drone { display: block; }
 
-/* Les portraits d'archive (issues #264, #283) : au crash dans la séquence de
-   fin, dans la fiche de SESSION LOG, en tête du TARGET LOG. Centrés, en encre
-   vive — même raison que #cal-drone : le fil de fer s'atténue déjà de lui-même
-   avec la profondeur et le poids du trait, un gris de commentaire n'en
-   laisserait rien. La légende éventuelle (LAST TARGET // …) reste en gris. */
+/* The archive portraits (issues #264, #283): at the crash in the end sequence,
+   in the SESSION LOG record, at the head of the TARGET LOG. Centred, in live
+   ink — same reason as #cal-drone: the wireframe already fades of its own
+   accord with depth and stroke weight, and a comment grey would leave nothing
+   of it. Any caption (LAST TARGET // …) stays grey. */
 .drone-portrait { display: block; margin: 0 auto; color: var(--warm-white); }
 .session-portrait {
 	display: flex; flex-direction: column; align-items: center;
@@ -1142,16 +1211,16 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 .session-portrait pre { margin: 0; color: var(--light-grey); }
 
-/* Bouton ARMÉ : deuxième pression = confirmation (issue #213). Le libellé dit
-   déjà « — CONFIRM » ; la couleur d'alarme le rend visible sans le lire, et
-   c'est la même que celle de tout ce qui refuse ou détruit ailleurs. */
+/* An ARMED button: second press = confirmation (issue #213). The label already
+   says "— CONFIRM"; the alarm colour makes it visible without reading it, and
+   it is the same one as everything that refuses or destroys elsewhere. */
 .cta-armed { color: var(--red); border-color: var(--red); }
 .cta-armed:hover:not(:disabled) { background: var(--red); color: var(--black); border-color: var(--red); }
 
-/* Les deux verbes. Empilés dans le rail — il est étroit, les mettre côte à côte
-   les tasserait — mais dans le MÊME bloc, sous le même titre : c'est un choix,
-   pas deux étapes. Chacun porte sous lui ce qu'il coûte, en encre éteinte, pour
-   qu'on n'ait pas à savoir ce que « live » veut dire avant de choisir. */
+/* The two verbs. Stacked in the rail — it is narrow, and side by side they
+   would be cramped — but in the SAME block, under the same heading: this is one
+   choice, not two steps. Each carries under it what it costs, in dead ink, so
+   that you do not have to know what "live" means before choosing. */
 .sc-verbs { gap: var(--space-3); }
 .sc-verb { display: flex; flex-direction: column; gap: var(--space-0); }
 .sc-verb .sc-hint { padding-left: 0; }
@@ -1164,8 +1233,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 .sc-result:hover { background: var(--warm-white); color: var(--black); }
 
-/* Le gabarit label / valeur de la Bible §38 : deux colonnes alignées, le label
-   en retrait, la valeur en pleine encre et en chiffres tabulaires. */
+/* Bible §38's label / value template: two aligned columns, the label set back,
+   the value in full ink and in tabular figures. */
 .sc-readout { display: grid; grid-template-columns: 160px 1fr; gap: var(--space-1) var(--space-3); margin: 0; font-family: var(--font-data); font-size: var(--fs-ui); letter-spacing: var(--track-data); }
 .sc-readout dt { color: var(--light-grey); font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase; }
 .sc-readout dd { margin: 0; font-variant-numeric: tabular-nums; }
@@ -1176,8 +1245,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .sc-verdict[data-status="ok"] { color: var(--green); }
 .sc-verdict[data-status="planned"], .sc-verdict[data-status="busy"], .sc-verdict[data-status="undecodable"] { color: var(--yellow); }
 .sc-verdict[data-status="none"] { color: var(--red); }
-/* « Injoignable » n'est pas « pas de couverture » : même alarme rouge, mais le
-   libellé et le détail disent que c'est l'installation locale qui a échoué. */
+/* "Unreachable" is not "no coverage": the same red alarm, but the label and
+   the detail say that it is the local installation that failed. */
 .sc-verdict[data-status="error"] { color: var(--red); }
 .sc-verdict[data-status="unprobed"] { color: var(--light-grey); }
 .sc-detail { margin: 0; font-family: var(--font-data); font-size: var(--fs-data); line-height: 1.5; letter-spacing: var(--track-data); color: var(--dim); white-space: pre-wrap; }
@@ -1192,15 +1261,15 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	background: none; border: 0; padding: 0 var(--space-1);
 	color: var(--light-grey); font: inherit; cursor: pointer;
 }
-/* L'option retenue passe en vidéo inverse — le même signe d'état que partout. */
+/* The chosen option goes to reverse video — the same state sign as everywhere. */
 .sc-switch button[data-on="true"] { background: var(--warm-white); color: var(--black); }
 .sc-switch button:hover { color: var(--ink); }
 
 .sc-foot { margin-top: auto; gap: var(--space-2); border-top: var(--rule-w) solid var(--rule); padding-top: var(--space-3); }
 
-/* Les couches et le détail SUR la carte (#222) : un contrôle Leaflet en haut à
-   gauche, sur le même scrim que l'attribution. Les deux rangées s'empilent ;
-   la seconde se retire en LIVE. */
+/* The layers and the detail ON the map (#222): a Leaflet control at the top
+   left, on the same scrim as the attribution. The two rows stack; the second
+   withdraws in LIVE. */
 .map-mono .sc-map-controls {
 	display: flex; flex-direction: column; gap: var(--space-1);
 	margin: var(--space-3); padding: var(--space-1) var(--space-2);
@@ -1210,27 +1279,27 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .map-mono .sc-map-controls .sc-switch { display: flex; gap: 0; align-items: baseline; white-space: nowrap; }
 .map-mono .sc-map-controls .sc-switch[hidden] { display: none; }
 
-/* L'épingle de LIVE : la même encre que les repères du cache, mais elle se
-   saisit — le curseur le dit. */
+/* The LIVE pin: the same ink as the cache markers, but it can be grabbed — the
+   cursor says so. */
 .sc-pin-live { cursor: grab; }
 .sc-pin-place { margin: 0; letter-spacing: var(--track-ui); text-transform: uppercase; }
 
 .sc-bar { height: 3px; background: var(--rule); overflow: hidden; }
 .sc-bar i { display: block; height: 100%; width: 0; background: var(--warm-white); transition: width var(--dur-2) linear; }
-/* Pendant la conversion le pipeline ne rend aucun compteur : la barre le dit
-   plutôt que d'inventer une progression. */
+/* During conversion the pipeline returns no counter: the bar says so rather
+   than inventing a progress. */
 .sc-bar[data-indeterminate="1"] i { width: 100% !important; animation: sc-sweep var(--dur-sweep) linear infinite; transform-origin: left; }
 @keyframes sc-sweep { 0% { transform: scaleX(0); } 50% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 
-/* TERRAIN/FETCH/DECODE/REBUILD, puis RF ANALYSIS/TARGET SEARCH (PHASE 05,
-   Bible §8) : une rangée = un libellé fixe + la même `.sc-bar` qu'ailleurs. */
+/* TERRAIN/FETCH/DECODE/REBUILD, then RF ANALYSIS/TARGET SEARCH (PHASE 05,
+   Bible §8): one row = a fixed label + the same `.sc-bar` as everywhere else. */
 .sc-bars { display: flex; flex-direction: column; gap: var(--space-2); }
 .sc-bar-row { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: var(--space-2); }
 .sc-bar-label { font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase; color: var(--light-grey); }
 
 .sc-log-block { flex: 1; min-height: 120px; }
-/* Le journal du pipeline est de la sortie machine : Departure Mono, comme les
-   autres blocs à chasse imposée. */
+/* The pipeline log is machine output: Departure Mono, like the other blocks
+   with an imposed advance width. */
 .sc-log {
 	margin: 0; flex: 1; overflow-y: auto;
 	font-family: var(--font-ascii); font-size: var(--fs-data); line-height: 1.45;
@@ -1239,72 +1308,73 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	border: var(--rule-w) solid var(--rule); padding: var(--space-2);
 	max-height: 40vh;
 }
-/* RTC (Bible §9, PHASE 21) : la même vitrine que le log du pipeline, mais bien
-   plus discrète — c'est du décor, jamais une source d'information sur
-   l'opération. `.sc-block`/`.sc-h`/`.sc-log`/`.sc-rtc` sont des classes nues,
-   pas scopées à `.scanner-panel` : le conteneur d'écran du scanner et celui
-   des écrans terminal (TARGET SCAN, la fiche, HACK — `.bootstrap-box`, aussi
-   en colonne flex) portent déjà les mêmes règles sans qu'il faille les
-   dupliquer — une seule langue visuelle pour toutes les voix du crew. */
+/* RTC (Bible §9, PHASE 21): the same showcase as the pipeline log, but far
+   more discreet — it is scenery, never a source of information about the
+   operation. `.sc-block`/`.sc-h`/`.sc-log`/`.sc-rtc` are bare classes, not
+   scoped to `.scanner-panel`: the scanner's screen container and that of the
+   terminal screens (TARGET SCAN, the record, HACK — `.bootstrap-box`, also a
+   flex column) already carry the same rules without having to duplicate them —
+   one visual language for all the crew's voices. */
 .sc-rtc-block { flex: 0 0 auto; }
 .sc-rtc { max-height: 18vh; color: var(--faint); }
 
 /* ---------------------------------------------------------------------------
-   LES BARRES DE DÉFILEMENT
+   THE SCROLLBARS
 
-   Par défaut le navigateur en dessine une en gris clair, avec ses deux flèches,
-   posée sur un fond noir : c'est la seule chose à l'écran qui ne soit pas de ce
-   jeu. On la ramène à un filet, dans l'encre des filets — elle dit qu'il y a
-   quelque chose au-dessus ou en dessous, et rien d'autre.
+   By default the browser draws one in light grey, with its two arrows, laid on
+   a black ground: it is the only thing on screen that does not belong to this
+   game. It comes back to a rule, in the rules' ink — it says there is something
+   above or below, and nothing else.
 
-   Les deux syntaxes ne cohabitent PAS, et c'est mesuré à l'écran : depuis
-   Chrome 121, poser `scrollbar-width` ou `scrollbar-color` fait IGNORER tous les
-   pseudo-éléments `::-webkit-scrollbar`. Les écrire ensemble donnait donc un
-   pouce correctement assourdi mais les deux flèches toujours là — la règle qui
-   les retire n'était jamais appliquée. Le `@supports` sépare les deux mondes :
-   WebKit prend les pseudo-éléments (seuls à savoir retirer les flèches), tout le
-   reste garde la propriété standard.
+   The two syntaxes do NOT coexist, and that is measured on screen: since
+   Chrome 121, setting `scrollbar-width` or `scrollbar-color` makes every
+   `::-webkit-scrollbar` pseudo-element IGNORED. Writing them together therefore
+   gave a correctly muted thumb but both arrows still there — the rule that
+   removes them was never applied. The `@supports` separates the two worlds:
+   WebKit takes the pseudo-elements (the only ones that can remove the arrows),
+   everything else keeps the standard property.
 
-   La barre reste PRÉSENTE et non masquée : un journal RTC qu'on veut relire, ou
-   un écran plus haut que la fenêtre (BUILD NOTES, TARGET LOG), a besoin qu'on
-   sache qu'il y a de la matière hors cadre. C'est l'argument qui a déjà décidé
-   `align-content: safe center` sur `.bootstrap`. */
+   The bar stays PRESENT rather than hidden: an RTC log you want to read back,
+   or a screen taller than the window (BUILD NOTES, TARGET LOG), needs you to
+   know there is matter outside the frame. That is the argument that already
+   decided `align-content: safe center` on `.bootstrap`. */
 * { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 @supports selector(::-webkit-scrollbar) {
-	/* Rendues à `auto` pour que Chrome cesse de les préférer aux pseudo-éléments
-	   ci-dessous — c'est la seule façon de reprendre la main sur les flèches. */
+	/* Handed back to `auto` so that Chrome stops preferring them to the
+	   pseudo-elements below — that is the only way to take the arrows back. */
 	* { scrollbar-width: auto; scrollbar-color: auto; }
 	::-webkit-scrollbar { width: 8px; height: 8px; }
 	::-webkit-scrollbar-track { background: transparent; }
 	::-webkit-scrollbar-thumb { background: var(--rule-strong); }
 	::-webkit-scrollbar-thumb:hover { background: var(--light-grey); }
-	/* Les deux flèches : c'est ce qui fait le plus « fenêtre de système » sur une
-	   barre de huit pixels. */
+	/* The two arrows: on an eight-pixel bar they are what makes it look most
+	   like a "system window". */
 	::-webkit-scrollbar-button { display: none; }
 	::-webkit-scrollbar-corner { background: transparent; }
 }
 
 /* ---------------------------------------------------------------------------
-   LE TOAST RTC (issue #243)
+   THE RTC TOAST (issue #243)
 
-   La seule surimpression du jeu. Tout le reste vit dans le flux du terminal, et
-   c'est délibéré ici : pendant le hack et l'acquisition, le crew parlait dans un
-   bloc de log qui GRANDISSAIT sous la grille ou à côté de la progression — il
-   déplaçait ce qu'on était en train de regarder. Un calque ne déplace rien.
+   The game's only overlay. Everything else lives in the terminal's flow, and
+   this is deliberate: during the hack and the acquisition, the crew spoke in a
+   log block that GREW under the grid or beside the progress — it displaced what
+   you were looking at. A layer displaces nothing.
 
-   `fixed` et non `absolute`, pour deux raisons mesurées sur les hôtes réels :
-   ni `.scanner-panel` ni `.bootstrap-box` n'est positionné (un enfant absolu
-   serait donc parti se caler sur le viewport de toute façon, mais par accident),
-   et surtout `.scanner-panel` comme `.bootstrap` portent `overflow-y: auto` —
-   un enfant absolu y suit le défilement du CONTENU et serait sorti du cadre
-   visible dès que le log du pipeline s'allonge. L'appartenance du toast à son
-   écran est portée par sa durée de vie (`notify()` rend un `stop()`, et le flux
-   s'arrête si le calque quitte le document), pas par sa place dans le DOM.
+   `fixed` and not `absolute`, for two reasons measured on the real hosts:
+   neither `.scanner-panel` nor `.bootstrap-box` is positioned (an absolute
+   child would therefore have gone and pinned itself to the viewport anyway, but
+   by accident), and above all `.scanner-panel` and `.bootstrap` both carry
+   `overflow-y: auto` — an absolute child there follows the CONTENT's scroll and
+   would have left the visible frame as soon as the pipeline log grew. The
+   toast's belonging to its screen is carried by its lifetime (`notify()`
+   returns a `stop()`, and the stream stops if the layer leaves the document),
+   not by its place in the DOM.
 
-   --z-screen-over : juste au-dessus de l'écran terminal.
+   --z-screen-over: just above the terminal screen.
 
-   `pointer-events: none` : le crew est décoratif (Bible §10), il ne doit jamais
-   intercepter un clic destiné au formulaire en dessous. */
+   `pointer-events: none`: the crew is decorative (Bible §10), it must never
+   intercept a click meant for the form underneath. */
 .rtc-toasts {
 	position: fixed; right: var(--space-5); bottom: var(--space-5);
 	z-index: var(--z-screen-over); pointer-events: none;
@@ -1318,9 +1388,9 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	max-width: 100%;
 	animation: rtc-toast-in var(--dur-2) steps(2, end) both;
 }
-/* Sortie pilotée par un attribut et non par un retrait sec : le nœud reste
-   --dur-3 de plus pour que la sortie ait lieu — dialogue.js lit la même
-   durée dans la feuille plutôt que d'en garder une copie. */
+/* Exit driven by an attribute rather than by a hard removal: the node stays
+   --dur-3 longer so that the exit can happen — dialogue.js reads the same
+   duration from the sheet rather than keeping a copy of it. */
 .rtc-toast[data-out="1"] { animation: rtc-toast-out var(--dur-3) steps(2, end) both; }
 .rtc-toast-who {
 	margin: 0; color: var(--light-grey);
@@ -1334,8 +1404,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 @keyframes rtc-toast-in  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rtc-toast-out { from { opacity: 1; } to { opacity: 0; } }
-/* Le mouvement est du confort, pas de l'information : qui n'en veut pas garde
-   l'apparition et la disparition, sans la durée. */
+/* Motion is comfort, not information: whoever does not want it keeps the
+   appearance and the disappearance, without the duration. */
 @media (prefers-reduced-motion: reduce) {
 	.rtc-toast, .rtc-toast[data-out="1"] { animation-duration: .01ms; }
 }
@@ -1345,27 +1415,28 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 
 /* ---------- AUTOMATED ANALYSIS / hack (PHASE 09) ---------- */
-/* Même grammaire que les autres écrans terminal : monospace, angles droits,
-   aucun aplat de couleur, pas de glow ni de néon (DA §46). Le motif ASCII est
-   purement décoratif — d'où l'opacité réduite. */
+/* Same grammar as the other terminal screens: monospace, right angles, no
+   colour fills, no glow and no neon (DA §46). The ASCII pattern is purely
+   decorative — hence the reduced opacity. */
 .hack .terminal-box { width: min(820px, 90vw); }
 .hack .hack-head { letter-spacing: var(--track-display); margin-bottom: .6em; }
 .hack .hack-log { min-height: 5em; white-space: pre; line-height: 1.5; }
-/* .hack-log-armed : hook d'état JS (le log est entièrement joué), pas de style. */
+/* .hack-log-armed: a JS state hook (the log is fully played), no style. */
 .hack .hack-grammar {
 	margin-top: .8em;
 	font-family: var(--font-ascii);
 	line-height: 1.05;
 	color: var(--dim);
 	white-space: pre;
-	/* 22 px et pas .9em : Departure Mono est une police pixel, elle n'est nette
-	   qu'aux multiples de 11 px, et .9em tombait à 19,8. La grille fait 44
-	   colonnes, soit 616 px ici — elle tient dans les 820 px de la boîte. */
+	/* 22px and not .9em: Departure Mono is a pixel font, it is only crisp at
+	   multiples of 11px, and .9em landed at 19.8. The grid is 44 columns, i.e.
+	   616px here — it fits inside the box's 820px. */
 	font-size: var(--fs-display-s);
 }
-/* MANUAL OVERRIDE REQUIRED est le seul moment où l'analyse rend la main à
-   l'opérateur : jusqu'ici il passait dans le corps du log sans emphase
-   (HANDOFF PHASE 09). Il monte au niveau DISPLAY et s'entoure de blanc. */
+/* MANUAL OVERRIDE REQUIRED is the only moment the analysis hands back to the
+   operator: until now it went past in the body of the log with no emphasis
+   (HANDOFF PHASE 09). It rises to the DISPLAY level and surrounds itself with
+   white space. */
 .hack .hack-handover {
 	display: block;
 	margin: .8em 0 .2em;
@@ -1375,10 +1446,10 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	text-transform: uppercase;
 	color: var(--warm-white);
 }
-/* #67 — trois écrans, trois choses à dire. L'invite et le résultat ont quitté
-   le bas du log : centrés, ils n'ont plus rien autour d'eux à quoi se
-   comparer. La boîte se resserre — un écran qui ne porte que trois lignes n'a
-   pas besoin des 820 px de l'analyse. */
+/* #67 — three screens, three things to say. The prompt and the result have
+   left the bottom of the log: centred, they have nothing around them left to
+   compare themselves to. The box tightens — a screen carrying only three lines
+   does not need the analysis's 820px. */
 .hack-jack .terminal-box,
 .hack-acquired .terminal-box {
 	width: min(560px, 90vw);
@@ -1386,19 +1457,19 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	text-align: center;
 	gap: var(--space-3);
 }
-/* L'en-tête relie les trois temps entre eux, mais elle n'est plus le sujet :
-   sur l'invite et sur le résultat elle redescend au rang de mention. */
+/* The header ties the three moments together, but it is no longer the subject:
+   on the prompt and on the result it drops to the rank of a mention. */
 .hack-jack .hack-head,
 .hack-acquired .hack-head {
 	font-size: var(--fs-ui); letter-spacing: var(--track-ui);
 	color: var(--dim); margin: 0;
 }
-/* #67 — [ JACK IN ] est le geste, et il doit se voir comme tel. Au niveau UI et
-   aligné à gauche au bas du log, il se lisait comme un lien de plus sur un
-   écran qui charge encore ; l'analyse rendait la main sans que personne la
-   prenne. Il a maintenant son écran, et il y RESPIRE : deux états francs qui
-   alternent en pas — l'attente d'un terminal, pas une pulsation douce
-   (DA §46 : jamais de fondu long, jamais de glow). */
+/* #67 — [ JACK IN ] is the gesture, and it must look like one. At UI level and
+   left-aligned at the bottom of the log, it read as one more link on a screen
+   that is still loading; the analysis handed back and nobody took over. It now
+   has its own screen, and it BREATHES there: two clean states alternating in
+   steps — a terminal's waiting, not a soft pulse (DA §46: never a long fade,
+   never a glow). */
 .hack .hack-cta {
 	align-self: center;
 	margin: var(--space-4) 0 var(--space-2);
@@ -1408,18 +1479,19 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	font-size: var(--fs-display-l);
 	letter-spacing: var(--track-display);
 	color: var(--warm-white);
-	/* DEUX animations, et la première n'est pas décorative : `.hack .hack-cta`
-	   est plus spécifique que `[data-reveal]`, donc écrire la seule respiration
-	   ici PRIVAIT le bouton de la cascade d'impression — il apparaissait d'un
-	   coup pendant que le reste de l'écran s'imprimait. Le délai posé par
-	   motion.js s'applique aux deux : le bouton s'imprime à son tour, et c'est
-	   à partir de là qu'il respire. */
+	/* TWO animations, and the first is not decorative: `.hack .hack-cta` is more
+	   specific than `[data-reveal]`, so writing only the breathing here DEPRIVED
+	   the button of the printing cascade — it appeared all at once while the
+	   rest of the screen was still printing. The delay set by motion.js applies
+	   to both: the button prints in its turn, and it is from there that it
+	   breathes. */
 	animation:
 		reveal-in var(--dur-2) steps(2, end) both,
 		hack-cta-wait var(--dur-blink) steps(1, end) infinite;
 }
-/* Sous la souris, sous le focus : l'invite a été entendue, elle se tait. Sans
-   ça l'animation reprend la main sur l'inversion de :hover un temps sur deux. */
+/* Under the mouse, under focus: the prompt has been heard, it goes quiet.
+   Without this the animation takes the :hover inversion back every other
+   beat. */
 .hack .hack-cta:hover, .hack .hack-cta:focus { animation: none; }
 @keyframes hack-cta-wait {
 	0%, 60% { border-color: var(--ink); color: var(--warm-white); }
@@ -1428,9 +1500,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 @media (prefers-reduced-motion: reduce) {
 	.hack .hack-cta { animation: none; }
 }
-/* #57 — l'empreinte de la cible, à l'acquisition. Même grille pixel que la
-   grammaire du hack qu'elle remplace : c'est de l'ASCII, pas de la DISPLAY,
-   donc pas d'interlettrage. */
+/* #57 — the target's fingerprint, at acquisition. Same pixel grid as the hack
+   grammar it replaces: this is ASCII, not DISPLAY, so no tracking. */
 .hack .hack-art {
 	margin: .8em 0 0;
 	font-family: var(--font-ascii);
@@ -1499,14 +1570,14 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	.culmination-boom { animation: none; }
 }
 
-/* ---------- Intro demoscene au lancement (issue #106) ----------
-   PRESS ANY KEY est calme, même grammaire que .bootstrap : pas de couleur,
-   juste un clignotement discret pour lire comme une invite plutôt qu'un texte
-   figé. Le cracktro qui suit est, avec la culmination du hack (#101), le seul
-   endroit du jeu où la palette cyan/magenta/violet/bleu électrique apparaît
-   (Bible §19) — réservée aux moments spectaculaires, jamais en continu
-   (DA §46). --z-intro, au-dessus de tout : c'est le tout premier écran du jeu,
-   et il passait à égalité avec SETTINGS — l'ordre du DOM tranchait. */
+/* ---------- Demoscene intro at launch (issue #106) ----------
+   PRESS ANY KEY is calm, same grammar as .bootstrap: no colour, just a discreet
+   blink so it reads as a prompt rather than as frozen text. The cracktro that
+   follows is, with the hack's culmination (#101), the only place in the game
+   where the cyan/magenta/violet/electric-blue palette appears (Bible §19) —
+   reserved for the spectacular moments, never continuous (DA §46). --z-intro,
+   above everything: it is the very first screen of the game, and it used to tie
+   with SETTINGS — DOM order decided. */
 .intro {
 	position: fixed; inset: 0;
 	z-index: var(--z-intro);
@@ -1514,16 +1585,16 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	background: var(--black);
 	overflow: hidden;
 	text-align: center;
-	/* #ui met pointer-events:none et c'est hérité (règle générale, ligne 24) :
-	   sans ce reset, "n'importe quel clic" pour passer le gate ou sauter le
-	   cracktro n'atteindrait jamais wrap — seul le clavier fonctionnerait. */
+	/* #ui sets pointer-events:none and it is inherited (general rule, line 24):
+	   without this reset, "any click at all" to pass the gate or skip the
+	   cracktro would never reach wrap — only the keyboard would work. */
 	pointer-events: auto;
 }
 .intro-gate {
 	margin: 0;
 	font-family: var(--font-ui); font-weight: 500;
-	/* Dans l'échelle UI, pas dans un clamp qui n'appartient à aucune des deux :
-	   c'est une ligne d'interface, pas un moment DISPLAY. */
+	/* In the UI scale, not in a clamp belonging to neither: this is an interface
+	   line, not a DISPLAY moment. */
 	font-size: var(--fs-ui-l);
 	letter-spacing: var(--track-ui);
 	text-transform: uppercase;
@@ -1535,19 +1606,18 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	50% { opacity: .35; }
 }
 
-/* Le VERROUILLAGE EMPILÉ de docs/brand.md (#73) : le symbole, un module
-   d'écart, puis le nom. Les deux écarts sont exprimés en modules de la marque
-   (un module = 1/16 de sa largeur) plutôt qu'en pixels — c'est la règle du
-   document, pas une mise en page, et elle doit tenir à toutes les tailles.
-   La zone de respect est de 4 modules sur les quatre côtés : rien n'y entre,
-   et ici c'est la plasma qui est tenue dehors.
+/* The STACKED LOCKUP of docs/brand.md (#73): the symbol, one module of gap,
+   then the name. Both gaps are expressed in modules of the mark (one module =
+   1/16 of its width) rather than in pixels — that is the document's rule, not a
+   layout, and it must hold at every size.
+   The clear space is 4 modules on all four sides: nothing enters it, and here
+   it is the plasma that is kept out.
 
-   `color` est posée ICI, sur le conteneur du verrouillage, et pas héritée de
-   plus haut : c'est ce qui garantit l'interdit de brand.md (« pas de couleur
-   d'état ni de couleur demo sur la marque, y compris pendant un rituel »). Le
-   cyan et le magenta de la phase plasma vivent sur .intro-burst, qui n'est pas
-   un ancêtre de ceci — et si un jour ils remontaient, cette ligne les
-   arrêterait. */
+   `color` is set HERE, on the lockup's container, and not inherited from
+   higher up: that is what guarantees brand.md's prohibition ("no state colour
+   and no demo colour on the mark, including during a ritual"). The cyan and
+   magenta of the plasma phase live on .intro-burst, which is not an ancestor of
+   this — and if one day they came back up, this line would stop them. */
 .lockup {
 	--mark-size: clamp(120px, 26vw, 320px);
 	display: flex; flex-direction: column; align-items: center;
@@ -1556,10 +1626,10 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	color: var(--ink);
 }
 
-/* Le symbole. `fill: currentColor` plutôt qu'une couleur littérale : le SVG
-   source n'en introduit aucune, et cette copie non plus (tools/brand-mark-model.mjs).
-   `crispEdges` parce que ce sont des modules sur une grille — un bord flou
-   serait un bord faux. */
+/* The symbol. `fill: currentColor` rather than a colour literal: the source
+   SVG introduces none, and neither does this copy
+   (tools/brand-mark-model.mjs). `crispEdges` because these are modules on a
+   grid — a blurred edge would be a false edge. */
 .lockup-mark {
 	display: block;
 	width: var(--mark-size); height: var(--mark-size);
@@ -1567,10 +1637,10 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	shape-rendering: crispEdges;
 }
 
-/* Le nom. `--font-ui` en 500, interlettré `--track-ui` : c'est ce que
-   docs/brand.md impose au verrouillage empilé, et il l'emporte sur la display
-   que le cracktro écrivait avant — la marque n'a qu'une composition, elle ne
-   change pas d'écran en écran. */
+/* The name. `--font-ui` at 500, tracked `--track-ui`: that is what
+   docs/brand.md requires of the stacked lockup, and it wins over the display
+   face the cracktro used to write — the mark has one composition, it does not
+   change from screen to screen. */
 .lockup-name {
 	font-family: var(--font-ui); font-weight: 500;
 	font-size: calc(var(--mark-size) * .22);
@@ -1578,28 +1648,28 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	line-height: 1;
 	text-transform: uppercase;
 }
-/* Une span par colonne : c'est elle que le sinus-scroll (src/intro.js) déplace
-   verticalement, colonne par colonne, pour le déchirement classique du
-   "dot scroller" demoscene. */
+/* One span per column: it is what the sine scroll (src/intro.js) moves
+   vertically, column by column, for the classic demoscene "dot scroller"
+   tearing. */
 .lockup-name span { display: inline-block; will-change: transform; }
 
-/* Ce que le cracktro ajoute au verrouillage, et lui seul : il se tient
-   au-dessus de la plasma, et sa zone de respect est OPAQUE. « Rien n'y entre,
-   pas même la règle d'un panneau » (docs/brand.md) : sans ce fond, les chiffres
-   de la plasma passent derrière la marque et jusque contre ses modules —
-   vérifié à l'écran, et c'est exactement ce que la règle interdit. La marque
-   perce donc la demo plutôt que d'y flotter. */
+/* What the cracktro adds to the lockup, and it alone: it stands above the
+   plasma, and its clear space is OPAQUE. "Nothing enters it, not even a panel's
+   rule" (docs/brand.md): without this ground, the plasma's figures pass behind
+   the mark and right up against its modules — checked on screen, and that is
+   exactly what the rule forbids. So the mark pierces the demo rather than
+   floating in it. */
 .intro-lockup {
 	position: relative; z-index: 2;
 	background: var(--black);
 }
-/* Le nom n'arrive qu'une fois la marque entière : ici seulement il est d'abord
-   absent. Partout ailleurs le verrouillage est posé d'un bloc. */
+/* The name only arrives once the mark is complete: here alone it is absent at
+   first. Everywhere else the lockup is laid down in one block. */
 .intro-lockup .lockup-name { opacity: 0; transition: opacity var(--dur-3) linear; }
 .intro-lockup .lockup-name.intro-logo-in { opacity: 1; }
 
-/* Grille ASCII des primitives de culmination (hack-grammars.js), réemployées
-   telles quelles pour le plasma/raster de la phase plasma — même idiome que
+/* ASCII grid of the culmination primitives (hack-grammars.js), reused as-is
+   for the plasma/raster of the plasma phase — same idiom as
    .culmination-burst. */
 .intro-burst {
 	position: absolute; inset: 0; z-index: 1;
@@ -1615,26 +1685,26 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .intro-burst--violet { color: var(--violet); }
 .intro-burst--blue { color: var(--electric); }
 
-/* Résolution : la plasma s'efface, le logo (déjà retombé à plat par
-   renderLogo()) reste seul, en phase avec BOOT_SIGNATURE. */
+/* Resolution: the plasma fades out, the logo (already settled flat by
+   renderLogo()) stays alone, in phase with BOOT_SIGNATURE. */
 .intro-resolution .intro-burst {
 	opacity: 0;
 	transition: opacity var(--dur-3) linear;
 }
 
 /* ---------- BENCH (PHASE 26) ---------- */
-/* Le banc est un banc : un tableau d'étiquettes et de contrôles alignés, pas
-   un panneau de réglages moderne. Même grammaire que le reste — traits fins,
-   angles droits, aucune ombre, aucune couleur qui ne porte pas d'information. */
+/* The bench is a bench: a table of aligned labels and controls, not a modern
+   settings panel. Same grammar as the rest — thin rules, right angles, no
+   shadow, no colour that does not carry information. */
 
-/* SELECT OPERATION MODE — la racine du jeu. Deux voies, et ce que chacune
-   coûte écrit dessous. La sous-ligne est en DATA : c'est de la description,
-   pas la machine qui parle.
+/* SELECT OPERATION MODE — the game's root. Two paths, and what each one costs
+   written underneath. The sub-line is DATA: it is description, not the machine
+   speaking.
 
-   Aligné à GAUCHE, sur le fer du bouton : c'est ce que dessine le mock de la
-   Bible §48, et c'est ce qui rattache la sous-ligne à sa voie. Centrer la
-   sous-ligne la détachait — `.bootstrap button` pose align-self: flex-start,
-   donc le bouton restait à gauche pendant que son texte partait au milieu. */
+   LEFT-aligned, on the button's edge: that is what Bible §48's mock draws, and
+   that is what attaches the sub-line to its path. Centring the sub-line
+   detached it — `.bootstrap button` sets align-self: flex-start, so the button
+   stayed on the left while its text went to the middle. */
 .bench-mode { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .bootstrap-box pre.bench-mode-sub {
 	color: var(--light-grey);
@@ -1642,34 +1712,34 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	letter-spacing: var(--track-data);
 	text-align: left; margin: 0;
 }
-/* L'identité avant la question : « OPERATOR // NEO » se lit comme le pied de la
-   Home, en encre éteinte — il informe, il n'appelle pas. */
+/* Identity before the question: "OPERATOR // NEO" reads like the Home's
+   footer, in dead ink — it informs, it does not call. */
 .bootstrap-box pre.bench-operator {
 	color: var(--light-grey);
 	font-family: var(--font-ui); font-size: var(--fs-ui);
 	letter-spacing: var(--track-ui);
 	margin: 0;
 }
-/* La racine reprend le cadre entier, comme FIELD. Sans ça, la boîte en `100vh`
-   s'ajoutait au `padding: var(--space-5) 0` de `.bootstrap` : l'écran débordait
-   d'exactement ce rembourrage, `.bootstrap` sortait sa barre de défilement, et
-   on pouvait faire glisser la colonne des voies hors du cadre. C'est le même
-   trio que `.terminal-field` pose pour la même raison. */
+/* The root takes the whole frame, like FIELD. Without this, the `100vh` box
+   was added to `.bootstrap`'s `padding: var(--space-5) 0`: the screen
+   overflowed by exactly that padding, `.bootstrap` grew its scrollbar, and the
+   column of paths could be dragged out of the frame. It is the same trio
+   `.terminal-field` sets for the same reason. */
 .bench-modes { align-content: stretch; justify-items: stretch; padding: 0; overflow: hidden; }
 
-/* La racine en deux colonnes depuis #243 : les voies à gauche, le RTC à droite.
-   Mêmes proportions et même filet que FIELD — c'est la seule autre page du jeu
-   qui partage l'écran en deux, et deux grammaires pour la même idée auraient
-   été une de trop. Le `gap` de la colonne gauche remplace celui de la boîte,
-   qui n'a plus d'enfants directs à espacer. */
+/* The root has been two columns since #243: the paths on the left, the RTC on
+   the right. Same proportions and same rule as FIELD — it is the only other
+   page in the game that splits the screen in two, and two grammars for the same
+   idea would have been one too many. The left column's `gap` replaces the box's,
+   which has no direct children left to space. */
 .bench-modes .terminal-box {
 	width: 100%; max-width: none; height: 100vh;
 	display: grid; grid-template-columns: minmax(340px, 42%) 1fr; gap: 0;
 }
 .bench-modes .terminal-left { gap: var(--space-5); justify-content: center; }
-/* La colonne droite porte le bloc RTC, pas une carte : elle a besoin d'un
-   rembourrage que `.terminal-right` de FIELD n'a pas (la carte y est en
-   `inset: 0`). Centré verticalement comme les voies en face. */
+/* The right column carries the RTC block, not a map: it needs padding that
+   FIELD's `.terminal-right` does not have (the map there is `inset: 0`).
+   Vertically centred like the paths opposite. */
 .bench-modes .terminal-right {
 	display: flex; flex-direction: column; justify-content: center;
 	padding: var(--space-5); min-width: 0;
@@ -1678,18 +1748,18 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 @media (max-width: 1100px) {
 	.bench-modes .terminal-box { grid-template-columns: 1fr; grid-template-rows: 1fr auto; }
 	.bench-modes .terminal-left { border-right: 0; }
-	/* Empilé, le RTC passe SOUS les voies : la question posée par l'écran garde
-	   le haut, le décor prend ce qui reste. C'est l'inverse de FIELD, où c'est
-	   la carte qui monte — parce qu'ici la colonne droite n'est pas le sujet. */
+	/* Stacked, the RTC goes UNDER the paths: the question the screen asks keeps
+	   the top, the scenery takes what is left. This is the opposite of FIELD,
+	   where the map rises — because here the right column is not the subject. */
 	.bench-modes .terminal-right { border-top: var(--rule-w) solid var(--rule-strong); }
 	.bench-modes .terminal-right .sc-rtc { max-height: 22vh; }
 }
 
-/* L'écran de configuration. */
+/* The configuration screen. */
 .bench-config .terminal-box { width: min(860px, 94vw); gap: var(--space-1); }
 .bootstrap-box pre.bench-title { margin: 0; }
-/* Le credo n'est pas un sous-titre : c'est ce que le banc dit de lui-même. Au
-   niveau UI, en encre éteinte, espacé comme une rangée de quatre termes. */
+/* The credo is not a subtitle: it is what the bench says about itself. At UI
+   level, in dead ink, spaced like a row of four terms. */
 .bootstrap-box pre.bench-creed {
 	color: var(--light-grey);
 	font-family: var(--font-ui); font-size: var(--fs-ui);
@@ -1697,11 +1767,11 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	margin: 0 0 var(--space-3);
 }
 
-/* Une ligne de banc : ÉTIQUETTE · conduite · contrôle · valeur.
-   Les quatre colonnes sont toujours présentes, et les deux dernières ont une
-   largeur fixe : c'est ce qui aligne les valeurs d'un bout à l'autre du tableau
-   et fait lire le banc comme un banc. Hauteur de ligne constante aussi — un
-   curseur et un menu ne doivent pas donner deux rythmes différents. */
+/* A bench row: LABEL · leader · control · value.
+   The four columns are always present, and the last two have a fixed width:
+   that is what aligns the values from one end of the table to the other and
+   makes the bench read as a bench. Constant row height too — a slider and a
+   dropdown must not give two different rhythms. */
 .bench-row {
 	display: flex; align-items: center; gap: var(--space-2);
 	width: 100%; min-height: 2.2em;
@@ -1714,29 +1784,28 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	font-family: var(--font-ui); letter-spacing: var(--track-ui);
 	text-transform: uppercase;
 }
-/* La conduite. De vrais points, dans la police DATA, comme `dotted()` en écrit
-   sur l'écran de bootstrap — un filet CSS pointillé se poserait sur la ligne de
-   base et n'aurait pas la même main. On en écrit plus qu'il n'en faut et on
-   coupe : rien à mesurer, et ça suit la largeur de la fenêtre tout seul. */
+/* The leader. Real dots, in the DATA font, like the ones `dotted()` writes on
+   the bootstrap screen — a dotted CSS rule would sit on the baseline and would
+   not have the same hand. More are written than are needed and the rest is
+   clipped: nothing to measure, and it follows the window width on its own. */
 .bench-leader {
 	flex: 1 1 auto; min-width: 2ch;
 	overflow: hidden; white-space: nowrap;
 	color: var(--faint); user-select: none;
 }
 .bench-leader::before { content: "................................................................"; }
-/* La valeur lue est à droite, tabulaire, pour que les chiffres ne dansent pas
-   quand on tient une flèche enfoncée. */
+/* The value read is on the right, tabular, so that the figures do not dance
+   while an arrow key is held down. */
 .bench-value {
 	width: 9.5em; flex: none; text-align: right;
 	color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .bench-inline { display: flex; align-items: center; gap: var(--space-2); }
-/* La colonne des contrôles : même largeur pour un menu et pour un curseur.
-   Sélecteur en `.bench-row input` et non en `.bench-slider` seul : `.bootstrap
-   input` (plus haut) est plus spécifique qu'une simple classe et imposait
-   --fs-ui-l aux <input>. Comme la largeur est en em et que <select> n'était,
-   lui, pas concerné, la colonne se décalait de 110 px entre une ligne à menu et
-   une ligne à curseur. */
+/* The controls column: the same width for a dropdown and for a slider.
+   Selector on `.bench-row input` and not on `.bench-slider` alone: `.bootstrap
+   input` (further up) is more specific than a plain class and forced --fs-ui-l
+   on the <input>s. Since the width is in em and <select> was not affected, the
+   column shifted by 110px between a dropdown row and a slider row. */
 .bench-select, .bench-inline, .bench-row input.bench-slider {
 	flex: none; width: 22em;
 	font-family: var(--font-data); font-size: var(--fs-data);
@@ -1749,17 +1818,17 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	font-family: var(--font-data); font-size: var(--fs-data);
 	letter-spacing: var(--track-data);
 }
-/* Le menu déroulant du navigateur est du mobilier de navigateur : coins
-   arrondis, dégradé, flèche système. Bible §38/§44 — on le remet à plat.
-   Et pas de chevron dessiné à la place : il faudrait une image, donc une
-   couleur en dur hors de tokens.css (palette-selftest la refuse, et
-   l'encoder %23 pour passer dessous serait exactement la dérive qu'il
-   surveille). Le cadre d'un pixel suffit à dire que c'est manipulable —
-   c'est déjà ce qui le dit pour `.bootstrap input`. */
+/* The browser's dropdown is browser furniture: rounded corners, a gradient, a
+   system arrow. Bible §38/§44 — it is flattened. And no chevron drawn in its
+   place: that would need an image, therefore a colour literal outside
+   tokens.css (palette-selftest refuses it, and %23-encoding it to slip
+   underneath would be precisely the drift it watches for). A one-pixel frame is
+   enough to say the thing is operable — that is already what says it for
+   `.bootstrap input`. */
 .bench-select {
 	appearance: none; -webkit-appearance: none;
 }
-/* Même raison que la colonne des contrôles : `.bootstrap input` gagnerait. */
+/* Same reason as the controls column: `.bootstrap input` would win. */
 .bench-row input.bench-coord {
 	width: 8em;
 	font-family: var(--font-data); font-size: var(--fs-data);
@@ -1767,8 +1836,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 .bench-select:focus, .bench-coord:focus { outline: none; border-color: var(--warm-white); }
 
-/* Le curseur, à plat lui aussi : une glissière d'un pixel et un curseur
-   rectangulaire. `accent-color` rendait la pastille ronde du système. */
+/* The slider, flat as well: a one-pixel track and a rectangular thumb.
+   `accent-color` gave it the system's round pill. */
 .bench-slider {
 	appearance: none; -webkit-appearance: none;
 	background: none; height: 1.4em; cursor: pointer;
@@ -1779,7 +1848,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .bench-slider::-moz-range-track { height: var(--rule-w); background: var(--rule-strong); }
 .bench-slider::-webkit-slider-thumb {
 	appearance: none; -webkit-appearance: none;
-	width: 5px; height: 13px; margin-top: -6px; /* scale-ok: la marge centre le pouce sur sa piste, elle vaut sa moitié */
+	width: 5px; height: 13px; margin-top: -6px; /* scale-ok: the margin centres the thumb on its track, it is half of it */
 	background: var(--ink); border: 0; border-radius: 0;
 }
 .bench-slider::-moz-range-thumb {
@@ -1791,17 +1860,17 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .bench-slider:focus::-moz-range-thumb { background: var(--warm-white); }
 .bench-inline button.terminal-link { flex: none; }
 
-/* Un avertissement dit ce qui va se passer ; il n'interdit rien (Bible §2,
-   « Information, not assistance »). D'où l'orange — ça se produit maintenant —
-   et jamais le rouge, qui veut dire perdu. */
+/* A warning says what is going to happen; it forbids nothing (Bible §2,
+   "Information, not assistance"). Hence the orange — this is happening now —
+   and never the red, which means lost. */
 .bootstrap-box pre.bench-warn {
 	color: var(--orange);
 	font-family: var(--font-data); font-size: var(--fs-data);
 	letter-spacing: var(--track-data);
 	margin: var(--space-2) 0 0; text-align: left; white-space: pre-wrap;
 }
-/* Le sceau. C'est une promesse tenue par le code, pas une décoration : si un
-   jour le banc écrit quelque chose, cette ligne devient un mensonge. */
+/* The seal. It is a promise kept by the code, not a decoration: if one day the
+   bench writes something, this line becomes a lie. */
 .bootstrap-box pre.bench-seal {
 	color: var(--faint);
 	font-family: var(--font-data); font-size: var(--fs-micro);

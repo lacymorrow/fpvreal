@@ -1,15 +1,15 @@
-// GLOBAL SCANNER (PHASE 03, Bible §4/§6/§8). Point d'entrée mondial du jeu :
-// il absorbe /add-map.html — chercher, cadrer, dessiner, sonder, acquérir, voler,
-// sans quitter le terminal.
+// GLOBAL SCANNER (PHASE 03, Bible §4/§6/§8). The game's world entry point:
+// it absorbs /add-map.html — search, frame, draw, probe, acquire, fly, without
+// leaving the terminal.
 //
-// Il ne parle qu'à /__map-api (tools/map-api-plugin.mjs), qui n'existe que sous
-// `npm run dev` : c'est l'installation locale, et c'est assumé (D1). Chargé en
-// import dynamique depuis terminal.js, donc Leaflet ne pèse rien tant que
-// l'opérateur n'ouvre pas le scanner.
+// It only talks to /__map-api (tools/map-api-plugin.mjs), which only exists
+// under `npm run dev`: that is the local installation, and it is deliberate
+// (D1). Loaded as a dynamic import from terminal.js, so Leaflet weighs nothing
+// until the operator opens the scanner.
 //
-// La grille affichée est la grille réellement scannée (tools/lib/tiles.mjs,
-// portage du Go) : pas de seconde représentation graphique — voir la réponse
-// d'investigation sur l'issue #40.
+// The grid displayed is the grid actually scanned (tools/lib/tiles.mjs, a port
+// of the Go): no second graphical representation — see the investigation answer
+// on issue #40.
 import L from 'leaflet';
 import { armConfirm } from './confirm-button.js';
 import 'leaflet/dist/leaflet.css';
@@ -40,13 +40,12 @@ const DETAIL = [
 
 const RE_COORDS = /^\s*(-?\d+(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d+(?:[.,]\d+)?)\s*$/;
 
-// Dernière vue du scanner, pour rouvrir là où on s'était arrêté dans la session.
+// The scanner's last view, to reopen where it was left within the session.
 let lastView = { center: [48.8582, 2.297], zoom: 13 };
 
-// La recherche vit hors du rail : elle ne fait que déplacer la carte, et elle
-// sert aux deux onglets de FIELD (#222). La Home lui donne son propre hôte,
-// au-dessus des onglets, pour qu'elle survive au remplacement du rail par
-// JOB_PANEL.
+// The search lives outside the rail: all it does is move the map, and it
+// serves both FIELD tabs (#222). The Home gives it its own host, above the
+// tabs, so that it survives the rail being replaced by JOB_PANEL.
 const SEARCH_PANEL = `
 <div class="sc-row">
 	<input class="sc-search" type="search" autocomplete="off" spellcheck="false" placeholder="SEARCH — TOKYO, OR 48.85, 2.35">
@@ -55,11 +54,11 @@ const SEARCH_PANEL = `
 <div class="sc-results"></div>
 <pre class="sc-note sc-search-note" hidden></pre>`;
 
-// Le rail LOCAL, une fois qu'on trace (#222) : la zone, la source, le nom,
-// et UN bouton. Les blocs AREA ANALYSIS, SIGNAL DENSITY et COVERAGE ont
-// disparu — ce qu'ils disaient d'utile tient sur la ligne sous le bouton
-// (railLine), et la densité se calcule toujours, en silence, pour le KEEP et
-// le TARGET SCAN.
+// The LOCAL rail, once you draw (#222): the area, the source, the name, and
+// ONE button. The AREA ANALYSIS, SIGNAL DENSITY and COVERAGE blocks are gone —
+// what they said that was useful fits on the line under the button (railLine),
+// and the density is still computed, silently, for the KEEP and the TARGET
+// SCAN.
 const PANEL = `
 <section class="sc-block">
 	<pre class="sc-h">AREA</pre>
@@ -99,8 +98,8 @@ const PANEL = `
 	<button type="button" class="sc-cta sc-back">[ BACK ]</button>
 </section>`;
 
-// L'onglet LIVE (#222) : une épingle sur la carte, et c'est tout. Rien n'est
-// planifié, rien n'est sondé, rien n'est écrit — le monde arrive pendant le vol.
+// The LIVE tab (#222): a pin on the map, and that is all. Nothing is planned,
+// nothing is probed, nothing is written — the world arrives during the flight.
 const LIVE_PANEL = `
 <section class="sc-block">
 	<pre class="sc-h">DROP POINT</pre>
@@ -115,7 +114,7 @@ const LIVE_PANEL = `
 	</div>
 </section>`;
 
-// Une rangée de barre : label fixe + `.sc-bar` que watchJob() pilote par sélecteur.
+// One bar row: a fixed label + the `.sc-bar` watchJob() drives by selector.
 const barRow = (cls, label) =>
 	`<div class="sc-bar-row"><span class="sc-bar-label">${label}</span>` +
 	`<div class="sc-bar ${cls}" data-indeterminate="1"><i></i></div></div>`;
@@ -143,8 +142,8 @@ const JOB_PANEL = `
 </section>
 <section class="sc-block">
 	<pre class="sc-h">RF ANALYSIS / TARGET SEARCH</pre>
-	<!-- Décoratif (Bible §8) : aucune de ces deux barres ne conditionne quoi que
-	     ce soit — la génération de cibles réelle est PHASE 7. -->
+	<!-- Decorative (Bible §8): neither of these two bars gates anything at all —
+	     the real target generation is PHASE 7. -->
 	<div class="sc-bars">
 		${barRow('sc-bar-rf', 'RF ANALYSIS')}
 		${barRow('sc-bar-target', 'TARGET SEARCH')}
@@ -181,28 +180,27 @@ async function api(path, opts) {
 }
 const post = (p, b) => api(p, { method: 'POST', body: JSON.stringify(b) });
 
-// Monte le scanner dans les hôtes fournis par l'appelant, et rend une poignée.
+// Mounts the scanner into the hosts the caller provides, and returns a handle.
 //
-// Le plein cadre a disparu (#211) : depuis que FIELD est un seul écran, c'est la
-// Home qui possède les deux colonnes. `mapHost` ne nous appartient PAS — c'est
-// exactement ce qui permet à la carte de survivre au passage repos → travail,
-// qui est la promesse centrale de l'écran. Les trois autres, si : on les vide
-// et on les remplit.
+// The full frame is gone (#211): since FIELD became a single screen, the Home
+// owns the two columns. `mapHost` is NOT ours — that is exactly what lets the
+// map survive the rest → work transition, which is the screen's central
+// promise. The other three are: they are emptied and filled.
 //
-//   searchHost   la recherche, commune aux deux onglets (#222)
-//   railHost     le rail LOCAL au travail : zone, source, nom, ACQUIRE
-//   liveHost     l'onglet LIVE : l'épingle et [ FLY LIVE ]
+//   searchHost   the search, shared by both tabs (#222)
+//   railHost     the LOCAL rail at work: area, source, name, ACQUIRE
+//   liveHost     the LIVE tab: the pin and [ FLY LIVE ]
 //
-//   onZone(zone | null)   une zone apparaît ou disparaît — le signal repos ↔ travail
-//   onPickArea(slug)      clic sur le cadre d'une zone déjà acquise
-//   onRest()              BACK depuis le rail : on repose l'outil, on ne quitte PAS
-//                         FIELD. Quitter, c'est MODE, et c'est la Home qui le tient.
-//   onBusy()              une acquisition tourne (reprise au montage) : la Home
-//                         doit montrer le rail, sinon le job tourne sans visage.
+//   onZone(zone | null)   an area appears or disappears — the rest ↔ work signal
+//   onPickArea(slug)      a click on the frame of an already acquired area
+//   onRest()              BACK from the rail: the tool is put down, FIELD is NOT
+//                         left. Leaving is MODE, and the Home holds that.
+//   onBusy()              an acquisition is running (resumed at mount): the Home
+//                         must show the rail, otherwise the job runs faceless.
 //
-// Rend { done, setAreaFrames, focusBounds, startDraw, setMode, rest, busy,
-// destroy }. `done` résout une FORME de vol : `{ slug }` pour une zone cuite,
-// `{ live: [lat, lon] }` pour un décollage en direct, `undefined` pour remonter.
+// Returns { done, setAreaFrames, focusBounds, startDraw, setMode, rest, busy,
+// destroy }. `done` resolves a FORM of flight: `{ slug }` for a baked area,
+// `{ live: [lat, lon] }` for a live take-off, `undefined` to go back up.
 export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = null, onPickArea = null, onRest = null, onBusy = null } = {}) {
 	mapHost.classList.add('scanner-map', 'map-mono');
 	searchHost.classList.add('scanner-search');
@@ -212,8 +210,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	railHost.innerHTML = PANEL;
 	liveHost.innerHTML = LIVE_PANEL;
 
-	// Trois hôtes, un seul sélecteur : les classes `sc-*` sont uniques d'un
-	// hôte à l'autre, donc la première réponse est la bonne.
+	// Three hosts, one selector: the `sc-*` classes are unique from one host to
+	// the next, so the first answer is the right one.
 	const hosts = [searchHost, railHost, liveHost];
 	const $ = (sel) => {
 		for (const h of hosts) { const el = h.querySelector(sel); if (el) return el; }
@@ -221,32 +219,32 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	};
 	const panel = railHost;
 
-	// Plus de RTC sur le panneau de RECHERCHE depuis #243 : c'est un formulaire,
-	// pas une attente, et son bloc de log grandissait dans le rail de gauche à
-	// côté du champ et de l'estimation. Le crew reprend la parole à
-	// l'acquisition (en toast) et sur la racine. `stopSearch` reste une fonction
-	// pour que watchJob() n'ait pas à savoir qu'il n'y a plus rien à arrêter.
+	// No more RTC on the SEARCH panel since #243: it is a form, not a wait, and
+	// its log block grew in the left rail beside the field and the estimate. The
+	// crew speaks again at acquisition (as a toast) and on the root.
+	// `stopSearch` stays a function so that watchJob() does not have to know
+	// there is nothing left to stop.
 	let stopSearch = () => {};
 
 	const state = {
-		zone: null,         // { bbox } ou { poly } — la zone dessinée, brute
-		describe: null,     // dernière réponse /describe
-		plan: null,         // dernière réponse /plan
+		zone: null,         // { bbox } or { poly } — the drawn area, raw
+		describe: null,     // last /describe answer
+		plan: null,         // last /plan answer
 		probe: null,        // dernier verdict de sonde
-		place: null,        // { class, type } Nominatim, pour la densité de signal
+		place: null,        // { class, type } Nominatim, for the signal density
 		mode: 'local',      // 'local' | 'live' — l'onglet de la Home (#222)
-		pin: null,          // { lat, lon } — l'épingle de LIVE
+		pin: null,          // { lat, lon } — the LIVE pin
 		zoom: 20,
-		source: null,       // id du fournisseur DÉSIGNÉ par l'opérateur, jamais deviné
+		source: null,       // id of the provider DESIGNATED by the operator, never guessed
 		nameEdited: false,
 		scenes: [],
 		jobId: null,
 	};
 
-	// Registre des fournisseurs, tel que le serveur le déclare : le scanner
-	// n'invente ni les ids ni les libellés (issue #18). Tant que la réponse n'est
-	// pas là, la rangée SOURCE est vide et la sonde reste fermée — mieux vaut
-	// n'offrir aucun choix qu'un choix qui n'existe pas côté pipeline.
+	// The provider registry, as the server declares it: the scanner invents
+	// neither the ids nor the labels (issue #18). Until the answer arrives, the
+	// SOURCE row is empty and the probe stays closed — better to offer no choice
+	// than a choice that does not exist on the pipeline side.
 	let registry = { providers: [], default: undefined };
 	const provider = () => chosenSource(registry, state.source);
 
@@ -254,8 +252,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	const map = L.map(mapHost, {
 		zoomControl: false, attributionControl: true, worldCopyJump: true,
 	}).setView(lastView.center, lastView.zoom);
-	// Une seule carte dans le jeu (Bible §4) : même règle que la mini-carte —
-	// le crédit des couches reste, « Leaflet | » et son fanion partent.
+	// One map in the game (Bible §4): same rule as the small map — the layer
+	// credit stays, "Leaflet | " and its flag go.
 	map.attributionControl.setPrefix('');
 	L.control.zoom({ position: 'bottomright' }).addTo(map);
 	map.on('moveend zoomend', () => { lastView = { center: map.getCenter(), zoom: map.getZoom() }; });
@@ -273,57 +271,56 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	const pins = L.layerGroup().addTo(map);
 	const outline = L.layerGroup().addTo(map);
 	const snapped = L.rectangle([[0, 0], [0, 0]], { color: token('--warm-white'), weight: 1, fill: false, interactive: false });
-	// Les zones DÉJÀ acquises, à leur vraie place sur la carte vivante (#211).
-	// Même encre que `snapped` : ce que la Home montre et ce que l'acquisition
-	// avait dessiné doivent se reconnaître (#207). Cliquables, parce que la
-	// carte et la liste doivent désigner la même chose dans les deux sens.
+	// The areas ALREADY acquired, in their real place on the live map (#211).
+	// Same ink as `snapped`: what the Home shows and what the acquisition drew
+	// must recognise each other (#207). Clickable, because the map and the list
+	// must designate the same thing in both directions.
 	const areaFrames = L.layerGroup().addTo(map);
 
-	// La couverture (issue #245) : là où le drone est passé, sous les cadres.
-	// Relue dans le cache opérateur à chaque redraw. Attention à ce que ça
-	// veut dire après un vol : la Home y revient par un RECHARGEMENT complet
-	// (main.js, `location.href = location.pathname`), donc le cache client ne
-	// survit pas — ce qu'on relit est ce que le serveur a reçu. La tache est là
-	// parce que le debounce de patch() (500 ms) est plus court que la séquence
-	// de fin de vol (≥ 1,4 s avant exitArmed), la même marge dont la fiche de
-	// session dépend déjà ; `beforeunload → flush()` n'est qu'un filet non
-	// garanti (un fetch ordinaire, sans keepalive — qui ne porterait de toute
-	// façon pas 160 ko). Sur un serveur lent, un PATCH coupé par le rechargement
-	// perd la trace de la session : même classe de perte que sendBeacon, voir
-	// HANDOFF.
+	// The coverage (issue #245): where the drone has been, under the frames.
+	// Read back from the operator cache on every redraw. Mind what that means
+	// after a flight: the Home comes back to it through a full RELOAD (main.js,
+	// `location.href = location.pathname`), so the client cache does not
+	// survive — what is read back is what the server received. The stain is
+	// there because patch()'s debounce (500 ms) is shorter than the end-of-
+	// flight sequence (≥ 1.4 s before exitArmed), the same margin the session
+	// record already depends on; `beforeunload → flush()` is only an unguaranteed
+	// safety net (an ordinary fetch, without keepalive — which would not carry
+	// 160 KB anyway). On a slow server, a PATCH cut short by the reload loses the
+	// session's track: the same class of loss as sendBeacon, see HANDOFF.
 	const coverage = createCoverageLayer(L, {
 		colors: { core: token('--magenta') || '#e34de0', halo: token('--cyan') || '#4dd8e8' },
 		planDraw,
 		getCoverage: () => Coverage.fromStored(operatorApi.getOperator()?.coverage),
 	}).addTo(map);
 
-	// Dessine le cadre de chaque zone du cache. previewBounds() rend `null` pour
-	// une zone sans emprise connue : elle n'a alors PAS de cadre et reste
-	// sélectionnable par la liste seule — un repli sur (0, 0) montrerait le
-	// golfe de Guinée pour une zone parisienne.
+	// Draws the frame of every area in the cache. previewBounds() returns `null`
+	// for an area with no known extent: it then has NO frame and stays
+	// selectable from the list alone — falling back to (0, 0) would show the
+	// Gulf of Guinea for a Parisian area.
 	function setAreaFrames(scenes) {
 		areaFrames.clearLayers();
 		for (const sc of scenes ?? []) {
 			const b = previewBounds(sc);
 			if (!b) continue;
 			L.rectangle(b, { color: token('--warm-white'), weight: 1, fill: true, fillOpacity: 0, interactive: true })
-				// Un cadre est une sélection LOCAL, même depuis LIVE : le clic ne
-				// remonte pas jusqu'à la carte, sinon il poserait aussi une épingle.
+				// A frame is a LOCAL selection, even from LIVE: the click does not
+				// bubble to the map, otherwise it would also drop a pin.
 				.on('click', (e) => { L.DomEvent.stopPropagation(e); onPickArea?.(sc.slug); })
 				.addTo(areaFrames);
 		}
 	}
 
-	// Recadre sans toucher au tracé en cours : la liste de la Home s'en sert
-	// pour montrer la zone qu'on vient de sélectionner.
+	// Reframes without touching the drawing in progress: the Home's list uses it
+	// to show the area that has just been selected.
 	function focusBounds(b) { if (b) map.fitBounds(b, { padding: [24, 24] }); }
 	let zoneLayer = null;
 
-	// ---------------------------------------------- la grille réellement scannée
+	// ------------------------------------------------ the grid actually scanned
 	//
-	// Sous ~7 px par tuile la grille devient un aplat illisible : on ne garde
-	// alors que l'emprise. La règle vaut mieux qu'un plafond arbitraire sur le
-	// nombre de traits.
+	// Below ~7px per tile the grid becomes an illegible fill: only the extent is
+	// kept then. The rule is better than an arbitrary cap on the number of
+	// strokes.
 	function drawLattice() {
 		lattice.clearLayers();
 		outline.clearLayers();
@@ -331,10 +328,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		if (!grid) return;
 		const s = grid.snapped;
 
-		// Un tracé libre ne se résume pas à son emprise : la zone retenue est
-		// l'escalier des tuiles que le tracé touche, et c'est lui qu'on montre.
-		// Contrairement au treillis, il reste dessiné à toute échelle — c'est la
-		// seule chose qui dise ce qui sera réellement extrait.
+		// A free-hand outline is not reducible to its extent: the area kept is the
+		// staircase of tiles the outline touches, and that is what is shown.
+		// Unlike the lattice, it stays drawn at every scale — it is the only thing
+		// that says what will actually be extracted.
 		if (grid.keep) {
 			map.removeLayer(snapped);
 			outline.addLayer(L.polyline(
@@ -359,10 +356,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	}
 	map.on('zoomend', drawLattice);
 
-	// Part de la zone que la région Flyover déclare ne pas couvrir. Vient du plan
-	// réel : l'emprise de région est un rectangle, l'élagage est une intersection.
-	// Propre à Flyover : le plan de Google Earth ne déclare pas d'emprise de
-	// région (rien à élaguer), prunedBands rend null et rien n'est grisé.
+	// The share of the area the Flyover region declares it does not cover. Comes
+	// from the real plan: the region extent is a rectangle, the pruning is an
+	// intersection. Specific to Flyover: Google Earth's plan declares no region
+	// extent (nothing to prune), prunedBands returns null and nothing is greyed.
 	function drawPruned() {
 		pruned.clearLayers();
 		const p = prunedBands(state.plan);
@@ -378,13 +375,13 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	function setZone(layer) {
 		if (zoneLayer && zoneLayer !== layer) map.removeLayer(zoneLayer);
 		zoneLayer = layer;
-		// Le tracé dessiné est un fantôme : ce qui compte, c'est la zone alignée
-		// sur les tuiles — un rectangle snappé, ou l'escalier d'un polygone.
+		// The drawn outline is a ghost: what counts is the tile-aligned area — a
+		// snapped rectangle, or a polygon's staircase.
 		layer.setStyle({ color: token('--warm-white'), weight: 1, dashArray: '3 4', fill: false, opacity: .5 });
 
-		// Geoman rend un L.Rectangle pour la boîte et un L.Polygon pour le tracé
-		// libre ; le rectangle EST un polygone, donc on teste le plus spécifique
-		// d'abord.
+		// Geoman returns an L.Rectangle for the box and an L.Polygon for the free
+		// outline; the rectangle IS a polygon, so the more specific one is tested
+		// first.
 		if (layer instanceof L.Rectangle) {
 			const b = layer.getBounds();
 			state.zone = { bbox: { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() } };
@@ -398,8 +395,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		renderCoverage();
 		describe();
 		surveyCentre();
-		// L'écran passe au travail : c'est la Home qui remplace sa colonne
-		// gauche par ce rail. Le scanner ne connaît pas la Home, il signale.
+		// The screen goes to work: it is the Home that replaces its left column
+		// with this rail. The scanner does not know the Home, it signals.
 		onZone?.(state.zone);
 	}
 
@@ -452,21 +449,21 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		updateButtons();
 	}
 
-	// -------------------------------------------------- densité de signal (§6)
+	// ------------------------------------------------- signal density (§6)
 	//
-	// Plus rien ne l'affiche (#222) : elle se calcule en silence, parce que le
-	// KEEP l'écrit dans le manifeste et que le TARGET SCAN d'un vol en direct
-	// en dépend. L'estimation part de ce qu'OSM dit du point (Nominatim
-	// reverse), pas d'un tirage : deux relevés du même endroit lisent le même
-	// chiffre.
+	// Nothing displays it any more (#222): it is computed silently, because the
+	// KEEP writes it into the manifest and because a live flight's TARGET SCAN
+	// depends on it. The estimate starts from what OSM says about the point
+	// (Nominatim reverse), not from a draw: two readings of the same place read
+	// the same figure.
 	function updateDensity() {
 		const areaKm2 = (state.describe?.dimensions.area ?? 0) / 1e6;
 		state.lastDensity = signalDensity({ place: state.place, areaKm2 });
 	}
 
-	// Nominatim reverse en un point : une requête par point, mise en cache,
-	// jamais martelée (la politique d'usage demande 1 req/s au plus). `then`
-	// reçoit la réponse, ou null quand la recherche est indisponible.
+	// Nominatim reverse on one point: one request per point, cached, never
+	// hammered (the usage policy asks for 1 req/s at most). `then` receives the
+	// answer, or null when the search is unavailable.
 	const surveyCache = new Map();
 	let surveyTimer = null;
 	function survey(lat, lon, then) {
@@ -478,12 +475,13 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			try {
 				const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&lat=${lat}&lon=${lon}`, { headers: { accept: 'application/json' } });
 				if (!r.ok) throw new Error(String(r.status));
-				// On garde la réponse telle quelle : c'est le modèle qui décide
-				// quel champ Nominatim porte l'information (addresstype > type > category).
+				// The answer is kept as-is: it is the model that decides which
+				// Nominatim field carries the information (addresstype > type >
+				// category).
 				hit = (await r.json()) ?? null;
 				surveyCache.set(key, hit);
 			} catch {
-				hit = null;   // « on ne sait pas » se transmet tel quel.
+				hit = null;   // "we do not know" is passed on as-is.
 			}
 			then(hit);
 		}, 1100);
@@ -491,19 +489,19 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 
 	function surveyCentre() {
 		if (!state.zone) return;
-		// Sur un tracé en L, le centre de l'emprise tombe dans l'encoche : on
-		// décrirait un quartier qu'on n'extrait pas. Même règle que la sonde —
-		// d'où zoneCentre(), partagé.
+		// On an L-shaped outline, the centre of the extent falls in the notch: we
+		// would describe a district we are not extracting. Same rule as the
+		// probe — hence zoneCentre(), shared.
 		const { lat, lon } = zoneCentre(state.zone, state.zoom);
 		survey(lat, lon, (hit) => { state.place = hit; updateDensity(); });
 	}
 
-	// ------------------------------------------------------------ épingle LIVE
+	// ------------------------------------------------------------- LIVE pin
 	//
-	// Un clic sur la carte, dans l'onglet LIVE, pose l'épingle ; la glisser la
-	// déplace. Le rail LIVE montre le lieu et les coordonnées, et [ FLY LIVE ]
-	// s'ouvre. La densité se relève au même point, en silence, pour le TARGET
-	// SCAN du vol.
+	// A click on the map, in the LIVE tab, drops the pin; dragging it moves it.
+	// The LIVE rail shows the place and the coordinates, and [ FLY LIVE ] opens.
+	// The density is read at the same point, silently, for the flight's TARGET
+	// SCAN.
 	let pinLayer = null;
 	function setPin(lat, lon) {
 		state.pin = { lat, lon };
@@ -525,8 +523,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		survey(lat, lon, (hit) => {
 			state.place = hit;
 			updateDensity();
-			// L'épingle a pu bouger pendant la requête : on n'écrit que si c'est
-			// encore elle qu'on décrit.
+			// The pin may have moved during the request: it is only written if it
+			// is still the one being described.
 			if (state.pin?.lat === lat && state.pin?.lon === lon) {
 				place.textContent = hit ? designationFrom(hit).toUpperCase() : 'UNSURVEYED';
 			}
@@ -541,18 +539,18 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		setPin(e.latlng.lat, e.latlng.lng);
 	});
 
-	// L'onglet de la Home. En LIVE le clic pose une épingle et le commutateur de
-	// détail (qui ne concerne que l'extraction) se retire de la carte.
+	// The Home's tab. In LIVE a click drops a pin and the detail switch (which
+	// only concerns extraction) withdraws from the map.
 	function setMode(mode) {
 		state.mode = mode;
 		if (mode === 'live') map.pm.disableDraw();
 		controls.detail.hidden = mode === 'live';
 	}
 
-	// ------------------------------------------------------------ couverture
-	// La ligne sous [ ACQUIRE AREA ] : tuiles · poids · verdict (#222). Le
-	// détail ne sort que quand la source a parlé — avant, il ne ferait que
-	// répéter « sondez d'abord ».
+	// ------------------------------------------------------------ coverage
+	// The line under [ ACQUIRE AREA ]: tiles · weight · verdict (#222). The
+	// detail only comes out once the source has spoken — before that, it would
+	// only repeat "probe first".
 	function renderCoverage() {
 		const v = railLine({ describe: state.describe, plan: state.plan, probe: state.probe, provider: provider() });
 		const el2 = $('.sc-verdict');
@@ -562,13 +560,13 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		updateButtons();
 	}
 
-	// Sonder n'est plus un bouton : c'est la première moitié de [ ACQUIRE AREA ]
-	// (#211). Le corps est inchangé — seul son déclencheur a bougé.
+	// Probing is no longer a button: it is the first half of [ ACQUIRE AREA ]
+	// (#211). The body is unchanged — only its trigger has moved.
 	async function runProbe() {
 		const btn = $('.sc-acquire');
-		// La source est désignée, jamais devinée : sans elle, il n'y a rien à
-		// sonder. Le bouton est déjà fermé dans ce cas (updateButtons) — cette
-		// garde protège le chemin clavier/manette.
+		// The source is designated, never guessed: without it there is nothing to
+		// probe. The button is already closed in that case (updateButtons) — this
+		// guard protects the keyboard/gamepad path.
 		const src = provider();
 		if (!state.zone || !src) return;
 
@@ -581,10 +579,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			state.describe = d; state.plan = plan; state.probe = null;
 			renderAnalysis(); drawPruned(); renderCoverage();
 
-			// PROBE_AREA ne parle plus ici depuis #243 : la sonde est un résultat
-			// dans un formulaire, pas une attente, et son échange atterrissait
-			// dans le bloc de log qui alourdissait le rail. L'événement reste
-			// dans le flux mêlé de la racine, il n'est pas perdu.
+			// PROBE_AREA no longer speaks here since #243: the probe is a result in
+			// a form, not a wait, and its exchange landed in the log block that
+			// weighed the rail down. The event stays in the root's mixed stream,
+			// it is not lost.
 
 			if (plan.columns === 0) return;
 
@@ -594,8 +592,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			state.probe = await post('/probe', { ...state.zone, zoom: state.zoom, altitude: 20, provider: src.id });
 			renderCoverage();
 		} catch (e) {
-			// Un échec de la sonde n'est pas un verdict de couverture : voir
-			// coverageLine, qui distingue « injoignable » de « rien ici ».
+			// A probe failure is not a coverage verdict: see coverageLine, which
+			// tells "unreachable" apart from "nothing here".
 			state.probe = { status: 'error', message: e.message };
 			renderCoverage();
 		} finally {
@@ -613,7 +611,7 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		if (!q) return note('.sc-search-note', null);
 		if (RE_COORDS.test(q)) return note('.sc-search-note', 'ENTER — GO TO THESE COORDINATES');
 		note('.sc-search-note', 'SEARCHING…');
-		searchTimer = setTimeout(() => geocode(q), 1000);   // Nominatim : pas de martèlement.
+		searchTimer = setTimeout(() => geocode(q), 1000);   // Nominatim: no hammering.
 	});
 	search.addEventListener('keydown', (e) => {
 		if (e.key !== 'Enter') return;
@@ -656,8 +654,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 				box.innerHTML = '';
 				search.value = designationFrom(h);
 				if (!state.nameEdited) { $('.sc-name').value = designationFrom(h); updateButtons(); }
-				// La catégorie OSM du lieu cherché sert d'estimation immédiate ;
-				// le reverse au centre de la zone la corrigera quand elle sera dessinée.
+				// The OSM category of the place searched serves as an immediate
+				// estimate; the reverse at the centre of the area will correct it
+				// once the area is drawn.
 				state.place = h;
 				updateDensity();
 				// Nominatim rend une emprise : on s'en sert pour cadrer, pas pour
@@ -684,8 +683,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		map.pm.enableDraw(shape, { snappable: false, allowSelfIntersection: false });
 	};
 	$('.sc-draw').onclick = () => startDraw('Rectangle');
-	// Le tracé libre suit un fleuve, une avenue, un contour de quartier — ce
-	// qu'un rectangle ne sait faire qu'en embarquant les blocs voisins.
+	// A free outline follows a river, an avenue, a district boundary — what a
+	// rectangle can only do by taking the neighbouring blocks with it.
 	$('.sc-draw-poly').onclick = () => startDraw('Polygon');
 	$('.sc-clear').onclick = () => { map.pm.disableDraw(); clearZone(); };
 
@@ -694,14 +693,14 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	function updateButtons() {
 		const name = $('.sc-name').value.trim();
 		const slug = slugify(name);
-		// Sonder comme acquérir demandent une source désignée : il n'y a pas de
-		// fournisseur par défaut ici, et en inventer un enverrait l'opérateur
-		// chercher une imagerie qu'il n'a pas demandée.
+		// Probing, like acquiring, demands a designated source: there is no
+		// default provider here, and inventing one would send the operator
+		// looking for imagery they did not ask for.
 		const src = provider();
-		// Un seul bouton, et c'est acquireStep() qui décide de son libellé comme
-		// de son état : la séquence sonde→acquisition vit dans le modèle pur, pas
-		// ici (#211). ACQUIRE ANYWAY est la seule confirmation, il n'y a plus de
-		// modale de navigateur.
+		// One button, and acquireStep() decides its label as well as its state:
+		// the probe→acquisition sequence lives in the pure model, not here
+		// (#211). ACQUIRE ANYWAY is the only confirmation, there is no browser
+		// modal left.
 		const step = acquireStep({
 			zone: state.zone, source: src, name, plan: state.plan, probe: state.probe,
 		});
@@ -721,10 +720,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		n.dataset.kind = kind ?? '';
 	}
 
-	// ------------------------------------------------------------ couches
-	// `preselect` : la rangée démarre sur sa première entrée. Vrai pour les
-	// couches et le détail, qui ont un état de départ légitime ; FAUX pour la
-	// source, où rien n'est choisi tant que l'opérateur n'a pas choisi.
+	// ------------------------------------------------------------ layers
+	// `preselect`: the row starts on its first entry. True for the layers and
+	// the detail, which have a legitimate starting state; FALSE for the source,
+	// where nothing is chosen until the operator has chosen.
 	function switchRow(sel, entries, { preselect = true } = {}) {
 		const row = typeof sel === 'string' ? $(sel) : sel;
 		row.innerHTML = '';
@@ -739,9 +738,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		const first = row.querySelector('button');
 		if (preselect && first) first.dataset.on = 'true';
 	}
-	// Changer de source invalide plan et sonde : le verdict affiché appartenait
-	// au fournisseur précédent, et rien ne dit que le suivant répondra pareil.
-	// Même geste que le commutateur de détail juste en dessous.
+	// Changing source invalidates plan and probe: the verdict displayed belonged
+	// to the previous provider, and nothing says the next one will answer the
+	// same. Same gesture as the detail switch just below.
 	function setSource(id) {
 		state.source = id;
 		state.plan = null; state.probe = null;
@@ -756,9 +755,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	}
 	renderSourceSwitch();
 
-	// Les couches et le détail SUR la carte (#222), pas au fond du rail : c'est
-	// la carte qu'ils changent. Un contrôle Leaflet, en haut à gauche, pour
-	// qu'il suive la carte et que ses clics ne traversent pas jusqu'à elle.
+	// The layers and the detail ON the map (#222), not at the bottom of the
+	// rail: it is the map they change. A Leaflet control, at the top left, so
+	// that it follows the map and its clicks do not pass through to it.
 	const controls = { layers: document.createElement('div'), detail: document.createElement('div') };
 	controls.layers.className = 'sc-switch sc-layers';
 	controls.detail.className = 'sc-switch sc-detail-switch';
@@ -930,9 +929,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	// ------------------------------------------------------------ acquisition
 	let resolveScanner;
 	let finished = false;
-	// Le scanner résout une FORME de vol, plus un slug nu : depuis qu'il porte
-	// les deux verbes, il peut rendre une zone cuite (`{ slug }`) ou un point où
-	// décoller en direct (`{ live: [lat, lon] }`). `undefined` = on remonte.
+	// The scanner resolves a FORM of flight, no longer a bare slug: since it
+	// carries both verbs, it can return a baked area (`{ slug }`) or a point to
+	// take off from live (`{ live: [lat, lon] }`). `undefined` = go back up.
 	const done = (choice) => {
 		if (finished) return;
 		finished = true;
@@ -940,24 +939,25 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		resolveScanner(choice);
 	};
 
-	// Ne détruit QUE ce que le scanner a créé dans le rail. La carte survit :
-	// elle appartient à l'écran, pas à l'état de travail (#211). Elle ne se
-	// démonte que par destroy(), quand la Home meurt.
+	// Destroys ONLY what the scanner created in the rail. The map survives: it
+	// belongs to the screen, not to the working state (#211). It is only
+	// unmounted by destroy(), when the Home dies.
 	function cleanup() {
-		// `replaceChildren()` vide le sous-arbre mais pas le minuteur du montage
-		// RTC s'il tourne encore (BACK/Échap depuis la recherche, avant tout
-		// job). stopSearch() est idempotent.
+		// `replaceChildren()` empties the subtree but not the RTC mount's timer if
+		// it is still running (BACK/Escape from the search, before any job).
+		// stopSearch() is idempotent.
 		stopSearch?.();
 		for (const h of hosts) h.replaceChildren();
 	}
 
-	// Pas de menuNav ici (#222) : le rail vit DANS la colonne gauche de la Home,
-	// et c'est le nav de la Home qui porte Échap / B — il appelle rest() quand
-	// l'écran est au travail. Les champs de saisie gardent leurs touches (règle
-	// de menu-nav), la recherche et la désignation restent éditables.
-	// BACK ne résout plus rien : depuis #211 le scanner n'est pas un écran qu'on
-	// quitte, c'est la colonne de droite de FIELD. BACK repose l'outil et rend
-	// la colonne gauche à la Home ; `done` ne sert plus qu'à une forme de vol.
+	// No menuNav here (#222): the rail lives INSIDE the Home's left column, and
+	// it is the Home's nav that carries Escape / B — it calls rest() when the
+	// screen is at work. Text fields keep their keys (menu-nav's rule), the
+	// search and the designation stay editable.
+	// BACK no longer resolves anything: since #211 the scanner is not a screen
+	// you leave, it is FIELD's right column. BACK puts the tool down and gives
+	// the left column back to the Home; `done` now only serves a form of
+	// flight.
 	function rest() {
 		// Jamais pendant une acquisition : la fermer se fait par ABORT ou LEAVE,
 		// un geste explicite.
@@ -968,16 +968,16 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	}
 	$('.sc-back').onclick = rest;
 
-	// Voler en direct : on résout un point, et c'est tout. Rien n'est planifié,
-	// rien n'est sondé, rien n'est écrit — le monde arrive pendant le vol.
-	// C'est le même point que celui qu'on vient de décrire (zoneCentre), sinon
-	// le scanner désignerait un quartier et en ouvrirait un autre.
+	// Flying live: a point is resolved, and that is all. Nothing is planned,
+	// nothing is probed, nothing is written — the world arrives during the
+	// flight. It is the same point that has just been described (zoneCentre),
+	// otherwise the scanner would name one district and open another.
 	$('.sc-fly-live').onclick = () => {
 		if (!state.pin) return;
-		// On ne rend pas seulement un point : `lastDensity` est la densité de
-		// signal relevée à l'épingle (survey → updateDensity), et le TARGET SCAN
-		// du vol en dépend. `place` nomme la session au journal — « LIVE ODEON »
-		// dit quelque chose que 48.8499, 2.3419 ne dit pas.
+		// It is not only a point that is returned: `lastDensity` is the signal
+		// density read at the pin (survey → updateDensity), and the flight's
+		// TARGET SCAN depends on it. `place` names the session in the log —
+		// "LIVE ODEON" says something that 48.8499, 2.3419 does not.
 		done({
 			live: [state.pin.lat, state.pin.lon],
 			density: Number.isFinite(state.lastDensity?.level) ? state.lastDensity.level : null,
@@ -985,14 +985,14 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		});
 	};
 
-	// Lance réellement le job. N'est appelée que par le gestionnaire ci-dessous,
-	// qui a déjà obtenu du modèle le droit d'acquérir.
+	// Actually starts the job. Only called by the handler below, which has
+	// already obtained the right to acquire from the model.
 	async function startJob() {
 		const src = provider();
 		if (!src) return;
 		try {
-			// On acquiert chez la source désignée, toujours explicitement : le
-			// pipeline a un défaut, mais il ne doit jamais décider ici.
+			// Acquisition happens at the designated source, always explicitly: the
+			// pipeline has a default, but it must never decide here.
 			const { jobId } = await post('/jobs', {
 				name: $('.sc-name').value.trim(),
 				...state.zone, zoom: state.zoom, altitude: 20, cell: 256, quality: 85, provider: src.id,
@@ -1003,11 +1003,11 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		}
 	}
 
-	// UN bouton pour sonder et acquérir (#211). La première pression sonde ; si
-	// la couverture est confirmée elle enchaîne, sans en demander une seconde.
-	// Sinon elle s'arrête, le verdict dit pourquoi, et le bouton devient
-	// ACQUIRE ANYWAY — la deuxième pression EST la confirmation. Ce gestionnaire
-	// ne décide de rien : acquireStep() décide, il exécute.
+	// ONE button to probe and acquire (#211). The first press probes; if the
+	// coverage is confirmed it goes straight on, without asking for a second.
+	// Otherwise it stops, the verdict says why, and the button becomes ACQUIRE
+	// ANYWAY — the second press IS the confirmation. This handler decides
+	// nothing: acquireStep() decides, it executes.
 	$('.sc-acquire').onclick = async () => {
 		const ask = () => acquireStep({
 			zone: state.zone, source: provider(), name: $('.sc-name').value,
@@ -1017,10 +1017,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		if (step.disabled || !step.action) return;
 		if (step.action === 'probe') {
 			await runProbe();
-			// La sonde a rempli state.plan / state.probe : on redemande au modèle
-			// s'il faut enchaîner. Un ACQUIRE ANYWAY ici veut dire « la couverture
-			// n'est pas confirmée » — on s'arrête et on laisse l'opérateur voir le
-			// verdict avant d'engager dix minutes.
+			// The probe has filled state.plan / state.probe: the model is asked
+			// again whether to go on. An ACQUIRE ANYWAY here means "the coverage is
+			// not confirmed" — so it stops and lets the operator see the verdict
+			// before committing ten minutes.
 			const next = ask();
 			if (next.action === 'acquire' && next.label === 'ACQUIRE AREA') await startJob();
 			return;
@@ -1028,15 +1028,14 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		await startJob();
 	};
 
-	// Vue « acquisition » : le panneau change, la carte reste. Les chiffres
-	// affichés sont ceux du pipeline (phase, tuiles, log, statistiques). RF
-	// ANALYSIS / TARGET SEARCH et le flux RTC sont décoratifs (PHASE 05, Bible
-	// §8/§9) : ils ne conditionnent jamais ABORT/LEAVE/FLY.
+	// The "acquisition" view: the panel changes, the map stays. The figures
+	// displayed are the pipeline's (phase, tiles, log, statistics). RF ANALYSIS
+	// / TARGET SEARCH and the RTC stream are decorative (PHASE 05, Bible
+	// §8/§9): they never gate ABORT/LEAVE/FLY.
 	function watchJob(id, name, expected) {
-		// Le panneau de recherche disparaît (innerHTML remplacé juste après) :
-		// son montage RTC doit s'arrêter AVANT, sinon son minuteur écrit dans le
-		// vide sur un nœud détaché — exactement la fuite que stop() existe pour
-		// éviter.
+		// The search panel disappears (innerHTML replaced just after): its RTC
+		// mount must stop BEFORE, otherwise its timer writes into the void on a
+		// detached node — exactly the leak stop() exists to avoid.
 		stopSearch?.(); stopSearch = null;
 		state.jobId = id;
 		onBusy?.();
@@ -1072,22 +1071,35 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			const lines = pipelineStats(pipeline);
 			if (!lines.length) return;
 			panel.querySelector('.sc-job-stats').hidden = false;
-			panel.querySelector('.sc-stats-readout').innerHTML =
-				lines.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+			// Built with the DOM rather than as a markup string. Everything in
+			// `lines` is a fixed label and a number formatted by pipelineStats(),
+			// so nothing untrusted reaches here today — but this is the browser
+			// origin that holds the operator bearer key (src/operator.js), and
+			// "no value is interpolated into markup" is a rule that only works
+			// if it has no exceptions to argue about later.
+			const readout = panel.querySelector('.sc-stats-readout');
+			readout.replaceChildren();
+			for (const [k, v] of lines) {
+				const dt = document.createElement('dt');
+				dt.textContent = k;
+				const dd = document.createElement('dd');
+				dd.textContent = v;
+				readout.append(dt, dd);
+			}
 		};
 
 		const append = (line) => {
-			// Collé au bas seulement si l'opérateur y était déjà.
+			// Stuck to the bottom only if the operator was already there.
 			const stuck = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
 			log.appendChild(document.createTextNode(line + '\n'));
 			while (log.childNodes.length > 400) log.removeChild(log.firstChild);
 			if (stuck) log.scrollTop = log.scrollHeight;
 		};
 
-		// RTC : de la couleur, jamais une source d'information sur le pipeline
-		// réel. Le corpus est tiré par le moteur de dialogue (PHASE 21) — le
-		// contexte est une FONCTION parce que `pipeline` se remplit en cours de
-		// route et que le crew doit pouvoir en parler quand il arrive.
+		// RTC: colour, never a source of information about the real pipeline. The
+		// corpus is drawn by the dialogue engine (PHASE 21) — the context is a
+		// FUNCTION because `pipeline` fills in along the way and the crew must be
+		// able to speak about it when it arrives.
 		const stopRtc = notify({
 			event: 'ACQUIRE_AREA',
 			context: () => acquisitionContext({ name, tiles: expected, pipeline }),
@@ -1096,20 +1108,20 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 
 		const es = new EventSource(`${API}/jobs/${id}/events`);
 
-		// Un flux qui ne dit RIEN est indistinguable, à l'écran, d'un job qui
-		// travaille : le chrono ELAPSED tourne côté navigateur et continue même
-		// si rien n'arrive jamais. C'est ce qui a été signalé — écran figé sur
-		// « 0 tuile » avec le chrono qui monte, PIPELINE vide, et pour les DEUX
-		// fournisseurs, donc sans rapport avec ce que fait l'extracteur.
+		// A stream that says NOTHING is indistinguishable, on screen, from a job
+		// that is working: the ELAPSED clock runs on the browser side and keeps
+		// going even if nothing ever arrives. That is what was reported — screen
+		// frozen on "0 tiles" with the clock climbing, PIPELINE empty, and for
+		// BOTH providers, so unrelated to what the extractor does.
 		//
-		// La cause : quand le serveur de dev redémarre (vite recharge dès qu'un
-		// fichier bouge), EventSource repasse en CONNECTING et réessaie sans
-		// fin. `onerror` plus bas ne réagissait qu'à CLOSED — donc à rien du
-		// tout dans ce cas.
+		// The cause: when the dev server restarts (vite reloads as soon as a file
+		// moves), EventSource goes back to CONNECTING and retries endlessly.
+		// `onerror` below only reacted to CLOSED — so to nothing at all in that
+		// case.
 		//
-		// Le job vit côté serveur : on ne peut pas conclure à l'échec sur un
-		// simple silence. On le SIGNALE, sans rien couper, et on l'efface dès
-		// qu'un événement arrive.
+		// The job lives on the server side: failure cannot be concluded from mere
+		// silence. It is SIGNALLED, without cutting anything, and cleared as soon
+		// as an event arrives.
 		const SILENCE_MS = 10_000;
 		let heard = false;
 		let silence = null;
@@ -1143,10 +1155,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		es.addEventListener('error', (e) => finish(String(JSON.parse(e.data).message ?? '').toUpperCase(), 'alarm'));
 		es.addEventListener('cancelled', () => finish('ACQUISITION ABORTED — NOTHING WAS ADDED', 'warn'));
 		es.addEventListener('end', () => es.close());
-		// CLOSED = le serveur a refusé (job inconnu apres un redemarrage, 404) :
-		// definitif, on conclut. CONNECTING = il reessaie : on laisse le
-		// minuteur de silence parler a notre place plutot que de mentir dans un
-		// sens ou dans l'autre.
+		// CLOSED = the server refused (unknown job after a restart, 404):
+		// definitive, so it concludes. CONNECTING = it is retrying: the silence
+		// timer is left to speak for us rather than lying one way or the other.
 		es.onerror = () => {
 			if (es.readyState === EventSource.CLOSED) {
 				clearTimeout(silence);
@@ -1161,10 +1172,10 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			catch (e) { note('.sc-job-note', e.message.toUpperCase(), 'alarm'); b.disabled = false; }
 		};
 
-		// « Ce n'est pas un mini-jeu » (Bible §8) : quitter l'écran d'acquisition
-		// ne l'interrompt pas — le job continue côté serveur, et rouvrir le
-		// scanner s'y rattache (voir l'appel à /jobs au démarrage plus bas). Seuls
-		// les minuteurs et la connexion SSE de CETTE vue s'arrêtent.
+		// "This is not a mini-game" (Bible §8): leaving the acquisition screen
+		// does not interrupt it — the job goes on server-side, and reopening the
+		// scanner re-attaches to it (see the /jobs call at startup below). Only
+		// THIS view's timers and SSE connection stop.
 		panel.querySelector('.sc-leave').onclick = () => {
 			clearInterval(tick);
 			stopRtc();
@@ -1172,9 +1183,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			done(undefined);
 		};
 
-		// Fin du flux SSE (succès, erreur ou annulation) : coupe le chrono et le
-		// RTC, sans toucher au log déjà affiché. `msg`/`kind` restent vides sur
-		// un succès — c'est acquired() qui prend le relais avec KEEP/REMOVE.
+		// End of the SSE stream (success, error or cancellation): stops the clock
+		// and the RTC, without touching the log already displayed. `msg`/`kind`
+		// stay empty on success — acquired() takes over there with KEEP/REMOVE.
 		function finish(msg, kind) {
 			clearInterval(tick);
 			clearTimeout(silence);
@@ -1191,9 +1202,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			loadScenes();
 		}
 
-		// TERRAIN ACQUIRED -> KEEP/REMOVE (PHASE 05, issue #42 « Fin »). Le choix
-		// n'existait pas avant cette phase : jusqu'ici, tout ce qui atterrissait
-		// dans public/scenes/ y restait sans qu'on le demande.
+		// TERRAIN ACQUIRED -> KEEP/REMOVE (PHASE 05, issue #42 "End"). The choice
+		// did not exist before this phase: until then, everything that landed in
+		// public/scenes/ stayed there unasked.
 		function acquired(d) {
 			const box = panel.querySelector('.sc-job-done');
 			box.hidden = false;
@@ -1210,9 +1221,9 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 					note('.sc-keep-note', e.message.toUpperCase(), 'alarm');
 				}
 			};
-			// Pas de confirm() de navigateur (§44, issue #213) : le bouton se
-			// réétiquette en REMOVE TERRAIN — CONFIRM et la DEUXIÈME pression
-			// est la confirmation. L'armement retombe si le curseur s'en va.
+			// No browser confirm() (§44, issue #213): the button relabels itself to
+			// REMOVE TERRAIN — CONFIRM and the SECOND press is the confirmation.
+			// The arming lapses if the cursor leaves.
 			armConfirm(panel.querySelector('.sc-discard'), async () => {
 				try {
 					await api(`/scenes/${d.slug}?raw=1`, { method: 'DELETE' });
@@ -1244,7 +1255,7 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 			state.scenes = scenes;
 			pins.clearLayers();
 			for (const s of scenes) {
-				// Les repères évitent de ré-acquérir une zone déjà en cache.
+				// The markers stop an area already in the cache being re-acquired.
 				pins.addLayer(L.marker([s.lat, s.lon], {
 					interactive: false,
 					icon: L.divIcon({ className: 'sc-pin', html: `▣ ${s.name.toUpperCase()}`, iconSize: null }),
@@ -1256,42 +1267,42 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		}
 	}
 
-	// ------------------------------------------------------------ démarrage
+	// ------------------------------------------------------------ startup
 	clearZone();
 	loadScenes();
-	// Les sources proposées viennent du serveur. En cas d'échec on garde AUTO
-	// seul : le pipeline choisira son défaut, exactement comme avant qu'il y ait
-	// deux fournisseurs.
+	// The sources offered come from the server. On failure only AUTO is kept:
+	// the pipeline will choose its default, exactly as before there were two
+	// providers.
 	api('/providers').then((r) => {
 		registry = { providers: r.providers ?? [], default: r.default };
 		renderSourceSwitch();
 	}).catch(() => {});
-	// Reprend la main sur une acquisition déjà en cours (rechargement, retour au
-	// scanner pendant qu'un job tourne).
+	// Takes back an acquisition already in progress (reload, return to the
+	// scanner while a job is running).
 	api('/jobs').then(({ jobs }) => {
 		const running = jobs.find((j) => j.state === 'running');
 		if (running) watchJob(running.id, running.name, 0);
 	}).catch(() => {});
 	setTimeout(() => map.invalidateSize(), 0);
-	// Pas de search.focus() : le curseur de la Home est sur [ FLY ] (issue
-	// #123), et la recherche est désormais attachée au repos aussi (#222).
+	// No search.focus(): the Home's cursor is on [ FLY ] (issue #123), and the
+	// search is now attached to the rest state as well (#222).
 
 	return {
 		done: new Promise((resolve) => { resolveScanner = resolve; }),
 		setAreaFrames,
 		focusBounds,
-		// La Home arme l'outil depuis sa colonne gauche : au repos, le rail est
-		// caché, et sans ça rien ne permettrait de commencer à tracer.
+		// The Home arms the tool from its left column: at rest the rail is hidden,
+		// and without this nothing would let you start drawing.
 		startDraw,
 		setMode,
 		rest,
 		busy: () => !!state.jobId,
-		// Redessine la tache depuis le cache opérateur (issue #245) — la Home
-		// l'appelle quand elle relit les zones, au même moment que setAreaFrames.
+		// Redraws the stain from the operator cache (issue #245) — the Home calls
+		// it when it reads the areas back, at the same time as setAreaFrames.
 		refreshCoverage: () => coverage.refresh(),
-		// La carte ne meurt QU'ICI. `map.remove()` retire les écouteurs que
-		// Leaflet a posés sur window : sans lui, une Home ouverte trois fois
-		// laisse trois cartes vivantes derrière elle.
+		// The map dies ONLY HERE. `map.remove()` removes the listeners Leaflet put
+		// on window: without it, a Home opened three times leaves three live maps
+		// behind.
 		destroy: () => { cleanup(); map.remove(); },
 	};
 }
