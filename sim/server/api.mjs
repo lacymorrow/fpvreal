@@ -1058,8 +1058,8 @@ const routes = [
 // The factory. `paths` comes from tools/lib/paths.mjs (the process default in
 // dev, the standalone server's `--data`); `logger` is Vite's in dev, the
 // console in standalone. `mode` has been part of the signature from the start
-// but no route looked at it: T3 is what uses it (operator key, acquisition
-// closed in `shared`).
+// but no route looked at it until operator keys arrived; it is now what
+// selects them, and what keeps acquisition closed in `shared`.
 export function createApi({ paths = defaultPaths, mode = 'local', logger = console } = {}) {
 	P = paths;
 	MODE = mode;

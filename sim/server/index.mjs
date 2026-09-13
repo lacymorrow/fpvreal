@@ -67,11 +67,11 @@ export function resolveOptions(cli = {}) {
 	if (!Number.isInteger(opts.port) || opts.port < 0 || opts.port > 65535) {
 		throw new Error(`invalid port: ${port}`);
 	}
-	// THE guard rail of slice T1: in `local` the security boundary is the
-	// loopback socket, the same one the dev server has had for two months.
-	// Opening the listener has to be said explicitly — `shared` will bring its
-	// own authentication (T3), and nothing must be able to expose itself by
-	// accident before that exists.
+	// THE guard rail: in `local` the security boundary is the loopback socket,
+	// the same one the dev server has always had. Opening the listener has to
+	// be said explicitly, because `shared` is the mode with authentication
+	// (auth.mjs, operator keys) and nothing must be able to expose itself by
+	// accident without it.
 	if (opts.mode === 'local' && !LOOPBACK.has(opts.host)) {
 		throw new Error(`--host ${opts.host} refused in local mode: outside 127.0.0.1/::1, pass --mode shared`);
 	}
@@ -110,7 +110,13 @@ export async function startServer(cli = {}) {
 	const api = createApi({ paths, mode: opts.mode, logger: console });
 	const serveStatic = createStatic({ distDir: opts.distDir, paths });
 
+	const { applyBaseline } = await import('./headers.mjs');
+
 	const server = http.createServer((req, res) => {
+		// Before anything writes: the API and the file server both answer with
+		// writeHead(code, {...}), which Node merges over what setHeader() has
+		// already put on the response. One place, so no route can forget.
+		applyBaseline(res);
 		api(req, res, () => serveStatic(req, res));
 	});
 

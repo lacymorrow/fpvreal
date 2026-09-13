@@ -1,19 +1,19 @@
-# La marque FPVTP!
+# The FPVTP! mark
 
-Le symbole est un **cadre interrompu** et une **grille de 5 × 5 modules**. Il ne
-dessine rien : c'est un randomart, la signature de session déjà décrite
-Bible §26, figée en un motif unique. Il n'a pas d'autre lecture, et c'est
-voulu — Bible §1, un artefact plutôt qu'une illustration.
+The symbol is an **interrupted frame** and a **grid of 5 × 5 modules**. It
+depicts nothing: it is a randomart, the session signature already described in
+Bible §26, frozen into a single pattern. It has no other reading, and that is
+intended — Bible §1, an artefact rather than an illustration.
 
-## Géométrie
+## Geometry
 
-Tout est posé sur une grille de 100 unités, 16 modules de 6,25.
+Everything sits on a grid of 100 units, 16 modules of 6.25.
 
-- cadre : 6 unités d'épaisseur, sur les quatre côtés ;
-- interruption : 28 unités de large, centrée, au bord supérieur — c'est là que
-  le titre s'inscrit dans un panneau ;
-- motif : 5 × 5 cellules de 13, pas de 15,2, décalage de 12 ;
-- cellules pleines, par ligne :
+- frame: 6 units thick, on all four sides;
+- interruption: 28 units wide, centred, on the top edge — that is where
+  the title is set into a panel;
+- pattern: 5 × 5 cells of 13, pitch 15.2, offset 12;
+- filled cells, by row:
 
 ```text
 . # . . #
@@ -23,110 +23,110 @@ Tout est posé sur une grille de 100 unités, 16 modules de 6,25.
 # # . . #
 ```
 
-19 rectangles pleins au total, aucun trait, aucun arrondi, aucun chevauchement.
-Le fichier est donc directement extrudable pour une impression 3D
+19 filled rectangles in total, no strokes, no rounding, no overlaps.
+The file is therefore directly extrudable for 3D printing
 (`fpvtp-mark-extrude.svg`).
 
-## Fichiers
+## Files
 
-| fichier | usage |
+| file | use |
 |---|---|
-| `sim/public/brand/fpvtp-mark.svg` | `fill="currentColor"` — hérite la couleur du contexte, aucun littéral |
-| `sim/public/brand/fpvtp-icon.svg` | icône d'application, fond `--black` inclus |
-| `sim/public/brand/fpvtp-mark-extrude.svg` | extrusion 3D, noir sur transparent |
+| `sim/public/brand/fpvtp-mark.svg` | `fill="currentColor"` — inherits the colour of its context, no literal |
+| `sim/public/brand/fpvtp-icon.svg` | application icon, `--black` background included |
+| `sim/public/brand/fpvtp-mark-extrude.svg` | 3D extrusion, black on transparent |
 
-### Exports matriciels
+### Raster exports
 
-`sim/public/brand/png/` porte 16, 32, 48, 128, 256, 512 et 1024 px de deux
-choses : `fpvtp-mark-<taille>-transparent.png`, la marque seule, et
-`fpvtp-icon-<taille>.png`, la marque sur son fond `--black`.
+`sim/public/brand/png/` carries 16, 32, 48, 128, 256, 512 and 1024 px of two
+things: `fpvtp-mark-<size>-transparent.png`, the mark alone, and
+`fpvtp-icon-<size>.png`, the mark on its `--black` background.
 
-Ces exports sont **hintés** : à 16 px, chaque module tombe sur un pixel entier,
-là où la grille du SVG (pas de 15,2 sur 100 unités) donnerait de l'antialiasing.
-C'est pour ça qu'ils existent plutôt que de laisser le navigateur rééchantillonner
-`fpvtp-icon.svg`. Recopier depuis ici, ne pas ré-exporter.
+These exports are **hinted**: at 16 px, each module falls on a whole pixel,
+where the SVG's grid (pitch 15.2 over 100 units) would give antialiasing.
+That is why they exist rather than letting the browser resample
+`fpvtp-icon.svg`. Copy from here, do not re-export.
 
-### Bannières
+### Banners
 
-Les images composées — la marque, le nom et une accroche sur le fond `--black`.
-Elles vivent à deux endroits, et la frontière est celle du navigateur :
-`docs/brand/` pour celles que personne ne sert (dépôt, réseaux, téléversements à
-la main), `sim/public/brand/` pour la seule qu'une page doit livrer, la carte
-Open Graph.
+The composed images — the mark, the name and a tagline on the `--black`
+background. They live in two places, and the boundary is the browser's:
+`docs/brand/` for those nobody serves (repository, social networks, manual
+uploads), `sim/public/brand/` for the only one a page has to deliver, the Open
+Graph card.
 
-| fichier | dimensions | destination |
+| file | dimensions | destination |
 |---|---|---|
-| `docs/brand/fpvtp-readme-1280x320.png` | 1280 × 320 | en-tête de `README.md` |
-| `docs/brand/fpvtp-github-social-1280x640.png` | 1280 × 640 | *social preview* du dépôt — GitHub → Settings → Social preview, à la main |
-| `docs/brand/fpvtp-wide-1500x500.png` | 1500 × 500 | bandeau de profil d'un réseau social, à la main |
-| `docs/brand/fpvtp-square-1080.png` | 1080 × 1080 | avatar, vignette carrée, à la main |
-| `sim/public/brand/fpvtp-og-1200x630.png` | 1200 × 630 | carte Open Graph d'une instance déployée, servie par la page |
+| `docs/brand/fpvtp-readme-1280x320.png` | 1280 × 320 | header of `README.md` |
+| `docs/brand/fpvtp-github-social-1280x640.png` | 1280 × 640 | repository *social preview* — GitHub → Settings → Social preview, by hand |
+| `docs/brand/fpvtp-wide-1500x500.png` | 1500 × 500 | profile banner on a social network, by hand |
+| `docs/brand/fpvtp-square-1080.png` | 1080 × 1080 | avatar, square thumbnail, by hand |
+| `sim/public/brand/fpvtp-og-1200x630.png` | 1200 × 630 | Open Graph card of a deployed instance, served by the page |
 
-Les accroches (`POINT AT A CITY, FLY IT`, `IT'S NOT A LEVEL. IT'S TOKYO.`) sont
-composées dans l'image : rien ne les relit, les changer demande un ré-export.
-Comme le reste de la marque, les fichiers sont arrivés avec un manifeste C2PA —
-chunks `caBX` et `deBG`, 5,8 Ko par image — retiré sans réencoder, même règle
-que ci-dessous.
+The taglines (`POINT AT A CITY, FLY IT`, `IT'S NOT A LEVEL. IT'S TOKYO.`) are
+composed into the image: nothing reads them back, changing them requires a
+re-export. Like the rest of the mark, the files arrived with a C2PA manifest —
+`caBX` and `deBG` chunks, 5.8 kB per image — removed without re-encoding, same
+rule as below.
 
-### Où la marque est employée
+### Where the mark is used
 
-| chemin | source |
+| path | source |
 |---|---|
-| en-tête de `README.md` | `docs/brand/fpvtp-readme-1280x320.png` — la bannière porte déjà la marque ET le nom, elle a remplacé l'icône seule qui était là |
-| verrouillage empilé, partout (`sim/src/brand-lockup.js`) | la composition — symbole, un module d'écart, nom en `--font-ui` 500 — est écrite une fois et une seule. Le cracktro et l'écran de chargement l'appellent tous les deux ; aucun écran ne recompose la marque à la main |
-| cracktro de lancement (`sim/src/intro.js`) | le verrouillage ci-dessus, dont il vide le symbole pour le tracer module par module pendant la phase `reveal`. La géométrie est recopiée dans `sim/tools/brand-mark-model.mjs` — le premier écran du jeu ne peut pas dépendre d'un fetch — et `sim/tools/brand-mark-selftest.mjs` lit le SVG et le motif ci-dessus pour interdire à cette copie de dériver |
-| favicon de `sim/index.html` (16, 32, 48) | référence directement `sim/public/brand/png/` |
-| `og:image` de `sim/index.html` | `sim/public/brand/fpvtp-og-1200x630.png` — chemin **relatif à la racine**, et pas d'`og:url` : `deploy/` ne fixe aucun domaine, et une URL canonique fausse vaut moins que pas d'URL du tout. Le jour où un domaine est arrêté, poser `og:url` et passer l'image en absolu |
-| `sim/electron/build/icon.png` | copie de `png/fpvtp-icon-1024.png` — electron-builder l'empaquette dans l'installeur NSIS et l'AppImage |
+| header of `README.md` | `docs/brand/fpvtp-readme-1280x320.png` — the banner already carries the mark AND the name, it replaced the bare icon that was there |
+| stacked lockup, everywhere (`sim/src/brand-lockup.js`) | the composition — symbol, one module of gap, name in `--font-ui` 500 — is written once and once only. The cracktro and the loading screen both call it; no screen recomposes the mark by hand |
+| launch cracktro (`sim/src/intro.js`) | the lockup above, whose symbol it empties in order to draw it module by module during the `reveal` phase. The geometry is copied into `sim/tools/brand-mark-model.mjs` — the game's first screen cannot depend on a fetch — and `sim/tools/brand-mark-selftest.mjs` reads the SVG and the pattern above to forbid that copy from drifting |
+| favicon of `sim/index.html` (16, 32, 48) | references `sim/public/brand/png/` directly |
+| `og:image` of `sim/index.html` | `sim/public/brand/fpvtp-og-1200x630.png` — path **relative to the root**, and no `og:url`: `deploy/` fixes no domain, and a wrong canonical URL is worth less than no URL at all. The day a domain is settled on, add `og:url` and make the image absolute |
+| `sim/electron/build/icon.png` | a copy of `png/fpvtp-icon-1024.png` — electron-builder packages it into the NSIS installer and the AppImage |
 
-### Sur les fichiers eux-mêmes
+### About the files themselves
 
-Ils sont arrivés avec un manifeste de provenance C2PA d'environ 9 Ko chacun,
-d'où un PNG 16×16 qui pesait 6 Ko. Il a été retiré sans réencoder l'image : dans
-les PNG, tous les chunks hors `IHDR`/`PLTE`/`IDAT`/`IEND`/`tRNS` ; dans les SVG,
-le bloc `<metadata>` et l'attribut `xmlns:c2pa`. À refaire si un fichier est
-ré-exporté un jour.
+They arrived with a C2PA provenance manifest of about 9 kB each, hence a
+16×16 PNG that weighed 6 kB. It was removed without re-encoding the image: in
+the PNGs, every chunk outside `IHDR`/`PLTE`/`IDAT`/`IEND`/`tRNS`; in the SVGs,
+the `<metadata>` block and the `xmlns:c2pa` attribute. To be redone if a file is
+ever re-exported.
 
-Le SVG de la marque n'introduit **aucune couleur** : il prend celle de son
-parent, donc `var(--ink)` partout où l'interface l'emploie. La palette reste
-celle de `sim/src/tokens.css`, seule source — `tools/palette-selftest.mjs`
-continue de faire foi.
+The mark's SVG introduces **no colour**: it takes its parent's, hence
+`var(--ink)` everywhere the interface uses it. The palette remains
+that of `sim/src/tokens.css`, the sole source — `tools/palette-selftest.mjs`
+continues to be the authority.
 
-## Verrouillages
+## Lockups
 
 ```text
-HORIZONTAL COURT   [symbole]  FPVTP!            usage par défaut
-HORIZONTAL LONG    [symbole]  FPVThePlanet!     première mention, en-têtes, dépôt
-EMPILÉ             [symbole]                    splash, boot, formats carrés
+HORIZONTAL SHORT   [symbol]  FPVTP!            default use
+HORIZONTAL LONG    [symbol]  FPVThePlanet!     first mention, headers, repository
+STACKED            [symbol]                    splash, boot, square formats
                    F P V T P !
 ```
 
-Écart symbole / nom : 1 module. Le nom ne se coupe jamais sur deux lignes.
-Le nom est en `--font-ui` (IBM Plex Mono 500), interlettré `--track-ui` dans le
-verrouillage empilé, `--track-data` dans les deux horizontaux.
+Symbol / name gap: 1 module. The name never breaks across two lines.
+The name is in `--font-ui` (IBM Plex Mono 500), letter-spaced `--track-ui` in
+the stacked lockup, `--track-data` in both horizontal ones.
 
-**Zone de respect :** 4 modules sur les quatre côtés. Rien n'y entre, pas même
-la règle d'un panneau.
+**Clear space:** 4 modules on all four sides. Nothing enters it, not even
+the rule of a panel.
 
-**Tailles minimales :** symbole seul 16 px, verrouillage court 96 px de large,
-verrouillage long 200 px. Sous 16 px le cadre se referme visuellement : utiliser
-la version en réserve (plaque pleine, motif creusé).
+**Minimum sizes:** symbol alone 16 px, short lockup 96 px wide,
+long lockup 200 px. Below 16 px the frame closes up visually: use
+the reversed version (solid plate, pattern knocked out).
 
-**Interdits :** pas de couleur d'état ni de couleur demo sur la marque, y
-compris pendant une culmination — le cyan et le magenta appartiennent à l’écran, pas
-au logo (Bible §19). Pas de rotation, pas de contour, pas d'ombre, pas de motif
-substitué.
+**Forbidden:** no state colour and no demo colour on the mark, including
+during a culmination — cyan and magenta belong to the screen, not
+to the logo (Bible §19). No rotation, no outline, no shadow, no substituted
+pattern.
 
-Le cracktro est le premier endroit où cet interdit mord vraiment : la marque y
-tient l'écran pendant que la phase plasma flambe en cyan, magenta, violet et
-bleu. `.lockup` pose `color: var(--ink)` sur le conteneur du
-verrouillage, précisément pour que rien de la demo ne puisse redescendre
-dessus.
+The cracktro is the first place this prohibition really bites: the mark holds
+the screen there while the plasma phase blazes in cyan, magenta, violet and
+blue. `.lockup` sets `color: var(--ink)` on the lockup's container,
+precisely so that nothing from the demo can bleed down
+onto it.
 
-## Ce que la grille produit ailleurs
+## What the grid produces elsewhere
 
-Le cadre interrompu **est** le panneau : titre dans l'interruption du bord
-supérieur, traits de 1 px (`--rule-w`), angles droits. Le motif tuilé à 8 %
-d'encre donne la trame des écrans calmes ; ses 25 bits lus en ligne donnent un
-séparateur ; les mêmes modules pleins ou vides donnent les barres de progression
-de `ACQUIRE AREA` (Bible §8).
+The interrupted frame **is** the panel: title in the interruption of the top
+edge, 1 px rules (`--rule-w`), right angles. The pattern tiled at 8%
+ink gives the texture of the calm screens; its 25 bits read in a line give
+a separator; the same modules, filled or empty, give the progress bars
+of `ACQUIRE AREA` (Bible §8).

@@ -15,6 +15,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths as defaultPaths } from '../tools/lib/paths.mjs';
+import { securityHeaders, BASELINE } from './headers.mjs';
+
+// Only the extra headers an HTML document gets; the baseline is already set.
+function documentPolicy(type) {
+	const all = securityHeaders(type);
+	const extra = {};
+	for (const [k, v] of Object.entries(all)) if (!(k in BASELINE)) extra[k] = v;
+	return extra;
+}
 
 // What the game actually serves, nothing more.
 const TYPES = {
@@ -184,6 +193,9 @@ function sendFile(req, res, file, st, cacheControl) {
 		etag,
 		'accept-ranges': 'bytes',
 		'last-modified': new Date(st.mtimeMs).toUTCString(),
+		// The document policy rides on documents only — see server/headers.mjs.
+		// The always-on headers are already on the response (server/index.mjs).
+		...documentPolicy(type),
 	};
 	// `Vary` as soon as the response CAN depend on Accept-Encoding, compressed
 	// or not: an intermediate cache that saw the plain version must not serve

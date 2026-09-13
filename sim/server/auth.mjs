@@ -10,7 +10,7 @@
 //      Independent of the first, and closed by default.
 //
 // Conflating them would be the design mistake the spec names explicitly
-// (docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md, D2).
+// (sim/docs/superpowers/specs/2026-09-07-dual-mode-deployment-design.md, D2).
 //
 // No dependency: node:crypto and node:fs.
 
