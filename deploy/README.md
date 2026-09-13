@@ -193,6 +193,66 @@ theirs: there is no password, no e-mail address, and no self-service reset.
 
 ---
 
+## Behind Cloudflare (optional, and all-or-nothing)
+
+Proxying the domain through Cloudflare — the orange cloud — is the cheapest way
+to survive a busy day: the bundle and the music are static and immutable, so the
+edge serves them and the origin barely works. It is also the one change that can
+silently break the signup limit, so the three steps below go together or not at
+all.
+
+**What breaks if you do it halfway.** With the proxy on, Caddy's peer is
+Cloudflare, not the visitor. The server identifies a client by the last hop of
+`X-Forwarded-For`, so every visitor on earth becomes one address, and the limit
+of five signups per hour becomes five for the whole internet. The sixth person
+of the hour is refused.
+
+**1. Stop discarding the real address.** Delete the `request_header
+-X-Forwarded-For` line from the game block in `Caddyfile`. It exists to throw
+away what the client claimed; with Cloudflare in front, what arrives is what
+Cloudflare observed, and it is the only copy of the visitor's address you get.
+
+**2. Firewall the origin to Cloudflare, first.** Do this before step 3, not
+after. While the origin answers anyone, `CF-Connecting-IP` is just a header the
+caller typed, and a caller who picks their own value picks their own rate-limit
+key — the exact hole the limit exists to close.
+
+```sh
+ufw --force reset
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp
+for ip in $(curl -fsS https://www.cloudflare.com/ips-v4) $(curl -fsS https://www.cloudflare.com/ips-v6); do
+        ufw allow from "$ip" to any port 80,443 proto tcp
+done
+ufw --force enable
+ufw status numbered
+```
+
+Check from your own machine that the origin IP is now unreachable while the
+domain still works:
+
+```sh
+curl -m 5 https://<origin-ip>/            # must time out
+curl -sI https://fpvtp.example.org/       # must answer
+```
+
+Cloudflare's ranges change rarely, but they do change. Re-run the loop after any
+change, or leave a monthly cron doing it.
+
+**3. Only then, tell the server.** Uncomment `Environment=FPVTP_TRUST_CF_IP=1`
+in `fpvtp.service`, then `systemctl daemon-reload && systemctl restart fpvtp`.
+
+**4. Prove it worked.** Sign up from a phone on mobile data, then from your
+desktop, and confirm both succeed — two different addresses, two separate
+budgets. If the second is refused as "too many signups", the server is still
+counting everyone as one client and something above is wrong.
+
+**Caching.** Cloudflare caches by extension out of the box, which already covers
+the bundle and the `.opus` tracks. Do not cache `/__map-api/*` or
+`/__operator/*`: they are per-operator and authenticated. A cache rule that
+bypasses anything starting with `/__` is the safe shape.
+
 ## The Node runtime, and the shape of the archive
 
 `fpvtp.service` runs `/opt/fpvtp/current/node/bin/node` with

@@ -554,6 +554,32 @@ try {
 	check('x-forwarded-for multi-hop: the LAST hop is the client, not the first',
 		clientIp(forged, 'shared') === '198.51.100.4');
 	// No header at all (no proxy in front): fall back to the real socket.
+	// Behind a CDN the last hop is the CDN's own edge, so CF-Connecting-IP is
+	// the only thing that still names the visitor. It is read ONLY when the
+	// operator has declared the topology: the header is forgeable by anyone who
+	// can reach the origin directly, so trusting its mere presence would undo
+	// the multi-hop fix above.
+	const cf = {
+		headers: { 'cf-connecting-ip': '203.0.113.50', 'x-forwarded-for': '172.68.0.1' },
+		socket: { remoteAddress: '127.0.0.1' },
+	};
+	check('cf-connecting-ip is ignored unless FPVTP_TRUST_CF_IP says otherwise',
+		clientIp(cf, 'shared') === '172.68.0.1');
+
+	{
+		const before = process.env.FPVTP_TRUST_CF_IP;
+		process.env.FPVTP_TRUST_CF_IP = '1';
+		const fresh = await import(`../server/auth.mjs?cf=${Date.now()}`);
+		check('with the flag set, cf-connecting-ip wins over the CDN edge address',
+			fresh.clientIp(cf, 'shared') === '203.0.113.50');
+		check('with the flag set, `local` still reads no header at all',
+			fresh.clientIp(cf, 'local') === '127.0.0.1');
+		check('with the flag set but no CF header, the last hop is still used',
+			fresh.clientIp({ headers: { 'x-forwarded-for': 'a, 198.51.100.9' }, socket: {} }, 'shared') === '198.51.100.9');
+		if (before === undefined) delete process.env.FPVTP_TRUST_CF_IP;
+		else process.env.FPVTP_TRUST_CF_IP = before;
+	}
+
 	check('x-forwarded-for absent: falls back to remoteAddress',
 		clientIp({ headers: {}, socket: { remoteAddress: '198.51.100.9' } }, 'shared') === '198.51.100.9');
 

@@ -28,17 +28,31 @@ fpvtp.example.org {
 	# reproduce (the dynamic /scenes.json catalogue built from the data
 	# directory, the deliberate absence of an SPA fallback, the immutable
 	# Cache-Control).
-	# Drop any X-Forwarded-For the CLIENT sent before the proxy builds its own.
-	# Caddy APPENDS the real peer to whatever arrives, so without this line the
-	# header is `<whatever the client claimed>, <real address>`. The server reads
-	# the last hop precisely because of that (sim/server/auth.mjs, clientIp), so
-	# it is already correct — this makes it correct for the right reason, and it
-	# is what keeps the signup rate limit honest if that code is ever changed
-	# back to reading the first hop.
+	# WITHOUT A CDN (Caddy is the only proxy) — keep this line.
 	#
-	# If you ever put a CDN in front of Caddy, this line and that one both need
-	# revisiting: the real client address then arrives in a header, and dropping
-	# it here would leave the server rate-limiting the CDN.
+	# It drops any X-Forwarded-For the CLIENT sent, before the proxy builds its
+	# own. Caddy APPENDS the real peer to whatever arrives, so without it the
+	# header reads `<whatever the client claimed>, <real address>`, and only the
+	# last entry is trustworthy. The server reads the last hop for exactly that
+	# reason (sim/server/auth.mjs, clientIp); this makes it right for the right
+	# reason rather than by luck.
+	#
+	# BEHIND CLOUDFLARE (or any CDN) — DELETE this line, and read on.
+	#
+	# Cloudflare puts the visitor's real address in the X-Forwarded-For it
+	# sends, and in CF-Connecting-IP. Dropping the header here throws that away:
+	# Caddy then appends Cloudflare's own edge address and the server sees every
+	# visitor on earth as one client. A limit of five signups an hour becomes
+	# five for the whole internet.
+	#
+	# Two things go together, and neither works alone:
+	#
+	#   1. delete the line below, and set FPVTP_TRUST_CF_IP=1 in
+	#      deploy/fpvtp.service so the server reads CF-Connecting-IP;
+	#   2. firewall 80 and 443 to Cloudflare's published ranges — see
+	#      deploy/README.md. Without this, the origin is reachable directly and
+	#      anyone can send a CF-Connecting-IP of their choosing, which is the
+	#      exact hole the header was supposed to close.
 	request_header -X-Forwarded-For
 	reverse_proxy 127.0.0.1:8080
 

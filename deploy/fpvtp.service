@@ -46,6 +46,17 @@ Environment=FPVTP_DATA_DIR=/var/lib/fpvtp
 # world, with the TLS. Nothing must reach port 8080 from outside.
 Environment=FPVTP_HOST=127.0.0.1
 Environment=FPVTP_PORT=8080
+
+# Behind Cloudflare (or any CDN), uncomment this so the server reads the
+# visitor's real address from CF-Connecting-IP instead of seeing every visitor
+# as the CDN edge — which would make the signup limit five per hour for the
+# whole internet rather than per person.
+#
+# DO NOT uncomment it until 80 and 443 are firewalled to Cloudflare's ranges
+# (deploy/README.md, "Behind Cloudflare"). While the origin answers anyone,
+# that header is whatever the caller typed, and trusting it is worse than
+# ignoring it.
+# Environment=FPVTP_TRUST_CF_IP=1
 #
 # FPVTP_ACQUIRE IS DELIBERATELY NOT SET, AND MUST NEVER BE SET HERE.
 # It is the flag that opens `ACQUIRE AREA` (a scene being born on disk, calls

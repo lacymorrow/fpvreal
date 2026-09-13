@@ -176,13 +176,33 @@ export function acquireEnabled(mode) {
 // key, which it can rotate at will — which is to say, no rate limit at all.
 // The last entry is the only one written by something we trust.
 //
-// This assumes EXACTLY ONE appending proxy in front (the deployment in
-// deploy/Caddyfile). Put a second one there — a CDN in front of Caddy — and
-// the last hop becomes the CDN's edge address, collapsing every visitor onto a
-// handful of keys; that deployment must strip inbound `X-Forwarded-For` at the
-// outermost proxy and count hops from the right instead.
+// That reasoning assumes EXACTLY ONE appending proxy in front, which is the
+// deployment in deploy/Caddyfile. Put a CDN in front of Caddy and the last hop
+// becomes the CDN's own edge address: every visitor on earth collapses onto a
+// handful of keys, and a limit of five signups an hour becomes five for the
+// whole internet. That is not hypothetical — it is what happens the moment the
+// domain is proxied through Cloudflare, which is the obvious thing to do to
+// serve the bundle from the edge.
+//
+// So: behind a CDN, the real address arrives in a header of its own, and
+// FPVTP_TRUST_CF_IP says to read it.
+//
+// It is opt-in, and it must stay opt-in. `CF-Connecting-IP` is trustworthy
+// only because Cloudflare overwrites whatever the client sent — which holds
+// only for requests that actually came through Cloudflare. If the origin is
+// reachable directly, anyone can set that header by hand and pick their own
+// rate-limit key, which is the very hole this function exists to close. So the
+// flag is a statement by the operator that the origin accepts connections from
+// the CDN and nothing else; deploy/README.md carries the firewall rule that
+// makes the statement true. Never infer this from the header being present.
+const TRUST_CF_IP = process.env.FPVTP_TRUST_CF_IP === '1';
+
 export function clientIp(req, mode) {
 	if (mode === 'shared') {
+		if (TRUST_CF_IP) {
+			const cf = String(req?.headers?.['cf-connecting-ip'] ?? '').trim();
+			if (cf) return cf;
+		}
 		const hops = String(req?.headers?.['x-forwarded-for'] ?? '')
 			.split(',').map((s) => s.trim()).filter(Boolean);
 		if (hops.length) return hops[hops.length - 1];
