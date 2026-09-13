@@ -1,3 +1,5 @@
+import { stackedLockup } from './brand-lockup.js';
+
 // Écran de chargement. Le menu des cartes est devenu le terminal opérateur
 // (terminal.js), le panneau Tab est parti dans settings.js, et l'OSD de vol
 // s'est scindé en deux couches à la PHASE 12 (drone-osd.js et fpvtp-osd.js).
@@ -6,10 +8,14 @@
 
 export class Hud {
 	constructor(root) {
+		// Le boot est un splash : docs/brand.md y impose le verrouillage EMPILÉ,
+		// symbole compris. Le nom long en Departure Mono capitalisée qui tenait
+		// cette place rendait « FPVTHEPLANET! » — une composition que le
+		// document n'autorise nulle part.
 		root.insertAdjacentHTML('beforeend', `
 			<div id="loading" hidden><div class="box">
-				<h1>FPVThePlanet!</h1>
-				<p id="loading-status">chargement…</p>
+				${stackedLockup({ extra: 'loading-lockup' })}
+				<p id="loading-status">LOADING…</p>
 				<div class="bar"><div id="loading-bar"></div></div>
 				<p id="loading-detail"></p>
 				<p id="loading-clock"></p>
@@ -44,7 +50,7 @@ export class Hud {
 			const total = (performance.now() - t0) / 1000;
 			const inStage = (performance.now() - this._stage.at) / 1000;
 			this.el.clock.textContent = this._stage.name
-				? `${total.toFixed(0)} s — étape « ${this._stage.name} » depuis ${inStage.toFixed(0)} s`
+				? `${total.toFixed(0)} s — ${this._stage.name.toUpperCase()} FOR ${inStage.toFixed(0)} s`
 				: `${total.toFixed(0)} s`;
 		}, 250);
 	}

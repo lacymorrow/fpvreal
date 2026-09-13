@@ -115,12 +115,15 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 			filters.className = 'terminal-nav';
 			SESSION_FILTERS.forEach((f, i) => {
 				if (i) filters.appendChild(document.createTextNode(' · '));
-				// Le filtre actif se lit entre crochets — pas de classe dédiée, la
-				// Home est calme (Bible §30).
-				filters.appendChild(button(f === filter ? `[${f}]` : f, () => {
+				// Le filtre actif s'écrit en vidéo inverse, comme tout état actif du
+				// jeu : entre crochets, il ne se distinguait pas d'une touche
+				// clavier citée dans une aide (keyHints).
+				const b = button(f, () => {
 					filter = f;
 					draw();
-				}));
+				});
+				if (f === filter) b.dataset.on = 'true';
+				filters.appendChild(b);
 			});
 			s.box.appendChild(filters);
 
@@ -135,7 +138,7 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 			const sess = rows()[i];
 			if (!sess) return;
 			busy = true;
-			s.el.style.display = 'none';
+			s.el.hidden = true;
 			const r = await runSessionDetail(root, sess.id, { scenes });
 			if (r?.revisit) return finish(r.revisit);
 			if (r?.deleted) {
@@ -143,7 +146,7 @@ export function runSessionLog(root, { operator, scenes = null } = {}) {
 				if (k >= 0) all.splice(k, 1);
 			}
 			busy = false;
-			s.el.style.display = '';
+			s.el.hidden = false;
 			draw(i);
 		};
 

@@ -4,7 +4,8 @@
 import * as operatorApi from './operator.js';
 import { menuNav, blockNav } from './menu-nav.js';
 import { uiAudio } from './ui-audio.js';
-import { watchReveal } from './motion.js';
+import { reducedMotion, STEP_MS } from './motion.js';
+import { mountScreen, screenButton } from './screen.js';
 import { versionLine } from './version.js';
 
 
@@ -115,27 +116,28 @@ function crewNotes(rows) {
 
 // ---------- montage d'écran ----------
 
+// La chaîne de bootstrap monte le MÊME écran que le terminal (screen.js) : elle
+// en montait une copie qui n'avait jamais gagné `close()`, et restait le seul
+// endroit du jeu dont les écrans s'en allaient d'un coup sec.
 function screen(root) {
-	const el = document.createElement('div');
-	el.className = 'bootstrap';
-	el.innerHTML = '<div class="bootstrap-box"></div>';
-	root.appendChild(el);
-	const box = el.querySelector('.bootstrap-box');
-	const unwatch = watchReveal(box); // issue #224
-	return {
-		el,
-		box,
-		remove: () => { unwatch(); el.remove(); },
-	};
+	return mountScreen(root);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Exported for src/briefing.js (D16) : le briefing s'imprime comme le
 // bootstrap parce que c'est la même machine qui parle, pas une aide en ligne.
-export async function revealLines(box, lines, { interval = 40 } = {}) {
+// Mouvement réduit : les lignes sont posées d'un bloc. Même règle que partout
+// (motion.js) — on saute à l'état final au lieu d'imprimer plus lentement. Sans
+// ça, le premier lancement ET le briefing restaient les deux seuls écrans à
+// s'animer quand le système demande le contraire.
+export async function revealLines(box, lines, { interval = STEP_MS } = {}) {
 	const pre = document.createElement('pre');
 	box.appendChild(pre);
+	if (reducedMotion()) {
+		pre.textContent = lines.join('\n');
+		return pre;
+	}
 	let skipped = false;
 	const skip = () => { skipped = true; };
 	window.addEventListener('keydown', skip, { once: true });
@@ -174,14 +176,7 @@ async function hardwareScreen(root) {
 	});
 }
 
-function button(label, onClick) {
-	const b = document.createElement('button');
-	b.type = 'button';
-	b.textContent = `[ ${label} ]`;
-	b.className = 'bootstrap-btn';
-	b.onclick = onClick;
-	return b;
-}
+const button = (label, onClick) => screenButton(label, onClick, 'bootstrap-btn');
 
 // ---------- écran 2 : OPERATOR NAME ----------
 

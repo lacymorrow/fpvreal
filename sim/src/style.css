@@ -28,7 +28,7 @@ html, body {
 	height: 100%;
 	overflow: hidden;
 	background: var(--black);
-	font: 400 14px/1.45 var(--font-data);
+	font: 400 var(--fs-data)/1.45 var(--font-data);
 	letter-spacing: var(--track-data);
 	color: var(--ink);
 }
@@ -58,7 +58,7 @@ button:focus::before {
 	/* Le marqueur est le curseur, pas une cible : un clic dessus doit toucher
 	   ce qu'il y a derrière, pas agrandir le bouton. */
 	pointer-events: none;
-	animation: cursor-blink 1.1s step-end infinite;
+	animation: cursor-blink var(--dur-blink) step-end infinite;
 }
 /* Un contrôle réglable (slider, select, checkbox) porte le marqueur sur sa
    ligne entière : c'est la ligne que ←/→ règle (issue #123, Settings). */
@@ -66,25 +66,25 @@ button:focus::before {
 .panel label:focus-within::before {
 	content: '▌';
 	position: absolute;
-	left: -18px; top: 50%;
+	left: -0.9em; top: 50%;
 	transform: translateY(-50%);
 	line-height: 1;
 	font-family: var(--font-ascii);
 	color: var(--ink);
 	pointer-events: none;
-	animation: cursor-blink 1.1s step-end infinite;
+	animation: cursor-blink var(--dur-blink) step-end infinite;
 }
 #pad-map td:first-child { position: relative; }
 #pad-map tr:focus-within td:first-child::before {
 	content: '▌';
 	position: absolute;
-	left: -14px; top: 50%;
+	left: -0.9em; top: 50%;
 	transform: translateY(-50%);
 	line-height: 1;
 	font-family: var(--font-ascii);
 	color: var(--ink);
 	pointer-events: none;
-	animation: cursor-blink 1.1s step-end infinite;
+	animation: cursor-blink var(--dur-blink) step-end infinite;
 }
 
 /* ---------- mouvement des menus (issue #224) ---------- */
@@ -126,6 +126,14 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	button.flash, button.flash:hover, button:focus::before,
 	.panel label:focus-within::before, #pad-map tr:focus-within td:first-child::before { animation: none; }
 	.bootstrap button, .terminal-nav button.terminal-link, .sc-result, .sc-btn, .sc-cta { transition: none; }
+	/* Ce qui tourne SANS FIN est ce que le mouvement réduit vise en premier, et
+	   c'était précisément ce qui restait : l'invite du gate, le balayage d'une
+	   progression sans compteur, et les deux barres qui glissent. L'information
+	   reste — la barre saute à sa valeur, le balayage devient une barre pleine. */
+	.intro-gate { animation: none; }
+	.sc-bar[data-indeterminate="1"] i { animation: none; }
+	#loading-bar, .sc-bar i { transition: none; }
+	.intro-lockup .lockup-name { transition: none; }
 }
 
 #ui { position: fixed; inset: 0; pointer-events: none; }
@@ -137,22 +145,22 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	position: fixed; inset: 0;
 	display: grid; place-items: center;
 	background: var(--black);
-	z-index: 10;
+	z-index: var(--z-loading);
 }
 #loading .box { width: min(420px, 80vw); text-align: center; }
-#loading h1 {
-	margin: 0 0 .3em;
-	font-family: var(--font-display);
-	font-size: var(--fs-display-s);
-	letter-spacing: var(--track-display);
-	font-weight: 400;
-	text-transform: uppercase;
-}
+/* Le verrouillage du boot est celui de l'intro (.lockup, plus bas), à l'échelle
+   d'un écran de chargement : assez grand pour être la marque, assez petit pour
+   laisser la barre et ses relevés sous lui. Sa zone de respect (4 modules) est
+   la seule marge — rien d'autre n'en pose ici. */
+.loading-lockup { margin: 0 auto; }
+/* Spécificité voulue : `.lockup` pose la taille du cracktro plus bas dans la
+   feuille et l'emporterait sinon sur une simple classe. */
+#loading .loading-lockup { --mark-size: clamp(72px, 12vw, 128px); }
 #loading p { margin: 0 0 1.2em; color: var(--dim); min-height: 1.4em; }
 #loading .bar { height: 2px; background: var(--rule); overflow: hidden; }
 /* La progression est de l'information, mais pas une alerte : elle se marque en
    pleine encre, pas en couleur (Bible §38). */
-#loading-bar { height: 100%; width: 0; background: var(--warm-white); transition: width .2s ease; }
+#loading-bar { height: 100%; width: 0; background: var(--warm-white); transition: width var(--dur-2) linear; }
 .err { color: var(--red); }
 
 /* ---------- hud ---------- */
@@ -173,7 +181,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	font-size: var(--fs-data);
 	font-variant-numeric: tabular-nums;
 	line-height: 1.6;
-	letter-spacing: .04em;
+	letter-spacing: var(--track-data);
 	color: var(--ink);
 	text-shadow: var(--shadow);
 	/* Très doux, et sur la couche seule : ce n'est pas le vignettage de
@@ -181,19 +189,19 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	mask-image: radial-gradient(ellipse 120% 120% at 50% 50%, #000 60%, rgba(0, 0, 0, .82) 100%); /* palette-ok: stops d'un masque alpha, pas du pigment */
 }
 #fpvtp-osd .corner { position: absolute; }
-#fpvtp-osd .tl { top: 12px; left: 14px; }
-#fpvtp-osd .tr { top: 12px; right: 14px; text-align: right; }
-#fpvtp-osd .bl { bottom: 12px; left: 14px; }
-#fpvtp-osd .br { bottom: 12px; right: 14px; text-align: right; }
+#fpvtp-osd .tl { top: var(--space-3); left: var(--space-3); }
+#fpvtp-osd .tr { top: var(--space-3); right: var(--space-3); text-align: right; }
+#fpvtp-osd .bl { bottom: var(--space-3); left: var(--space-3); }
+#fpvtp-osd .br { bottom: var(--space-3); right: var(--space-3); text-align: right; }
 /* Le crédit fournisseur est une mention légale, pas une information de vol :
    il se tient en retrait du reste de l'OSD. */
-#fo-credit { font-size: 10px; color: var(--faint); letter-spacing: .04em; }
+#fo-credit { font-size: var(--fs-micro); color: var(--faint); letter-spacing: var(--track-data); }
 /* L'identifiant de la zone est ce que l'OSD a de plus important : il le dit en
    pleine encre pendant que ses voisins descendent en gris (Bible §38 — pas de
    couleur qui ne transmette rien). */
 #fo-ident { color: var(--ink); }
-#fo-rates, #fo-input, #fo-fps { font-size: 12px; color: var(--dim); }
-#fo-env { font-size: 12px; color: var(--ink); }
+#fo-rates, #fo-input, #fo-fps { font-size: var(--fs-micro); color: var(--dim); }
+#fo-env { font-size: var(--fs-micro); color: var(--ink); }
 /* The view toggle (D11). The only clickable element of the OSD: the layer is
    pointer-events: none and this one takes them back for itself. A button, but
    one that reads like the lines around it — this is flight information, not an
@@ -207,8 +215,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	border: 0;
 	padding: 0;
 	font: inherit;
-	font-size: 12px;
-	letter-spacing: .04em;
+	font-size: var(--fs-micro);
+	letter-spacing: var(--track-data);
 	text-transform: uppercase;
 	color: var(--dim);
 	text-shadow: inherit;
@@ -240,8 +248,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	display: block;
 	font-family: var(--font-ui);
 	font-weight: 500;
-	font-size: 12px;
-	letter-spacing: .1em;
+	font-size: var(--fs-data);
+	letter-spacing: var(--track-ui-tight);
 	color: var(--dim);
 }
 /* La coupure du lien (#216). Sous le réticule, hors des quatre coins : ce
@@ -255,8 +263,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	text-align: center;
 	font-family: var(--font-ui);
 	font-weight: 500;
-	font-size: 12px;
-	letter-spacing: .1em;
+	font-size: var(--fs-data);
+	letter-spacing: var(--track-ui-tight);
 	text-transform: uppercase;
 	color: var(--dim);
 	padding: var(--space-2) var(--space-4);
@@ -273,8 +281,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	text-align: center;
 	font-family: var(--font-ui);
 	font-weight: 500;
-	font-size: 12px;
-	letter-spacing: .1em;
+	font-size: var(--fs-data);
+	letter-spacing: var(--track-ui-tight);
 	text-transform: uppercase;
 	color: var(--dim);
 	padding: var(--space-2) var(--space-4);
@@ -302,8 +310,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	text-align: center;
 	font-family: var(--font-ui);
 	font-weight: 500;
-	font-size: 12px;
-	letter-spacing: .1em;
+	font-size: var(--fs-data);
+	letter-spacing: var(--track-ui-tight);
 	text-transform: uppercase;
 	color: var(--dim);
 	padding: var(--space-2) var(--space-4);
@@ -316,7 +324,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	display: flex; flex-direction: column; align-items: center; justify-content: center;
 	gap: .5em;
 	font-family: var(--font-display);
-	font-size: var(--fs-display-s); letter-spacing: .35em; text-transform: uppercase;
+	font-size: var(--fs-display-s); letter-spacing: var(--track-wide); text-transform: uppercase;
 	color: var(--dim);
 	pointer-events: none;
 }
@@ -362,9 +370,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	position: fixed; inset: 0;
 	display: grid; place-items: center;
 	background: var(--scrim);
-	/* Above the operator terminal (z-index 11) as well as the flight HUD, so the
+	/* Above the operator terminal (--z-screen) as well as the flight HUD, so the
 	   Tab panel opens on top whether it is called from the terminal or in flight. */
-	z-index: 20;
+	z-index: var(--z-panel);
 }
 .panel {
 	pointer-events: auto;
@@ -378,7 +386,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	   un portable 1366×768 il était rogné en haut et en bas, sans recours. */
 	max-height: 92vh;
 	overflow-y: auto;
-	padding: var(--space-5) 30px;
+	padding: var(--space-5);
 	/* D14: the panel takes the terminal's ground. The same black as the Home
 	   and as signal loss — Settings is no longer a dialog box laid over the
 	   game, it is a screen of the machine. The rule lifts it off the scrim. */
@@ -401,7 +409,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 		linear-gradient(transparent, var(--rule-strong));
 	background-position: 0 0, 0 100%, 0 0, 0 100%;
 	background-repeat: no-repeat;
-	background-size: 100% 34px, 100% 34px, 100% 10px, 100% 10px;
+	background-size: 100% var(--space-5), 100% var(--space-5), 100% var(--space-2), 100% var(--space-2);
 	background-attachment: local, local, scroll, scroll;
 	border: var(--rule-w) solid var(--rule);
 	display: flex; flex-direction: column; gap: var(--space-3);
@@ -459,7 +467,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
    reaches it, whatever the row has to say, and the button that changes it. The
    columns are fixed so the keys line up in a column — that is what makes the
    table readable at a glance rather than row by row. */
-.key-rows { display: flex; flex-direction: column; gap: 2px; }
+.key-rows { display: flex; flex-direction: column; gap: var(--space-0); }
 .key-row {
 	display: grid; grid-template-columns: 1fr 6em auto min-content;
 	align-items: center; gap: var(--space-2);
@@ -472,8 +480,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	margin: 0; width: auto; padding: 2px var(--space-2);
 	font-size: var(--fs-micro); white-space: nowrap;
 }
-#pad-name { margin: 0 0 1em; font-size: 12px; color: var(--dim); word-break: break-all; }
-#pad-map { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+#pad-name { margin: 0 0 1em; font-size: var(--fs-data); color: var(--dim); word-break: break-all; }
+#pad-map { width: 100%; border-collapse: collapse; font-size: var(--fs-data); font-variant-numeric: tabular-nums; }
 #pad-map td { padding: var(--space-1) 6px var(--space-1) 0; }
 #pad-map select, .panel select {
 	background: var(--dark-grey); color: var(--ink);
@@ -481,12 +489,12 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	padding: 2px var(--space-1); font: inherit;
 }
 .panel select { flex: 1; }
-.panel select:disabled { opacity: .3; }
+.panel select:disabled { opacity: var(--op-disabled); }
 .axisbar { position: relative; height: 4px; background: var(--rule); width: 100%; min-width: 90px; }
 .axisbar i { position: absolute; top: -3px; width: 2px; height: 10px; background: var(--warm-white); }
-.panel label { display: flex; align-items: center; gap: .7em; margin: .5em 0; font-size: 12px; }
+.panel label { display: flex; align-items: center; gap: .7em; margin: .5em 0; font-size: var(--fs-data); }
 .panel input[type=range] { flex: 1; accent-color: var(--warm-white); }
-.panel input[type=range]:disabled { opacity: .3; }
+.panel input[type=range]:disabled { opacity: var(--op-disabled); }
 .panel label.check { justify-content: flex-start; }
 .panel label.check input { accent-color: var(--warm-white); width: 14px; height: 14px; }
 .panel button {
@@ -497,18 +505,21 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase;
 	cursor: pointer;
 }
-.panel button:hover { border-color: var(--warm-white); }
+/* Un bouton de panneau s'inverse au survol, comme le MÊME bouton s'inverse
+   partout ailleurs (terminal, scanner, bootstrap) : `terminal-cta` ne peut pas
+   changer de comportement selon son ancêtre. */
+.panel button:hover:not(:disabled) { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
 .panel .presets { display: flex; gap: .5em; margin: .5em 0; }
-.panel .presets button { margin-top: 0; padding: 5px; font-size: var(--fs-micro); }
+.panel .presets button { margin-top: 0; padding: var(--space-1); font-size: var(--fs-micro); }
 /* L'état actif s'écrit en vidéo inverse, jamais en couleur (Bible §38). */
 .panel .presets button.on { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
-.panel .presets button:disabled { opacity: .3; cursor: default; }
+.panel .presets button:disabled { opacity: var(--op-disabled); cursor: default; }
 /* Bloc en lecture seule : la fiche caméra de la cible et l'aide clavier. */
-.panel .spec { font-size: 12px; color: var(--dim); line-height: 1.7; margin-bottom: 10px; }
+.panel .spec { font-size: var(--fs-data); color: var(--dim); line-height: 1.7; margin-bottom: var(--space-2); }
 .panel .spec b { color: var(--ink); font-weight: 400; }
 /* Inline with its slider rather than on its own line, unlike every other
    button in the panel. */
-#wind-dir-rand { margin-top: 0; width: auto; padding: 1px 7px; }
+#wind-dir-rand { margin-top: 0; width: auto; padding: var(--space-0) var(--space-2); }
 
 #loading-detail, #loading-clock {
 	margin: .9em 0 0;
@@ -535,11 +546,11 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	   crash au rapport puis à la Home, un seul noir continu, sans saut de
 	   teinte. Les panneaux posés dessus (Settings, carte) gardent leur gris. */
 	background: var(--black);
-	z-index: 11;
+	z-index: var(--z-screen);
 }
 .bootstrap-box {
 	width: min(840px, 88vw);
-	display: flex; flex-direction: column; gap: 18px;
+	display: flex; flex-direction: column; gap: var(--space-4);
 }
 /* Les <pre> sont la machine qui parle : niveau DISPLAY, sur la grille 11 px de
    Departure Mono pour rester nets. Tout ce que l'opérateur manipule autour —
@@ -553,22 +564,22 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	color: var(--ink);
 }
 .bootstrap-box pre.bootstrap-vec { font-size: var(--fs-display-m); }
-.bootstrap-row { display: flex; align-items: center; gap: 12px; font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui); }
+.bootstrap-row { display: flex; align-items: center; gap: var(--space-3); font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui); }
 /* Un échec est une information : il se dit en rouge, pas en accent. Avant la
    PHASE 19 cette ligne était cyan — la couleur demo servait de couleur d'erreur. */
 .bootstrap-err { color: var(--red); min-height: 1.4em; font-family: var(--font-ui); font-size: var(--fs-ui); letter-spacing: var(--track-ui); }
 .bootstrap input, .bootstrap textarea {
 	background: var(--dark-grey); color: var(--ink);
 	border: var(--rule-w) solid var(--rule-strong);
-	padding: 15px 18px;
+	padding: var(--space-3) var(--space-4);
 	font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-ui-l);
-	letter-spacing: .1em;
+	letter-spacing: var(--track-ui-tight);
 }
 .bootstrap input:focus, .bootstrap textarea:focus { outline: none; border-color: var(--warm-white); }
 .bootstrap textarea { resize: vertical; min-height: 4.5em; }
 .bootstrap-btn, .bootstrap button {
 	align-self: flex-start;
-	padding: 15px 21px;
+	padding: var(--space-3) var(--space-4);
 	background: transparent; color: var(--ink);
 	border: var(--rule-w) solid var(--rule-strong);
 	font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-ui);
@@ -578,17 +589,26 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 .bootstrap-btn:hover, .bootstrap button:hover:not(:disabled) {
 	background: var(--warm-white); color: var(--black); border-color: var(--warm-white);
 }
-.bootstrap button:disabled { opacity: .4; cursor: default; }
+.bootstrap button:disabled { opacity: var(--op-disabled); cursor: default; }
 /* Le contrôle encadré du terminal (voir commentaire plus bas) : un filet
    d'ink plutôt que le gris de repos des autres CTA, pour rester le seul
    bouton qui accroche l'œil sans sortir de la palette. */
 .terminal-scanner-cta { border-color: var(--ink); }
+/* Un OUTIL — DRAW BOX, DRAW SHAPE — arme un mode, il ne décide de rien : pas de
+   crochets, et le format compact du rail du scanner (.sc-btn), auquel il est
+   rigoureusement identique. Les deux mêmes boutons existaient sous deux
+   apparences selon l'écran qui les portait. */
+.bootstrap button.terminal-tool {
+	padding: var(--space-2) var(--space-3);
+	border-color: var(--rule-strong);
+	font-size: var(--fs-ui);
+}
 
 /* ---------- operator terminal (PHASE 02) ---------- */
 /* The Home is calm: no cards, no big metrics, no rounded corners. Navigation is
    inline text; the one framed control is [ GLOBAL SCANNER ]. */
 
-.terminal-box { gap: 24px; }
+.terminal-box { gap: var(--space-4); }
 .terminal-nav {
 	line-height: 1.9;
 	font-family: var(--font-ui); font-weight: 500;
@@ -605,6 +625,10 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 /* Survol : la ligne s'allume, elle ne change pas de teinte. */
 .terminal-nav button.terminal-link:hover { background: var(--warm-white); color: var(--black); }
+/* Le filtre ACTIF d'une liste (journal de session, jukebox) : vidéo inverse,
+   comme tout état actif du jeu. Il s'écrivait entre crochets, forme déjà prise
+   par les touches clavier de keyHints(). */
+.terminal-nav button.terminal-link[data-on="true"] { background: var(--warm-white); color: var(--black); }
 /* Le pied de page compte des sessions et des octets : c'est de la donnée, pas
    la machine qui parle — il redescend donc du niveau DISPLAY hérité des <pre>
    vers le niveau DATA. */
@@ -687,7 +711,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 /* La recherche, au-dessus des onglets : commune aux deux (#222). Ses règles
    d'input sont celles du rail, pour que le champ AREA NAME et la recherche se
    reconnaissent. */
-.terminal-search { display: flex; flex-direction: column; gap: 11px; }
+.terminal-search { display: flex; flex-direction: column; gap: var(--space-2); }
 .terminal-search:empty { display: none; }
 /* Les onglets LOCAL · LIVE (#222) : deux mots sur un filet, l'actif en vidéo
    inverse — le même signe d'état que les commutateurs du scanner. */
@@ -712,9 +736,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 .bootstrap button.terminal-tab[data-off="true"][data-on="true"] { color: var(--black); }
 /* V3: the briefing sits ABOVE the terminal screen. On the REPLAY path the root
    menu is re-mounted behind it the moment the panel closes, and at equal
-   z-index (11) the later screen wins — the briefing text was in the DOM and
-   invisible. Settings stays at 20, above both. */
-.bootstrap.briefing { z-index: 12; }
+   z-index (--z-screen) the later screen wins — the briefing text was in the DOM
+   and invisible. Settings stays above both. */
+.bootstrap.briefing { z-index: var(--z-screen-over); }
 .terminal-right { position: relative; min-width: 0; }
 .terminal-map { position: absolute; inset: 0; }
 /* Sous 1100px on empile. Le rail remplace toujours le bloc de texte, jamais la
@@ -754,7 +778,11 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 /* La zone que la carte cadre et que [ FLY ] volera. Un filet à gauche plutôt
    qu'un aplat : le blanc plein est réservé au curseur. */
 .terminal-areas-compact button.terminal-area[data-selected] {
-	box-shadow: inset 2px 0 0 0 var(--ink);
+	/* Un filet, tracé comme tous les filets du jeu (--rule-w), et pas une ombre
+	   portée qui doublait l'épaisseur de la maison. Le padding gauche du bouton
+	   absorbe la bordure : la colonne ne bouge pas d'un pixel. */
+	border-left: var(--rule-w) solid var(--ink);
+	padding-left: calc(1.2em - var(--rule-w));
 }
 /* Sur l'écran complet, la météo est en DISPLAY à dessein : c'est la ligne qu'on
    vient y lire (#76). Sur la Home elle redescend au niveau UI — la couleur
@@ -784,16 +812,19 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 }
 button.terminal-area {
 	box-sizing: border-box;
-	display: flex; align-items: baseline; gap: 20px; width: 100%;
+	display: flex; align-items: baseline; gap: var(--space-4); width: 100%;
 	font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui);
 	border: 0; background: none; text-align: left; cursor: pointer; color: var(--ink);
-	padding: 1px 0 1px 1.2em;
+	padding: var(--space-0) 0 var(--space-0) 1.2em;
 }
-button.terminal-area:hover, button.terminal-area:focus {
+/* Le survol inverse ; le focus, lui, est le marqueur ▌ et rien d'autre — c'est
+   la règle de #123, et cette rangée était le seul endroit à le dire deux fois,
+   donc le seul où clavier et souris ne se voyaient pas pareil. */
+button.terminal-area:hover {
 	background: var(--warm-white); color: var(--black);
 }
-button.terminal-area:hover .terminal-area-size, button.terminal-area:focus .terminal-area-size,
-button.terminal-area:hover .terminal-area-weather, button.terminal-area:focus .terminal-area-weather {
+button.terminal-area:hover .terminal-area-size,
+button.terminal-area:hover .terminal-area-weather {
 	color: inherit;
 }
 button.terminal-area:focus::before { left: 0; }
@@ -825,7 +856,7 @@ button.terminal-area:focus::before { left: 0; }
 }
 /* Rangée d'actions (OPEN · FORECAST · REMOVE) : masquée tant que la carte de
    la rangée au-dessus n'est pas activée (Entrée/clic) — Échap la referme. */
-.terminal-area-actions { padding-left: 1.2em; margin: 2px 0 0; display: flex; align-items: center; gap: var(--space-2); }
+.terminal-area-actions { padding-left: 1.2em; margin: var(--space-0) 0 0; display: flex; align-items: center; gap: var(--space-2); }
 .terminal-area-actions[hidden] { display: none; }
 .terminal-area-size { white-space: pre; color: var(--light-grey); font-family: var(--font-data); font-size: var(--fs-data); letter-spacing: var(--track-data); font-variant-numeric: tabular-nums; }
 /* Le temps qu'il fait sur la zone. Retour utilisateur du 2026-08-29 : « au
@@ -844,7 +875,7 @@ button.terminal-area:focus::before { left: 0; }
 	flex: 0 1 auto; min-width: 0;
 	font-family: var(--font-ascii);
 	font-size: var(--fs-display-s);
-	letter-spacing: .06em;
+	letter-spacing: var(--track-ui-tight);
 	color: var(--ink);
 	border-left: var(--rule-w) solid var(--rule-strong);
 	padding-left: var(--space-3);
@@ -887,7 +918,7 @@ button.terminal-row,
 	white-space: pre; overflow-x: auto;
 }
 button.terminal-row {
-	padding: 1px 0 1px 1.2em; border: 0; background: none;
+	padding: var(--space-0) 0 var(--space-0) 1.2em; border: 0; background: none;
 	text-align: left; cursor: pointer;
 }
 button.terminal-row:hover { background: var(--warm-white); color: var(--black); }
@@ -974,7 +1005,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    conteneur qu'on lui donne, donc c'est le MÊME élément que `.map-mono`. */
 .map-mono.leaflet-container .leaflet-control-attribution {
 	background: var(--scrim); color: var(--faint);
-	font-family: var(--font-data); font-size: 10px; letter-spacing: var(--track-data);
+	font-family: var(--font-data); font-size: var(--fs-micro); letter-spacing: var(--track-data);
 	border-radius: 0;
 	padding: 1px var(--space-2);
 }
@@ -995,22 +1026,11 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .map-mono .marker-icon {
 	border-radius: 0 !important; background: var(--dark-grey);
 	border: var(--rule-w) solid var(--warm-white);
-	width: 8px; height: 8px; margin: -4px 0 0 -4px;
+	width: 8px; height: 8px; margin: -4px 0 0 -4px; /* scale-ok: la marge CENTRE la poignée sur son point, elle vaut sa moitié */
 }
-/* Une tuile qui ne vient pas n'est pas une panne : la zone est jouable hors
-   ligne par définition. On le dit une fois, en encre éteinte, et le cadre de la
-   zone reste dessiné sur le fond nu. */
-.map-offline {
-	position: absolute; inset: auto 0 50% 0; margin: 0; text-align: center;
-	z-index: 400; pointer-events: none;
-	color: var(--faint);
-	font-family: var(--font-data); font-size: var(--fs-data);
-	letter-spacing: var(--track-data);
-}
-
 .sc-pin {
 	color: var(--ink); font-family: var(--font-ui); font-weight: 500;
-	font-size: var(--fs-data); letter-spacing: .1em;
+	font-size: var(--fs-data); letter-spacing: var(--track-ui-tight);
 	white-space: nowrap; text-shadow: var(--shadow);
 }
 
@@ -1018,7 +1038,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	border-left: var(--rule-w) solid var(--rule-strong);
 	padding: var(--space-5) var(--space-5) 18px;
 	overflow-y: auto;
-	display: flex; flex-direction: column; gap: 20px;
+	display: flex; flex-direction: column; gap: var(--space-4);
 	font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui);
 }
 /* Le titre de l'écran, seul élément DISPLAY du panneau. */
@@ -1028,23 +1048,23 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	font-size: var(--fs-display-s); letter-spacing: var(--track-display);
 	text-transform: uppercase;
 }
-.sc-block { display: flex; flex-direction: column; gap: 11px; }
+.sc-block { display: flex; flex-direction: column; gap: var(--space-2); }
 .sc-h { margin: 0; font-size: var(--fs-ui); letter-spacing: var(--track-ui); color: var(--light-grey); text-transform: uppercase; }
 .sc-hint { margin: 0; font-family: var(--font-data); font-size: var(--fs-data); letter-spacing: var(--track-data); color: var(--faint); }
-.sc-row { display: flex; gap: 11px; align-items: stretch; }
+.sc-row { display: flex; gap: var(--space-2); align-items: stretch; }
 
 .scanner-panel input, .scanner-search input {
 	flex: 1; min-width: 0;
 	background: var(--dark-grey); color: var(--ink);
 	border: var(--rule-w) solid var(--rule-strong);
-	padding: 10px 13px; font: inherit; letter-spacing: .12em;
+	padding: var(--space-2) var(--space-3); font: inherit; letter-spacing: var(--track-ui-tight);
 }
 .scanner-panel input:focus, .scanner-search input:focus { outline: none; border-color: var(--warm-white); }
 .scanner-search { font-family: var(--font-ui); font-size: var(--fs-ui-l); letter-spacing: var(--track-ui); }
 
 .sc-btn, .sc-cta {
 	align-self: flex-start;
-	padding: 10px 15px;
+	padding: var(--space-2) var(--space-3);
 	background: transparent; color: var(--ink);
 	border: var(--rule-w) solid var(--rule-strong);
 	font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-ui);
@@ -1052,23 +1072,26 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 }
 .sc-cta { border: 0; padding: var(--space-2) 0; }
 .sc-btn:hover:not(:disabled), .sc-cta:hover:not(:disabled) { background: var(--warm-white); color: var(--black); border-color: var(--warm-white); }
-.sc-btn:disabled, .sc-cta:disabled { opacity: .35; cursor: default; }
+.sc-btn:disabled, .sc-cta:disabled { opacity: var(--op-disabled); cursor: default; }
 /* La liste des périphériques que le navigateur énumère (issue #162). Une
    ligne par manette : identifiant, classe déduite, axes, boutons. Le
    périphérique actif porte le même marqueur ▌ que le curseur des menus, pour
    qu'« actif » se lise partout de la même façon. */
-#pad-list { display: flex; flex-direction: column; gap: 2px; margin: var(--space-1) 0; }
+#pad-list { display: flex; flex-direction: column; gap: var(--space-0); margin: var(--space-1) 0; }
 #pad-list button.pad-entry {
 	border: 0; background: none; text-align: left; cursor: pointer;
-	color: var(--light-grey); padding: 1px 0;
+	color: var(--light-grey); padding: var(--space-0) 0;
 	font-family: var(--font-data); font-size: var(--fs-data); letter-spacing: var(--track-data);
 	/* Ces lignes se REPLIENT au lieu de se tronquer : les identifiants sont
 	   longs, et les chiffres du diagnostic (classe, axes, boutons) sont en fin
 	   de ligne — une ellipse mangeait exactement ce qu'on vient y lire. */
 	white-space: normal; overflow-wrap: anywhere;
 }
-#pad-list button.pad-entry:hover, #pad-list button.pad-entry:focus { color: var(--ink); }
-#pad-list button.pad-entry[data-active] { color: var(--ink); }
+#pad-list button.pad-entry:hover { color: var(--ink); }
+/* Le périphérique ACTIF s'écrit en vidéo inverse, comme tout état actif du jeu.
+   Il portait la même encre pleine que le survol : la souris passant dessus, on
+   ne pouvait plus dire lequel des deux était branché. */
+#pad-list button.pad-entry[data-active] { background: var(--warm-white); color: var(--black); }
 
 /* Assistant de calibrage (issue #277). Pendant la mesure, la consigne est la
    SEULE chose que le pilote doit lire : la liste des périphériques et le
@@ -1130,12 +1153,12 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    pas deux étapes. Chacun porte sous lui ce qu'il coûte, en encre éteinte, pour
    qu'on n'ait pas à savoir ce que « live » veut dire avant de choisir. */
 .sc-verbs { gap: var(--space-3); }
-.sc-verb { display: flex; flex-direction: column; gap: 2px; }
+.sc-verb { display: flex; flex-direction: column; gap: var(--space-0); }
 .sc-verb .sc-hint { padding-left: 0; }
 
 .sc-results { display: flex; flex-direction: column; }
 .sc-result {
-	text-align: left; padding: 7px 0;
+	text-align: left; padding: var(--space-2) 0;
 	background: none; border: 0; border-bottom: var(--rule-w) solid var(--rule);
 	color: var(--dim); font: inherit; font-size: var(--fs-ui); cursor: pointer;
 }
@@ -1147,7 +1170,6 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .sc-readout dt { color: var(--light-grey); font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase; }
 .sc-readout dd { margin: 0; font-variant-numeric: tabular-nums; }
 
-.sc-density { margin: 0; font-family: var(--font-data); font-size: var(--fs-ui); letter-spacing: var(--track-data); font-variant-numeric: tabular-nums; }
 .sc-verdict { margin: 0; letter-spacing: var(--track-ui); text-transform: uppercase; }
 /* Un verdict de couverture est exactement le cas que la Bible §38 autorise :
    la couleur EST l'information. */
@@ -1194,16 +1216,16 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .sc-pin-place { margin: 0; letter-spacing: var(--track-ui); text-transform: uppercase; }
 
 .sc-bar { height: 3px; background: var(--rule); overflow: hidden; }
-.sc-bar i { display: block; height: 100%; width: 0; background: var(--warm-white); transition: width .3s linear; }
+.sc-bar i { display: block; height: 100%; width: 0; background: var(--warm-white); transition: width var(--dur-2) linear; }
 /* Pendant la conversion le pipeline ne rend aucun compteur : la barre le dit
    plutôt que d'inventer une progression. */
-.sc-bar[data-indeterminate="1"] i { width: 100% !important; animation: sc-sweep 1.6s linear infinite; transform-origin: left; }
+.sc-bar[data-indeterminate="1"] i { width: 100% !important; animation: sc-sweep var(--dur-sweep) linear infinite; transform-origin: left; }
 @keyframes sc-sweep { 0% { transform: scaleX(0); } 50% { transform: scaleX(1); } 100% { transform: scaleX(0); } }
 
 /* TERRAIN/FETCH/DECODE/REBUILD, puis RF ANALYSIS/TARGET SEARCH (PHASE 05,
    Bible §8) : une rangée = un libellé fixe + la même `.sc-bar` qu'ailleurs. */
 .sc-bars { display: flex; flex-direction: column; gap: var(--space-2); }
-.sc-bar-row { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 11px; }
+.sc-bar-row { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: var(--space-2); }
 .sc-bar-label { font-family: var(--font-ui); font-weight: 500; font-size: var(--fs-data); letter-spacing: var(--track-ui); text-transform: uppercase; color: var(--light-grey); }
 
 .sc-log-block { flex: 1; min-height: 120px; }
@@ -1279,13 +1301,13 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    écran est portée par sa durée de vie (`notify()` rend un `stop()`, et le flux
    s'arrête si le calque quitte le document), pas par sa place dans le DOM.
 
-   z-index 12 : juste au-dessus de `.bootstrap` (11), qui est l'écran terminal.
+   --z-screen-over : juste au-dessus de l'écran terminal.
 
    `pointer-events: none` : le crew est décoratif (Bible §10), il ne doit jamais
    intercepter un clic destiné au formulaire en dessous. */
 .rtc-toasts {
 	position: fixed; right: var(--space-5); bottom: var(--space-5);
-	z-index: 12; pointer-events: none;
+	z-index: var(--z-screen-over); pointer-events: none;
 	display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-2);
 	max-width: min(320px, 60vw);
 }
@@ -1294,11 +1316,12 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	background: var(--black);
 	padding: var(--space-2) var(--space-3);
 	max-width: 100%;
-	animation: rtc-toast-in .28s ease both;
+	animation: rtc-toast-in var(--dur-2) steps(2, end) both;
 }
 /* Sortie pilotée par un attribut et non par un retrait sec : le nœud reste
-   400 ms de plus pour que le fondu ait lieu (voir notify() dans dialogue.js). */
-.rtc-toast[data-out="1"] { animation: rtc-toast-out .4s ease both; }
+   --dur-3 de plus pour que la sortie ait lieu — dialogue.js lit la même
+   durée dans la feuille plutôt que d'en garder une copie. */
+.rtc-toast[data-out="1"] { animation: rtc-toast-out var(--dur-3) steps(2, end) both; }
 .rtc-toast-who {
 	margin: 0; color: var(--light-grey);
 	font-family: var(--font-ui); font-size: var(--fs-ui);
@@ -1309,16 +1332,15 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	font-family: var(--font-data); font-size: var(--fs-data);
 	white-space: pre-wrap; overflow-wrap: anywhere;
 }
-@keyframes rtc-toast-in  { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes rtc-toast-in  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rtc-toast-out { from { opacity: 1; } to { opacity: 0; } }
 /* Le mouvement est du confort, pas de l'information : qui n'en veut pas garde
-   l'apparition et la disparition, sans le glissement ni la durée. */
+   l'apparition et la disparition, sans la durée. */
 @media (prefers-reduced-motion: reduce) {
 	.rtc-toast, .rtc-toast[data-out="1"] { animation-duration: .01ms; }
 }
 
 @media (max-width: 900px) {
-	.scanner { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
 	.scanner-panel { border-left: 0; border-top: var(--rule-w) solid var(--rule-strong); }
 }
 
@@ -1380,7 +1402,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .hack .hack-cta {
 	align-self: center;
 	margin: var(--space-4) 0 var(--space-2);
-	padding: 22px 56px;
+	padding: var(--space-4) calc(var(--space-5) + var(--space-4));
 	border-color: var(--ink);
 	font-family: var(--font-display);
 	font-size: var(--fs-display-l);
@@ -1394,7 +1416,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	   à partir de là qu'il respire. */
 	animation:
 		reveal-in var(--dur-2) steps(2, end) both,
-		hack-cta-wait 1.4s steps(1, end) infinite;
+		hack-cta-wait var(--dur-blink) steps(1, end) infinite;
 }
 /* Sous la souris, sous le focus : l'invite a été entendue, elle se tait. Sans
    ça l'animation reprend la main sur l'inversion de :hover un temps sur deux. */
@@ -1427,7 +1449,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    one more screen in the same box (user feedback PR #80). */
 .culmination {
 	position: fixed; inset: 0;
-	z-index: 12; /* above .bootstrap/.hack (11) */
+	z-index: var(--z-screen-over); /* au-dessus de .bootstrap/.hack */
 	display: flex; align-items: center; justify-content: center;
 	background: var(--black);
 	overflow: hidden;
@@ -1483,11 +1505,11 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    figé. Le cracktro qui suit est, avec la culmination du hack (#101), le seul
    endroit du jeu où la palette cyan/magenta/violet/bleu électrique apparaît
    (Bible §19) — réservée aux moments spectaculaires, jamais en continu
-   (DA §46). z-index
-   au-dessus de tout : c'est le tout premier écran du jeu. */
+   (DA §46). --z-intro, au-dessus de tout : c'est le tout premier écran du jeu,
+   et il passait à égalité avec SETTINGS — l'ordre du DOM tranchait. */
 .intro {
 	position: fixed; inset: 0;
-	z-index: 20;
+	z-index: var(--z-intro);
 	display: flex; flex-direction: column; align-items: center; justify-content: center;
 	background: var(--black);
 	overflow: hidden;
@@ -1500,11 +1522,13 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .intro-gate {
 	margin: 0;
 	font-family: var(--font-ui); font-weight: 500;
-	font-size: clamp(16px, 2.6vw, 26px);
+	/* Dans l'échelle UI, pas dans un clamp qui n'appartient à aucune des deux :
+	   c'est une ligne d'interface, pas un moment DISPLAY. */
+	font-size: var(--fs-ui-l);
 	letter-spacing: var(--track-ui);
 	text-transform: uppercase;
 	color: var(--ink);
-	animation: intro-gate-blink 1.6s step-end infinite;
+	animation: intro-gate-blink var(--dur-blink) step-end infinite;
 }
 @keyframes intro-gate-blink {
 	0%, 100% { opacity: .85; }
@@ -1524,26 +1548,19 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    cyan et le magenta de la phase plasma vivent sur .intro-burst, qui n'est pas
    un ancêtre de ceci — et si un jour ils remontaient, cette ligne les
    arrêterait. */
-.intro-lockup {
+.lockup {
 	--mark-size: clamp(120px, 26vw, 320px);
-	position: relative; z-index: 2;
 	display: flex; flex-direction: column; align-items: center;
 	gap: calc(var(--mark-size) / 16);
 	padding: calc(var(--mark-size) / 4);
 	color: var(--ink);
-	/* La zone de respect est OPAQUE. « Rien n'y entre, pas même la règle d'un
-	   panneau » (brand.md) : sans ce fond, les chiffres de la plasma passent
-	   derrière la marque et jusque contre ses modules — vérifié à l'écran, et
-	   c'est exactement ce que la règle interdit. La marque perce donc la demo
-	   plutôt que d'y flotter. */
-	background: var(--black);
 }
 
 /* Le symbole. `fill: currentColor` plutôt qu'une couleur littérale : le SVG
    source n'en introduit aucune, et cette copie non plus (tools/brand-mark-model.mjs).
    `crispEdges` parce que ce sont des modules sur une grille — un bord flou
    serait un bord faux. */
-.intro-mark {
+.lockup-mark {
 	display: block;
 	width: var(--mark-size); height: var(--mark-size);
 	fill: currentColor;
@@ -1554,20 +1571,32 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    docs/brand.md impose au verrouillage empilé, et il l'emporte sur la display
    que le cracktro écrivait avant — la marque n'a qu'une composition, elle ne
    change pas d'écran en écran. */
-.intro-logo {
+.lockup-name {
 	font-family: var(--font-ui); font-weight: 500;
 	font-size: calc(var(--mark-size) * .22);
 	letter-spacing: var(--track-ui);
 	line-height: 1;
 	text-transform: uppercase;
-	opacity: 0;
-	transition: opacity .4s ease;
 }
-.intro-logo.intro-logo-in { opacity: 1; }
 /* Une span par colonne : c'est elle que le sinus-scroll (src/intro.js) déplace
    verticalement, colonne par colonne, pour le déchirement classique du
    "dot scroller" demoscene. */
-.intro-logo span { display: inline-block; will-change: transform; }
+.lockup-name span { display: inline-block; will-change: transform; }
+
+/* Ce que le cracktro ajoute au verrouillage, et lui seul : il se tient
+   au-dessus de la plasma, et sa zone de respect est OPAQUE. « Rien n'y entre,
+   pas même la règle d'un panneau » (docs/brand.md) : sans ce fond, les chiffres
+   de la plasma passent derrière la marque et jusque contre ses modules —
+   vérifié à l'écran, et c'est exactement ce que la règle interdit. La marque
+   perce donc la demo plutôt que d'y flotter. */
+.intro-lockup {
+	position: relative; z-index: 2;
+	background: var(--black);
+}
+/* Le nom n'arrive qu'une fois la marque entière : ici seulement il est d'abord
+   absent. Partout ailleurs le verrouillage est posé d'un bloc. */
+.intro-lockup .lockup-name { opacity: 0; transition: opacity var(--dur-3) linear; }
+.intro-lockup .lockup-name.intro-logo-in { opacity: 1; }
 
 /* Grille ASCII des primitives de culmination (hack-grammars.js), réemployées
    telles quelles pour le plasma/raster de la phase plasma — même idiome que
@@ -1590,7 +1619,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    renderLogo()) reste seul, en phase avec BOOT_SIGNATURE. */
 .intro-resolution .intro-burst {
 	opacity: 0;
-	transition: opacity .3s ease;
+	transition: opacity var(--dur-3) linear;
 }
 
 /* ---------- BENCH (PHASE 26) ---------- */
@@ -1750,7 +1779,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .bench-slider::-moz-range-track { height: var(--rule-w); background: var(--rule-strong); }
 .bench-slider::-webkit-slider-thumb {
 	appearance: none; -webkit-appearance: none;
-	width: 5px; height: 13px; margin-top: -6px;
+	width: 5px; height: 13px; margin-top: -6px; /* scale-ok: la marge centre le pouce sur sa piste, elle vaut sa moitié */
 	background: var(--ink); border: 0; border-radius: 0;
 }
 .bench-slider::-moz-range-thumb {
