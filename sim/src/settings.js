@@ -581,12 +581,12 @@ export class Settings {
 		emit();
 	}
 
-	// Curseur de distance d'affichage du mode ?live= (#182). La ligne reste
+	// The view-distance slider of ?live= mode (#182). The row stays
 	// hidden outside live mode (the window radius does not exist for a pre-baked
 	// scene): it is THIS call, made by bootLive(), that reveals it.
-	// L'affichage suit le doigt (oninput) mais le callback ne part qu'au
-	// release (onchange): every notch triggers traverse() + a wave of
-	// fetchs vers kh.google.com — pas pendant un glissement.
+	// The readout follows the finger (oninput) but the callback only fires on
+	// release (onchange): every notch triggers traverse() + a wave of fetches to
+	// kh.google.com — not during a drag.
 	setViewRange(meters, onChange) {
 		this.el.viewRangeRow.hidden = false;
 		const show = () => { this.el.viewRangeVal.textContent = this.el.viewRange.value; };
@@ -620,7 +620,7 @@ export class Settings {
 		if (show) {
 			this.selectTab(activeTab);
 			this.buildAxisRows();
-			// Navigation clavier + manette (issue #123) : ↑/↓ circule entre les
+			// Keyboard + gamepad navigation (issue #123): ↑/↓ moves between the
 			// rows, ←/→ adjusts the focused control (menu-nav.js knows which ones
 			// are adjustable), Escape / B closes. Attached on open only: in
 			// flight, with the panel closed, the arrows stay flight commands.
@@ -631,8 +631,7 @@ export class Settings {
 		} else {
 			this._nav?.detach();
 			this._nav = null;
-			// Panel closed: the machine's loop stops with it, like
-			// celle de l'assistant.
+			// Panel closed: the machine's loop stops with it, like the wizard's.
 			this.unmountCalDrone();
 			// A caller that WAITS on the close (the root menu, D6) gets the hand
 			// back here. Cleared before the call: the panel promises one close.
@@ -661,28 +660,28 @@ export class Settings {
 	// recognised", it can mean "not touched yet" — and the text says so, rather
 	// than leaving people to conclude.
 	// ---------------------------------------------------------------------------
-	// ASSISTANT DE CALIBRAGE (issue #277)
+	// CALIBRATION WIZARD (issue #277)
 	//
-	// The panel decides nothing: src/calibration.js holds the state machine
-	// et dit quelle consigne afficher. Ici on lui donne une trame et un dt, et on
-	// peint ce qu'elle rend.
+	// The panel decides nothing: src/calibration.js holds the state machine and
+	// says which instruction to show. Here it is handed a frame and a dt, and
+	// what it returns is painted.
 	// ---------------------------------------------------------------------------
 
 	startCalibration() {
 		const pad = this.input.getGamepad();
 		if (!pad) return;
 		this._calPadId = pad.id;
-		// Axes ET boutons : sur une radio que le navigateur mappe en
-		// "standard", throttle comes out on a trigger (#279).
+		// Axes AND buttons: on a radio the browser maps as "standard", throttle
+		// comes out on a trigger (#279).
 		this._cal = beginCalibration(padSignals(pad).length, pad.axes.length);
 		this._calLast = performance.now();
 		this.el.calSummary.hidden = true;
 		this.renderCalibration(pad);
 
-		// L'assistant tourne sur SA PROPRE boucle, pas sur celle du vol :
-		// renderer.setAnimationLoop(frame) only starts at take-off, and the
-		// panneau Tab s'ouvre aussi depuis le terminal, avant boot(). Sans
-		// this loop the wizard would sit frozen on its first instruction — that
+		// The wizard runs on ITS OWN loop, not on the flight's:
+		// renderer.setAnimationLoop(frame) only starts at take-off, and the Tab
+		// panel also opens from the terminal, before boot(). Without this loop
+		// the wizard would sit frozen on its first instruction — that
 		// is, broken, in exactly the place a pilot for whom "it does not work"
 		// goes looking for it.
 		const tick = () => {
@@ -711,14 +710,14 @@ export class Settings {
 	// ---------------------------------------------------------------------------
 	// THE MACHINE THAT ANSWERS THE STICK (issue #281)
 	//
-	// Le calibrage mesurait juste et ne montrait rien : le pilote poussait un
-	// manche et ne voyait qu'une barre. Elle vit tant que le panneau est
+	// The calibration measured correctly and showed nothing: the pilot pushed a
+	// stick and saw only a bar. It lives for as long as the panel is
 	// open and there is something to show — a measurement in progress, or an
 	// already calibrated device, and then it is a test bench.
 	// ---------------------------------------------------------------------------
 
-	// What the machine must reflect on this frame, or null for the pose of
-	// repos. Aucune horloge ici : calibration-drone.js tient la sienne.
+	// What the machine must reflect on this frame, or null for the resting pose.
+	// No clock here: calibration-drone.js holds its own.
 	calDroneSample() {
 		const pad = this.input.getGamepad();
 		if (!pad) return null;
@@ -726,8 +725,8 @@ export class Settings {
 		if (this._cal) return { state: this._cal, signals };
 
 		// Measurement finished: the pose comes from the written calibration, by
-		// the same path
-		// que le vol. `phase: 'done'` est tout ce que calibrationPose() lit.
+		// the same path as the flight. `phase: 'done'` is all calibrationPose()
+		// reads.
 		const cal = this.input.calibration;
 		if (!cal) return null;
 		return { state: { phase: 'done', channels: cal.channels, deadband: cal.deadband }, signals };
@@ -755,8 +754,8 @@ export class Settings {
 		this.el.calDrone.hidden = true;
 	}
 
-	// Une trame de mesure. Le dt vient d'ici et non de main.js : la machine
-	// reasons in real milliseconds, and updateAxisBars() is not given any.
+	// One measurement frame. The dt comes from here and not from main.js: the
+	// machine reasons in real milliseconds, and updateAxisBars() is given none.
 	stepCalibration(pad) {
 		const now = performance.now();
 		// A backgrounded tab returns an enormous dt; clamping it avoids
@@ -778,8 +777,8 @@ export class Settings {
 			}
 			this.el.calSummary.hidden = false;
 			this.stopCalibration();
-			// Le mappage vient de changer sous les lignes d'axes : elles se
-			// are rebuilt, they are not refreshed.
+			// The mapping has just changed under the axis rows: they are rebuilt,
+			// they are not refreshed.
 			this._axisRows = [];
 		}
 		this.renderCalibration(pad);
@@ -816,9 +815,9 @@ export class Settings {
 		this.el.calHint.textContent = this._cal.hint;
 		this.el.calMessage.textContent = this._cal.message ?? '';
 
-		// The bar follows the axis furthest from its neutral: during a
-		// consigne, c'est celui que le pilote est en train de pousser. Tant que
-		// the neutral is not measured, it follows the axis furthest from zero.
+		// The bar follows the axis furthest from its neutral: during an
+		// instruction that is the one the pilot is pushing. For as long as the
+		// neutral is not measured, it follows the axis furthest from zero.
 		const signals = pad ? padSignals(pad) : [];
 		const centers = this._cal.centers;
 		let best = 0;
@@ -834,8 +833,8 @@ export class Settings {
 		const box = this.el.padList;
 		// updateAxisBars() calls buildAxisRows() again every frame for as long as
 		// no row could be built (gamepad not announced yet). Without this
-		// signature, la liste se reconstruirait 60 fois par seconde et un clic
-		// would land on a button that has already been replaced.
+		// signature the list would rebuild sixty times a second and a click would
+		// land on a button that has already been replaced.
 		const sig = `${this.input.gamepadIndex}|${pads.map((g) => `${g.index}:${g.id}:${g.axes}:${g.buttons}`).join('|')}`;
 		if (sig === this._padListSig) return;
 		this._padListSig = sig;
@@ -902,13 +901,13 @@ export class Settings {
 	updateAxisBars() {
 		if (!this.settingsOpen) return;
 
-		// Une mesure en cours a sa propre boucle (startCalibration) et cache les
-		// remap rows: there is nothing to refresh here.
+		// A measurement in progress has its own loop (startCalibration) and hides
+		// the remap rows: there is nothing to refresh here.
 		if (this._cal) return;
 
 		// The gamepad may have announced itself after the panel opened
 		// (e.g. gamepadconnected not yet raised by the browser at the moment
-		// du premier buildAxisRows()) : on retente tant qu'aucune ligne n'a
+		// of the first buildAxisRows()): it is retried for as long as no row has
 		// been built rather than staying stuck on "no controller detected".
 		if (this._axisRows.length === 0) { this.buildAxisRows(); return; }
 		const pad = this.input.getGamepad();

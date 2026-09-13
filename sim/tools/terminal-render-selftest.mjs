@@ -376,6 +376,27 @@ await ta('home: the map SURVIVES a re-render of the left column', async () => {
 	await close(p);
 });
 
+await ta('home: the LIVE tab credits the imagery it is about to stream', async () => {
+	// Google requires the copyright of rendered tiles to be displayed. The OSD
+	// says it in flight; the screen that OFFERS the imagery said nothing, which
+	// is an attribution gap rather than a design one.
+	reset();
+	const p = runTerminal(dom.root, { settings: null, api: api(operator()), back: true });
+	await new Promise((r) => setTimeout(r, 0));
+	// `lastTab` is a page-load memory shared by this whole file, so LIVE is
+	// selected explicitly rather than assumed.
+	dom.root.querySelectorAll('.terminal-tab').find((b) => b.textContent === 'LIVE').click();
+	await new Promise((r) => setTimeout(r, 0));
+	const credit = dom.root.querySelector('.terminal-credit');
+	assert.ok(credit, 'the LIVE tab carries a credit line');
+	assert.match(credit.textContent, /\u00a9 Google/, 'the same literal the flight OSD paints');
+	// And it belongs to LIVE: LOCAL flies terrain already on disk, whose credit
+	// travelled with the acquisition.
+	await openLocal();
+	assert.equal(dom.root.querySelector('.terminal-credit'), null);
+	await close(p);
+});
+
 // --- ALL TERRAIN: the destructive action, and an untrusted area name ---------
 
 // Opens FIELD, switches to LOCAL, walks into ALL TERRAIN… and opens the first

@@ -7,8 +7,8 @@
 
 import { PORTRAIT_LINE, RANDOMART_LINE } from './flight-end.js';
 import { randomart } from '../tools/randomart.mjs';
-// Le portrait de la machine perdue (#264). Du SVG en ligne : la couche locale
-// est du DOM, elle n'ouvre pas de contexte de rendu.
+// The portrait of the lost machine (#264). Inline SVG: the local layer is DOM,
+// it opens no rendering context.
 import { dronePortrait } from './drone-portrait.js';
 import { droneViewer } from './drone-viewer.js';
 import { storedKeyLabel } from './key-map.js';
@@ -22,17 +22,17 @@ const clock = (s) => {
 	return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
 
-// Ce que la ligne de vol du HUD annonce. Sorti en fonction PURE parce que c'est
-// un invariant de fiction, pas de la mise en forme : un vol qui n'ouvre aucune
-// session must not write SESSION — the HUD would be lying about what the flight
+// What the HUD's flight line announces. Pulled out as a PURE function because
+// it is an invariant of the fiction, not of the formatting: a flight that opens
+// no session must not write SESSION — the HUD would be lying about what the flight
 // is doing.
 //
 //   BENCH   — the bench: no session, and no time to count either.
 //   LIVE    — streamed terrain (#218). The flight is a session like any other —
-//             cible, exemplaire, hack, rituel, trace au journal — mais le
+//             target, machine, hack, ritual, entry in the log — but the
 //             terrain is NOT on disk: no fence, and the relief arrives while
 //             you fly. That is what the line signals.
-//   SESSION — un vol de terrain sur une zone acquise.
+//   SESSION — a terrain flight over an acquired area.
 export function flightLabel({ bench = false, live = false, sessionSeconds = 0 } = {}) {
 	if (bench) return 'BENCH';
 	return `${live ? 'LIVE' : 'SESSION'} ${clock(sessionSeconds ?? 0)}`;
@@ -255,7 +255,7 @@ export class FpvtpOsd {
 			: '';
 	}
 
-	// Verdict de fin de session (PHASE 06). kind: 'lost' | null.
+	// End-of-session verdict (PHASE 06). kind: 'lost' | null.
 	setSessionStatus(text, kind = null) {
 		this._status = text ? { text, kind } : null;
 		this._refreshCentre();
@@ -289,14 +289,13 @@ export class FpvtpOsd {
 
 	// Cutting the link (#216). Two things in the same place, and never at the
 	// same time: the REMINDER that it exists, when the machine looks stuck, and
-	// the
-	// JAUGE du maintien en cours. Le rappel est conditionnel ; le geste, lui,
-	// is always available — which is what makes a missed reminder harmless, and
+	// the GAUGE of the hold in progress. The reminder is conditional; the
+	// gesture is always available — which is what makes a missed reminder harmless, and
 	// why nothing here decides anything: flight-end.js has already ruled, we
 	// paint.
 	//
 	// Naming the key on screen is the very subject of the issue: without it the
-	// geste existe et personne ne le trouve.
+	// gesture exists and nobody finds it.
 	// `key` is the key ACTUALLY bound to the cut (#105): it used to be hardcoded
 	// here, which lied to anyone who had remapped it — naming the key on screen
 	// is only worth anything if it is the right one.
@@ -313,15 +312,14 @@ export class FpvtpOsd {
 			this._cutText = text;
 			this.el.cutText.textContent = text;
 		}
-		// La barre ne vit que pendant le maintien : hors maintien, le rappel est
-		// a sentence, not a gauge at zero that would suggest something is already
+		// The bar only lives during the hold: outside it, the reminder is a
+		// sentence, not a gauge at zero that would suggest something is already
 		// happening.
 		this.el.cutBar.hidden = !cutting;
 		this.el.cutBar.style.width = `${Math.round(cutProgress * 100)}%`;
 	}
 
-	// Le retournement (#105). Juste au-dessus du rappel de coupure, et pour la
-	// same reason: a machine on its back has two ways out, and the one that gives
+	// The turtle (#105). Just above the cut reminder, and for the same reason: a machine on its back has two ways out, and the one that gives
 	// the machine back reads before the one that loses it. Like #fo-cut, nothing
 	// is decided here — turtle.js has already ruled, we paint.
 	setTurtle({ eligible = false } = {}, key = 'T') {
@@ -350,7 +348,7 @@ export class FpvtpOsd {
 	// The end-of-flight screen (PHASE 14). It does not announce a defeat: it
 	// shows a link going out. `blackout` is the opacity of the black covering the
 	// last image, `lines` what is written on it, one line at a time.
-	// Repris tel quel de l'ancien hud.js — c'est la couche locale qui porte
+	// Carried over as-is from the old hud.js — it is the local layer that holds
 	// this staging, it does not cross the link.
 	setFlightEnd({ lines, blackout }) {
 		const e = this.el.flightEnd;
@@ -374,10 +372,10 @@ export class FpvtpOsd {
 		if (key !== this._endLines) {
 			this._endLines = key;
 			e.replaceChildren(...lines.map((text) => {
-				// Ni le portrait ni l'empreinte ne sont du texte : ce sont deux
-				// dessins de la machine. Faute d'exemplaire connu, la ligne
-				// retombe sur un blanc — jamais sur son jeton, qui n'est pas
-				// made to be read.
+				// Neither the portrait nor the fingerprint is text: they are two
+				// drawings of the machine. With no known machine, the line falls
+				// back to a blank — never to its token, which is not made to be
+				// read.
 				if (text === PORTRAIT_LINE) {
 					const node = this._portraitNode();
 					if (node) return node;
@@ -401,8 +399,8 @@ export class FpvtpOsd {
 		if (rates) this.el.rates.textContent = rates;
 		this.el.input.textContent = usingGamepad ? 'GAMEPAD' : 'KEYBOARD';
 		this.el.operator.textContent = `OPERATOR // ${operator ?? '—'}`;
-		// At the bench there is no session: the line says what it is rather
-		// que de compter le temps d'une chose qui n'existe pas. C'est le seul
+		// At the bench there is no session: the line says what it is rather than
+		// counting the time of something that does not exist. It is the only
 		// place in the HUD where the bench announces itself, and it is enough.
 		//
 		// A recon flight (#206) does not open one either — nothing is written, so
@@ -411,8 +409,8 @@ export class FpvtpOsd {
 		// nowhere.
 		this.el.session.textContent = flightLabel({ bench, live, sessionSeconds });
 
-		// A single environment line: three numbers the operator reads
-		// d'un coup, pas trois blocs qui se disputent un coin.
+		// A single environment line: three numbers the operator reads at a
+		// glance, not three blocks fighting over one corner.
 		const parts = [];
 		if (Number.isFinite(windMs) && windMs >= 0.5) {
 			const i = ((Math.round(((windRelRad ?? 0) / (Math.PI * 2)) * 8) % 8) + 8) % 8;

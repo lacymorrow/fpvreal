@@ -5,7 +5,7 @@
 // Same grammar as src/session-log.js: a list of real buttons, the cursor IS
 // native focus, Escape goes back up. Two deliberate differences:
 //
-//   1. ←/→ pilotent la TRANSPORT et non le filtre. C'est l'idiome radio, et
+//   1. ←/→ drive the TRANSPORT and not the filter. That is the radio idiom, and
 //      that is what "like a radio" means. The pool filter stays a row of
 //      buttons reached with the cursor.
 //   2. draw() and paint() are separate. The automatic hand-over happens while
@@ -86,7 +86,7 @@ export function runJukebox(root) {
 					wrap.appendChild(button(
 						jukeboxRow(track, { playing: onAir(track) }),
 						// The DISPLAYED list becomes the programme: filtering on
-						// RACE5 puis lancer donne une radio race5.
+						// RACE5 and then playing gives a race5 radio.
 						() => { radio.playAt(i, shown).catch(() => {}); },
 						'terminal-row',
 					));

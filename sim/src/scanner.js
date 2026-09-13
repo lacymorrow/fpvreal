@@ -443,8 +443,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 		note('.sc-heavy', a.heavy ? `HEAVY AREA — ${a.dataRange} ON DISK. SHRINK IT OR DROP DETAIL.` : null, 'warn');
 		drawLattice();
 		updateDensity();
-		// La ligne sous ACQUIRE porte les tuiles et le poids : elle change avec
-		// la zone, pas seulement avec la sonde.
+		// The line under ACQUIRE carries the tiles and the weight: it changes with
+		// the area, not only with the probe.
 		renderCoverage();
 		updateButtons();
 	}
@@ -659,8 +659,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 				// once the area is drawn.
 				state.place = h;
 				updateDensity();
-				// Nominatim rend une emprise : on s'en sert pour cadrer, pas pour
-				// dessiner — le choix de la zone reste un geste explicite.
+				// Nominatim returns an extent: it is used to frame, not to draw —
+				// choosing the area stays an explicit gesture.
 				if (h.boundingbox) {
 					const [s, n, w, e] = h.boundingbox.map(Number);
 					map.fitBounds([[s, w], [n, e]], { maxZoom: 16 });
@@ -959,8 +959,8 @@ export function runScanner({ mapHost, searchHost, railHost, liveHost, onZone = n
 	// the left column back to the Home; `done` now only serves a form of
 	// flight.
 	function rest() {
-		// Jamais pendant une acquisition : la fermer se fait par ABORT ou LEAVE,
-		// un geste explicite.
+		// Never during an acquisition: closing that is done with ABORT or LEAVE,
+		// an explicit gesture.
 		if (state.jobId) return;
 		map.pm.disableDraw();
 		clearZone();

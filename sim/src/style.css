@@ -157,8 +157,8 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 #loading .loading-lockup { --mark-size: clamp(72px, 12vw, 128px); }
 #loading p { margin: 0 0 1.2em; color: var(--dim); min-height: 1.4em; }
 #loading .bar { height: 2px; background: var(--rule); overflow: hidden; }
-/* La progression est de l'information, mais pas une alerte : elle se marque en
-   pleine encre, pas en couleur (Bible §38). */
+/* Progress is information, but not an alert: it is marked in full ink, not in
+   colour (Bible §38). */
 #loading-bar { height: 100%; width: 0; background: var(--warm-white); transition: width var(--dur-2) linear; }
 .err { color: var(--red); }
 
@@ -185,7 +185,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	text-shadow: var(--shadow);
 	/* Very soft, and on the layer alone: this is not the lens vignette, which is
 	   in the shader and two boxes further up. */
-	mask-image: radial-gradient(ellipse 120% 120% at 50% 50%, #000 60%, rgba(0, 0, 0, .82) 100%); /* palette-ok: stops d'un masque alpha, pas du pigment */
+	mask-image: radial-gradient(ellipse 120% 120% at 50% 50%, #000 60%, rgba(0, 0, 0, .82) 100%); /* palette-ok: alpha-mask stops, not pigment */
 }
 #fpvtp-osd .corner { position: absolute; }
 #fpvtp-osd .tl { top: var(--space-3); left: var(--space-3); }
@@ -195,9 +195,9 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 /* The provider credit is a legal notice, not flight information: it stands
    back from the rest of the OSD. */
 #fo-credit { font-size: var(--fs-micro); color: var(--faint); letter-spacing: var(--track-data); }
-/* L'identifiant de la zone est ce que l'OSD a de plus important : il le dit en
-   pleine encre pendant que ses voisins descendent en gris (Bible §38 — pas de
-   couleur qui ne transmette rien). */
+/* The area's identifier is the most important thing the OSD carries: it says so
+   in full ink while its neighbours come down to grey (Bible §38 — no colour that
+   carries nothing). */
 #fo-ident { color: var(--ink); }
 #fo-rates, #fo-input, #fo-fps { font-size: var(--fs-micro); color: var(--dim); }
 #fo-env { font-size: var(--fs-micro); color: var(--ink); }
@@ -341,7 +341,7 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	font-family: var(--font-ascii);
 	font-size: var(--fs-display-s);
 	line-height: 1.05;
-	letter-spacing: 0;          /* l'ASCII n'est pas de la DISPLAY tracked */
+	letter-spacing: 0;          /* ASCII is not tracked DISPLAY */
 	text-transform: none;
 	white-space: pre;
 	color: var(--dim);
@@ -667,11 +667,11 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 	align-self: auto; padding: 0; border: 0; background: none;
 	color: var(--ink); font: inherit; letter-spacing: inherit; cursor: pointer;
 	text-transform: uppercase;
-	/* Ce qui est actionnable se voit au repos (issue #123) : un filet d'un
-	   pixel sous le lien — la forme, pas la couleur, le distingue du titre. */
+	/* What is actionable shows at rest (issue #123): a one-pixel rule under the
+	   link — shape, not colour, is what tells it apart from a title. */
 	border-bottom: var(--rule-w) solid var(--rule-strong);
 }
-/* Survol : la ligne s'allume, elle ne change pas de teinte. */
+/* Hover: the line lights up, it does not change hue. */
 .terminal-nav button.terminal-link:hover { background: var(--warm-white); color: var(--black); }
 /* The ACTIVE filter of a list (session log, jukebox): reverse video, like
    every active state in the game. It used to be written in brackets, a form
@@ -820,8 +820,17 @@ button.flash:hover { animation: key-flash-off var(--dur-1) steps(1, end); }
 /* The Home's two verbs, on one line: fly there, or go and look elsewhere. */
 .terminal-acts { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
 .terminal-acts .terminal-cta { align-self: auto; }
-/* Un intertitre, pas un titre : il nomme la liste sans peser autant que la
-   ligne FPVTP! du haut. */
+/* The imagery credit on the LIVE tab. A legal notice, not decoration, so it is
+   readable rather than tasteful: DATA level in --light-grey (5.26:1), not the
+   --faint of a hint. Same face and same tone as the footer beneath it. */
+.bootstrap-box pre.terminal-credit {
+	color: var(--light-grey);
+	font-family: var(--font-data); font-size: var(--fs-micro);
+	letter-spacing: var(--track-data);
+	margin: var(--space-2) 0 0;
+}
+/* A subheading, not a title: it names the list without weighing as much as the
+   FPVTP! line at the top. */
 .bootstrap-box pre.terminal-sub {
 	color: var(--light-grey);
 	font-family: var(--font-ui); font-size: var(--fs-ui);
@@ -1151,9 +1160,9 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 	border: 0; background: none; text-align: left; cursor: pointer;
 	color: var(--light-grey); padding: var(--space-0) 0;
 	font-family: var(--font-data); font-size: var(--fs-data); letter-spacing: var(--track-data);
-	/* Ces lignes se REPLIENT au lieu de se tronquer : les identifiants sont
-	   longs, et les chiffres du diagnostic (classe, axes, boutons) sont en fin
-	   de ligne — une ellipse mangeait exactement ce qu'on vient y lire. */
+	/* These lines WRAP instead of truncating: the ids are long, and the
+	   diagnostic figures (class, axes, buttons) are at the end of the line — an
+	   ellipsis ate exactly what you come here to read. */
 	white-space: normal; overflow-wrap: anywhere;
 }
 #pad-list button.pad-entry:hover { color: var(--ink); }
@@ -1166,8 +1175,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    the ONLY thing the pilot has to read: the device list and the remap table go
    away, and the instruction takes the display size. 22px is a multiple of 11 —
    Departure Mono is only crisp at those sizes. */
-/* Bouton puis note EN DESSOUS : la note fait trois lignes, et la centrer
-   verticalement contre un petit bouton la rendait illisible. */
+/* Button, then the note BELOW it: the note is three lines long, and centring it
+   vertically against a small button made it illegible. */
 #cal-row { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); margin: var(--space-2) 0; }
 #cal-note { color: var(--light-grey); }
 #cal-screen { margin: var(--space-3) 0; }
@@ -1240,8 +1249,8 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
 .sc-readout dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 .sc-verdict { margin: 0; letter-spacing: var(--track-ui); text-transform: uppercase; }
-/* Un verdict de couverture est exactement le cas que la Bible §38 autorise :
-   la couleur EST l'information. */
+/* A coverage verdict is exactly the case Bible §38 allows: the colour IS the
+   information. */
 .sc-verdict[data-status="ok"] { color: var(--green); }
 .sc-verdict[data-status="planned"], .sc-verdict[data-status="busy"], .sc-verdict[data-status="undecodable"] { color: var(--yellow); }
 .sc-verdict[data-status="none"] { color: var(--red); }
@@ -1520,7 +1529,7 @@ canvas.data-graph { display: block; width: 100%; margin: var(--space-1) 0; }
    one more screen in the same box (user feedback PR #80). */
 .culmination {
 	position: fixed; inset: 0;
-	z-index: var(--z-screen-over); /* au-dessus de .bootstrap/.hack */
+	z-index: var(--z-screen-over); /* above .bootstrap/.hack */
 	display: flex; align-items: center; justify-content: center;
 	background: var(--black);
 	overflow: hidden;

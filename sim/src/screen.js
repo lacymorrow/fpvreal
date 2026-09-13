@@ -55,24 +55,3 @@ export function screenButton(label, onClick, cls = 'terminal-link') {
 	return b;
 }
 
-// The one escape used by every screen that still composes markup as a string.
-//
-// The rule comes first: an untrusted value goes in through `textContent`, or
-// through a node built with the DOM API. Nothing in this game NEEDS to build
-// a fragment by hand. But a few call sites legitimately assemble a static
-// skeleton as a string, and a value slipped into one of those is a stored
-// injection in the very origin that holds the operator bearer key
-// (src/operator.js) — a player's session note, or a scene name auto-filled
-// from a Nominatim `display_name`, i.e. from a third party's HTTP response.
-//
-// So: one helper, exported from here rather than re-open-coded per module,
-// because five slightly different escapes are how one of them ends up missing
-// a character.
-export function escapeHtml(value) {
-	return String(value ?? '')
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
-}

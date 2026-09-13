@@ -24,6 +24,11 @@ import { versionLine } from './version.js';
 // again — the list is exactly what we are taking out of the Home.
 const COMPACT_AREAS = 5;
 
+// The attribution the live imagery carries, pre-flight. Kept identical to
+// main.js's LIVE_CREDIT, which the flight OSD paints: one string, two surfaces,
+// and no way for them to drift apart.
+const LIVE_IMAGERY_CREDIT = '\u00a9 Google';
+
 // The FIELD tab we were on, for the session: LIVE (take off straight from a
 // map pin) or LOCAL (fly or acquire a baked area) (#222). LIVE on entry (D2):
 // it is the path that works on every build, including that of an operator who
@@ -293,8 +298,7 @@ function localTerrain(root, scenes) {
 
 				// Here the row OPENS its actions (OPEN / FORECAST / REMOVE
 				// TERRAIN); on the Home it selects the area. Same row, two
-				// gestures —
-				// c'est tout ce qui distingue les deux listes.
+				// gestures — and that is all that tells the two lists apart.
 				const actions = document.createElement('div');
 				const row = areaRow(sc, {
 					onActivate: () => {
@@ -469,12 +473,12 @@ async function operatorScreen(root, api) {
 // ---------- BUILD NOTES ----------
 
 // A hand-written version ladder (tools/buildnotes-model.mjs), unlocked by the
-// counters the operator has already accumulated. Decorative: no resolution
-// de vol, juste un BACK vers la Home.
+// counters the operator has already accumulated. Decorative: it resolves no
+// flight, just a BACK to the Home.
 function buildNotesScreen(root, operator) {
 	const s = screen(root);
 	const c = countersOf(operator);
-	// createElement, et une ligne de note = un <pre>. En un seul bloc, une note
+	// createElement, and one note line = one <pre>. In a single block, a note
 	// too long wrapped back to column 0: the continuation of "fixed: session
 	// timestamp off by one hour on the" read as a NEW top-level entry, at the
 	// same rank as the version number. One element per line is the only way to
@@ -501,9 +505,9 @@ function buildNotesScreen(root, operator) {
 	}
 	return new Promise((resolve) => {
 		// The only screen in the house that did not call menuNav: no cursor, no
-		// clavier, ni manette, et surtout Escape sans effet. Sur une liste de
-		// notes assez longue pour passer sous la ligne de flottaison, le seul
-		// BACK was out of sight — the screen closed in on the operator.
+		// keyboard, no gamepad, and above all Escape doing nothing. On a list of
+		// notes long enough to run below the fold, its single BACK was out of
+		// sight — the screen closed in on the operator.
 		let nav = null;
 		const close = () => { nav?.detach(); s.remove(); resolve(); };
 		backRow(s.box, close);
@@ -837,7 +841,7 @@ function formatDistance(m) {
 	return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
 }
 
-// ---------- OPERATOR SELECT (repris de l'ancienne home.js) ----------
+// ---------- OPERATOR SELECT (carried over from the old home.js) ----------
 
 export async function operatorSelect(root, choices) {
 	const s = screen(root);
@@ -860,8 +864,8 @@ export async function operatorSelect(root, choices) {
 // OPERATOR SELECT above — it is the same moment of the game, minus a list: on a
 // shared server there is nobody to choose from.
 //
-// [ NEW OPERATOR ] est le chemin NORMAL, et il est premier : le cas nominal sur
-// a shared server, is somebody arriving and leaving with a profile. Typing a
+// [ NEW OPERATOR ] is the NORMAL path, and it comes first: the nominal case on
+// a shared server is somebody arriving and leaving with a profile. Typing a
 // key is an emergency door — you only go there if you already have a profile
 // elsewhere — hence lower down and without a CTA.
 //
@@ -903,9 +907,9 @@ export async function operatorKey(root, api = operatorApi) {
 		};
 		input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 		s.box.appendChild(button('RESUME', submit, 'terminal-link'));
-		// Pas de `back` : comme OPERATOR SELECT, il n'y a pas d'ailleurs. Le
-		// curseur se pose sur [ NEW OPERATOR ], pas dans le champ : c'est ce que
-		// fait la personne qui arrive.
+		// No `back`: like OPERATOR SELECT, there is nowhere else to go. The
+		// cursor lands on [ NEW OPERATOR ], not in the field: that is what the
+		// person who has just arrived does.
 		nav = menuNav(s.el, {});
 	});
 }
@@ -915,11 +919,11 @@ export async function operatorKey(root, api = operatorApi) {
 // Mounts the Operator Terminal and resolves the area to fly over.
 // Resolves { slug } to fly a baked area, { live: [lat, lon] } to
 // take off live from the scanner, or null to go back up to the mode choice
-// quand `back` est vrai (PHASE 26 : la Home n'est plus la racine du jeu).
+// when `back` is true (PHASE 26: the Home is no longer the game's root).
 export async function runTerminal(root, { api = operatorApi, back = false } = {}) {
 	let scenes = await fetchScenes();
-	// `terminal-field` on top of `terminal-home`: the bench mounts its two screens
-	// avec `terminal-home` aussi (bench.js:72 et :196) pour en partager la
+	// `terminal-field` on top of `terminal-home`: the bench mounts its two
+	// screens with `terminal-home` too (bench.js:72 and :196) to share its
 	// typography. The two-column layout, though, belongs to FIELD alone —
 	// hanging it off `terminal-home` put it on SELECT OPERATION MODE and on the
 	// bench screen, which both ended up full width.
@@ -927,18 +931,18 @@ export async function runTerminal(root, { api = operatorApi, back = false } = {}
 	let resolveFly;
 
 	let nav = null;
-	// La zone sous le curseur : ce que [ FLY ] volera et ce que la carte recadre.
+	// The area under the cursor: what [ FLY ] will fly and what the map frames.
 	let selected = null;
 	// The scanner handle. It is mounted ONCE and lives as long as the Home: it
 	// owns the map, and the map is never unmounted between the rest state and
 	// the working state (#211).
 	let scanner = null;
-	// True as soon as an area is drawn on the map. This is the switch from
-	// l'onglet LOCAL : le corps de la colonne gauche passe de la liste au rail
-	// du scanner.
+	// True as soon as an area is drawn on the map. This is the LOCAL tab's
+	// switch: the body of the left column goes from the list to the scanner's
+	// rail.
 	let drawing = false;
-	// LOCAL or LIVE (#222). The two tabs share the head, the search and
-	// le pied ; seul le corps change.
+	// LOCAL or LIVE (#222). The two tabs share the head, the search and the
+	// footer; only the body changes.
 	let tab = lastTab;
 
 	// --- the two columns, created ONCE
@@ -955,9 +959,9 @@ export async function runTerminal(root, { api = operatorApi, back = false } = {}
 	const mapHost = document.createElement('div');
 	mapHost.className = 'terminal-map';
 	right.appendChild(mapHost);
-	// The scanner's three hosts, created once: the search above the
-	// onglets, le rail LOCAL au travail, l'onglet LIVE. Le scanner les remplit,
-	// la Home les place.
+	// The scanner's three hosts, created once: the search above the tabs, the
+	// LOCAL rail at work, the LIVE tab. The scanner fills them, the Home places
+	// them.
 	const searchHost = document.createElement('div');
 	searchHost.className = 'terminal-search';
 	const rail = document.createElement('aside');
@@ -999,11 +1003,10 @@ export async function runTerminal(root, { api = operatorApi, back = false } = {}
 		// stays empty until the scanner is mounted.
 		left.appendChild(searchHost);
 
-		// --- les onglets (#222)
+		// --- the tabs (#222)
 		//
-		// LOCAL : ce qui est sur le disque, et comment y ajouter une zone.
-		// LIVE: a pin and a live take-off. Two ways to fly,
-		// une seule carte.
+		// LOCAL: what is on the disk, and how to add an area to it.
+		// LIVE: a pin and a live take-off. Two ways to fly, one map.
 		const tabs = document.createElement('div');
 		tabs.className = 'terminal-tabs';
 		// LIVE first (D2): it is the path that works everywhere, on every build,
@@ -1046,6 +1049,24 @@ export async function runTerminal(root, { api = operatorApi, back = false } = {}
 
 		if (tab === 'live') {
 			left.appendChild(liveRail);
+			// The imagery credit, before the flight as well as during it.
+			//
+			// A LIVE take-off streams Google's 3D imagery, and Google requires the
+			// copyright of rendered tiles to be displayed. In flight the OSD says
+			// it (fpvtp-osd.js setCredit, main.js LIVE_CREDIT); here it did not,
+			// so the one screen that OFFERS the imagery carried no attribution at
+			// all. It is an obligation, not a nicety: it is written at DATA level
+			// in --light-grey rather than in the --faint of a decorative note.
+			//
+			// The same literal as the OSD, deliberately, so the two cannot
+			// disagree: the per-node copyright ids the tile workers decode are
+			// still dropped before they could become text, and inventing a
+			// different wording here would only make the disagreement look
+			// intentional.
+			const credit = document.createElement('pre');
+			credit.className = 'terminal-credit';
+			credit.textContent = `LIVE IMAGERY ${LIVE_IMAGERY_CREDIT}`;
+			left.appendChild(credit);
 		} else if (drawing) {
 			// WORKING state: an area is drawn, the body becomes the scanner's
 			// rail. The map has not moved by a single pixel — which is the entire
