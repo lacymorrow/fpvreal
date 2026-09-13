@@ -17,26 +17,40 @@ const D0 = 10;
 // Where the picture starts to go, and where it is gone. The gap between them is
 // the whole fade, so it is what sets how gradual the degradation looks.
 //
-// Calibrated for a continuous slide rather than a cliff. Two things follow from
-// that, and both were wrong in the first version:
+// Calibrated for a continuous slide rather than a cliff. The fade is
+// deliberately WIDE (58 dB between the first visible degradation and no picture
+// at all). A narrow fade makes every dB matter, and since the geometry hands us
+// large steps — you round a corner and a whole building appears on the path — a
+// narrow fade turns those steps into an on/off switch.
 //
-// The fade is deliberately WIDE (58 dB between the first visible degradation and
-// no picture at all). A narrow fade makes every dB matter, and since the
-// geometry hands us large steps — you round a corner and a whole building
-// appears on the path — a narrow fade turns those steps into an on/off switch.
+// The band starts at 24 dB, up from 18. Note what it is a band OVER: since the
+// playability work removed distance from the quality calculation, the only
+// things that feed it are obstruction and the target's own advertised signal.
+// Distance is cosmetic now, so the old comment here — "18 dB, which is about
+// 80 m" — described a coupling that no longer exists. Flying far in clear air
+// costs nothing; flying behind things costs.
 //
-// And it starts EARLY, at 18 dB, which is about 80 m. There is then always some
-// degradation to read, sliding with distance the whole time you fly, instead of
-// a perfect picture right up to the moment it is gone. That is what makes the
-// link legible: you are told you are running out of margin before you run out.
-const LOSS_CLEAN = 18;
-const LOSS_DEAD = 76;
+// 18 dB meant the picture was never quite clean over a real city, and a
+// degradation that is always present stops being information. 24 leaves
+// ordinary flight clean and keeps the warning for when there is something to
+// warn about.
+//
+// The two move TOGETHER. geofence.js hardcodes FENCE_SPAN = 58 and relies on it
+// being exactly LOSS_DEAD - LOSS_CLEAN: the fence's terminal loss is what takes
+// quality to 0 when you leave the zone, and a different span would leave it
+// short. Change one of these and you must change the other by the same amount,
+// or change FENCE_SPAN with them.
+const LOSS_CLEAN = 24;
+const LOSS_DEAD = 82;
 
 // Blocked at all, before any depth is counted. A ridge line or a thin roof is
 // a single sheet of geometry with no far face, so its measured depth is
 // honestly zero — and yet standing behind a hill costs you the link. This is
 // the diffraction term: the signal bends around the edge and arrives weakened.
-const KNIFE_EDGE_DB = 8;
+// 6 dB rather than 8: over a city almost every metre of flight has something on
+// the path, so this term is paid nearly all the time, and it was setting a floor
+// of permanent degradation rather than marking an event.
+const KNIFE_EDGE_DB = 6;
 
 // Depth of material, saturating rather than linear. A flat dB-per-metre was the
 // single biggest source of "fine, fine, gone": rounding a corner takes the span
@@ -45,13 +59,38 @@ const KNIFE_EDGE_DB = 8;
 // thin. Saturating means the first few metres carry most of the cost, which is
 // also closer to the truth: the signal is already deep in the noise after one
 // wall, and the ninth wall cannot take much more away than the second did.
-const OBSTRUCTION_DB = 38;    // asymptote, for a span much deeper than the scale
+// The asymptote is 26 dB rather than 38. Behind a whole building at 150 m that
+// is the difference between quality ~0.19 — frozen in digital, unflyable in
+// analog — and ~0.55, which reads as a link in trouble that you can still fly
+// out of. The saturating shape is unchanged; only how much it can ever cost is.
+const OBSTRUCTION_DB = 26;    // asymptote, for a span much deeper than the scale
 const OBSTRUCTION_SCALE = 14; // metres at which 63% of it has been paid
 
 // Received power at D0 with nothing in the way. Only used to report a number
 // that looks like an RSSI; it plays no part in the quality calculation. Puts
 // the cliff at -95 dBm, which is about where a real 5.8 GHz receiver gives up.
 const RSSI_REF_DBM = -35;
+
+// How much of the target's advertised weakness actually reaches the picture.
+//
+// This term, not obstruction, was the real driver of "the jamming is too
+// strong". Targets are generated at -52..-72 dBm (tools/target-model.mjs), so
+// against a reference of -35 the weakest one starts the budget 37 dB down —
+// before a single building is on the path. With the band starting at 18 dB
+// that target was already degraded hovering in clear air, and one 30 m
+// building took it to quality 0: dead picture, from geometry the pilot could
+// not have avoided.
+//
+// Halving it keeps the fiction intact — the target list still advertises the
+// same dBm, and a weak target is still visibly worse to fly — while making the
+// worst draw survivable. Worst case now: clean in the open, about 0.60 behind
+// a 30 m building, which is degraded and flyable rather than gone.
+//
+// Halved here rather than by narrowing the generator's range, because that
+// range is PHASE 08 fiction with golden fixtures pinned in
+// tools/target-selftest.mjs, and the number a player reads on the target list
+// should stay the number the designer chose.
+const BASE_LOSS_WEIGHT = 0.5;
 
 // Asymmetric, because that is what a diversity receiver does: it loses lock
 // almost immediately and takes its time coming back. Symmetric smoothing makes
@@ -106,18 +145,18 @@ export class VideoLink {
 		// 0..1: scales the losses. The slider, so 0 means "no link modelling at
 		// all" and 1 means the link can genuinely break.
 		this.severity = 1;
-		// Décalage de perte dû au RSSI annoncé de la cible (PHASE 08). Le RSSI
-		// annoncé = niveau de lien propre de cette cible à D0 : un émetteur ou une
-		// antenne plus faibles démarrent le budget avec moins de marge. Additif en
-		// dB, comme spread et shadow. NON remis à zéro par reset() : c'est une
-		// propriété de la cible, elle survit à un respawn dans la session.
+		// Loss offset from the target's advertised RSSI (PHASE 08). That figure is
+		// this target's clean link level at D0: a weaker transmitter or a weaker
+		// antenna starts the budget with less margin. Additive in dB, like spread
+		// and shadow. NOT cleared by reset(): it is a property of the target and
+		// survives a respawn within the session.
 		this._baseLoss = 0;
-		// La perte de la clôture de zone (#139). Elle NE PASSE PAS par _loss,
-		// et c'est tout l'intérêt : la borne de jouabilité de l'issue #79
-		// écrête _loss et replaque la qualité à COOLDOWN_FLOOR_Q après deux
-		// secondes d'écran noir. Cette borne existe pour qu'on ne reste jamais
-		// coincé aveugle EN VOL — or sortir de la zone n'est pas voler, c'est
-		// la fin de la session. Appliquée en sortie, après la borne.
+		// The zone fence's loss. It does NOT go through _loss, and that is the
+		// whole point: the playability bound clips _loss and pins quality back to
+		// COOLDOWN_FLOOR_Q after two seconds of black screen. That bound exists so
+		// nobody is ever stuck blind IN FLIGHT — but leaving the zone is not
+		// flying, it is the end of the session. Applied on the way out, after the
+		// bound.
 		this._terminalLoss = 0;
 		this.out = { quality: 1, rssiDbm: RSSI_REF_DBM, lossDb: 0, frozen: false };
 		this.reset();
@@ -143,13 +182,13 @@ export class VideoLink {
 	}
 
 	setSignal({ rssiDbm } = {}) {
-		this._baseLoss = Number.isFinite(rssiDbm) ? Math.max(0, RSSI_REF_DBM - rssiDbm) : 0;
+		const raw = Number.isFinite(rssiDbm) ? Math.max(0, RSSI_REF_DBM - rssiDbm) : 0;
+		this._baseLoss = raw * BASE_LOSS_WEIGHT;
 	}
 
-	// La perte de la clôture de zone (#139), en dB. Pas de lissage : TAU_FALL
-	// et TAU_RISE existent parce que la géométrie des obstacles est une
-	// fonction en escalier, or une position ne l'est pas — cette perte varie
-	// déjà continûment avec le mètre parcouru.
+	// The zone fence's loss, in dB. No smoothing: TAU_FALL and TAU_RISE exist
+	// because obstacle geometry is a step function, and a position is not — this
+	// loss already varies continuously with every metre travelled.
 	setTerminalLoss(db) {
 		this._terminalLoss = Number.isFinite(db) ? Math.max(0, db) : 0;
 	}
@@ -206,18 +245,18 @@ export class VideoLink {
 			this._blackoutT = Math.max(0, this._blackoutT - dt * 0.5);
 		}
 
-		// La clôture s'ajoute ici, en aval de la borne #79 : elle n'est pas une
-		// nuisance à lisser, elle est la fin de la session.
+		// The fence is added here, downstream of the playability bound: it is not
+		// a nuisance to smooth away, it is the end of the session.
 		const loss = Math.max(0, this._loss + this._noise * this.severity) + this._terminalLoss;
-		// qualityOf() ne touche 0 qu'à LOSS_DEAD, pas à un span de LOSS_DEAD −
-		// LOSS_CLEAN depuis zéro : c'est la LARGEUR de la bande de dégradation,
-		// pas un budget absolu. qualityOf(loss) sous-compterait donc de pile
-		// LOSS_CLEAN pour un lien déjà propre (loss ambiant ≈ 0), et FENCE_SPAN
-		// n'amènerait la qualité qu'à ~0,31 au lieu de 0 — en contradiction avec
-		// le commentaire de geofence.js (« n'importe quel lien, si propre
-		// soit-il ») et avec ligne 23 ci-dessus (58 dB = la largeur depuis
-		// LOSS_CLEAN). On décale donc l'argument de LOSS_CLEAN pour rendre la
-		// coupure indépendante du bruit ambiant, comme documenté.
+		// qualityOf() only reaches 0 at LOSS_DEAD, not after a span of
+		// LOSS_DEAD - LOSS_CLEAN counted from zero: that span is the WIDTH of the
+		// degradation band, not an absolute budget. qualityOf(loss) would therefore
+		// undercount by exactly LOSS_CLEAN for an already clean link (ambient loss
+		// near 0), and FENCE_SPAN would only bring quality to about 0.31 instead of
+		// 0 — contradicting geofence.js's comment ("any link, however clean") and
+		// the band definition above (58 dB measured FROM LOSS_CLEAN). So the
+		// argument is offset by LOSS_CLEAN, which makes the cut independent of the
+		// ambient noise, as documented.
 		if (this._terminalLoss > 0) quality = Math.min(quality, qualityOf(LOSS_CLEAN + this._terminalLoss));
 
 		// Frame drops. Only the digital renderer uses this, but it belongs to the
@@ -238,4 +277,3 @@ export class VideoLink {
 	}
 }
 
-export const LINK_MODES = ['analogique', 'numérique'];
