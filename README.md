@@ -20,36 +20,6 @@ Photogrammetry from Google Earth, a Betaflight quad, and a radio that works with
 
 </div>
 
-## Support
-
-The game is free and stays free. Nothing in it is paywalled, counted, or
-remembered about you. If it gave you something, the terminal footer carries
-three marks — Cake Wallet, Bitcoin, Monero — and the same addresses are here:
-
-| | |
-|---|---|
-| **One line, any coin** | `fpvtp@cake.cash` |
-| **Monero** | `42RnnFdtNasaiUQGEASPGRXjHcr2pDocwXCwGUAhwyp7KbAhbKwCHrEfeYMkUMpo7gQdEABWy9LoRd4iEUFMq2SXKdHPqKt` |
-| **Bitcoin** · silent payment | `sp1qq2tuvemuzgu6hudsu7jf2h90gl6xemav67s3x3f34l76qtfl6dzgcq43r30lvckcz4qat2x8ju5a36sdqr2r3fe72cqpudvlqh797agdkcvkvkl4` |
-| **Bitcoin** | `bc1qmwm3rcvzkwaft40yrtynym3yww20t2atfr45yg` |
-
-Crypto only, and not out of enthusiasm: every card rail verifies the identity of
-whoever receives the money, and this project is published under a pseudonym.
-
-These addresses live in `sim/tools/support-model.mjs`, and
-`sim/tools/support-selftest.mjs` re-verifies every one of them by checksum on
-every CI run — bech32 and bech32m for Bitcoin, Keccak-256 for Monero. A typo in
-a caption is embarrassing; a typo in an address sends a stranger's money
-somewhere nobody can spend it.
-
----
-
-The scenery is photogrammetry pulled from Google Earth, so it's the actual
-geometry and textures of a place that exists. The flight model is a Betaflight
-quad, acro by default, and a radio is recognised without setup.
-
-https://github.com/user-attachments/assets/d18df585-a85d-484f-8743-3dce02777d50
-
 ## Play
 
 [Download the latest release](https://github.com/lionrayonnant/FPVThePlanet/releases/latest):
@@ -71,7 +41,27 @@ A fresh clone has no terrain on disk, so the catalogue starts empty. Open the
 LIVE tab, click the map to drop a pin, then `[ FLY LIVE ]`. Tiles stream in
 during the flight and nothing is written to your disk.
 
-### Controls
+## Support
+
+The game is 100% free. If you appreciate my work, please consider helping me cover the hosting costs and burn some tokens!
+
+| | |
+|---|---|
+| **One line, any coin** | `fpvtp@cake.cash` |
+| **Monero** | `42RnnFdtNasaiUQGEASPGRXjHcr2pDocwXCwGUAhwyp7KbAhbKwCHrEfeYMkUMpo7gQdEABWy9LoRd4iEUFMq2SXKdHPqKt` |
+| **Bitcoin** · silent payment | `sp1qq2tuvemuzgu6hudsu7jf2h90gl6xemav67s3x3f34l76qtfl6dzgcq43r30lvckcz4qat2x8ju5a36sdqr2r3fe72cqpudvlqh797agdkcvkvkl4` |
+| **Bitcoin** | `bc1qmwm3rcvzkwaft40yrtynym3yww20t2atfr45yg` |
+
+Crypto only, and not out of enthusiasm: every card rail verifies the identity of
+whoever receives the money, and this project is published under a pseudonym.
+
+These addresses live in `sim/tools/support-model.mjs`, and
+`sim/tools/support-selftest.mjs` re-verifies every one of them by checksum on
+every CI run — bech32 and bech32m for Bitcoin, Keccak-256 for Monero. A typo in
+a caption is embarrassing; a typo in an address sends a stranger's money
+somewhere nobody can spend it.
+
+## Controls
 
 | | |
 |---|---|
