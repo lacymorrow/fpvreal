@@ -209,6 +209,15 @@ function leakIn(text) {
 	return null;
 }
 
+// A static 404 names the path that was asked for. That echo is the request, not
+// a leak, so it comes out before the scan — otherwise every traversal attempt
+// reports itself. `%c0%af` and friends are not decodable at all, hence the try.
+function withoutEcho(text, p) {
+	let out = text.split(p).join('');
+	try { out = out.split(decodeURIComponent(p)).join(''); } catch { /* not decodable: the raw form was enough */ }
+	return out;
+}
+
 // An API answer must be JSON. A STATIC answer must not be — it is index.html,
 // a manifest or a binary — so the two are told apart by prefix rather than
 // being held to one rule that only fits half of them.
@@ -219,7 +228,7 @@ async function inspect({ method, path: p, query, body, contentType, headers }) {
 	const sendable = method !== 'GET' && method !== 'HEAD' && body !== undefined;
 	let res;
 	try {
-		res = await fetch(base + p + query, {
+		res = await fetch(base + p + (query ?? ''), {
 			method,
 			headers: headers ?? (sendable ? { 'content-type': contentType } : undefined),
 			body: sendable ? body : undefined,
@@ -243,8 +252,10 @@ async function inspect({ method, path: p, query, body, contentType, headers }) {
 			if (leak) return `the answer leaks ${leak}: ${text.slice(0, 200)}`;
 		} else {
 			// The static half has one job here: never hand back a file, or a
-			// path, from outside what it is allowed to serve.
-			const leak = leakIn(text);
+			// path, from outside what it is allowed to serve. The refusal echoes
+			// the requested path back, so that echo is removed before scanning —
+			// otherwise every traversal attempt reports itself.
+			const leak = leakIn(withoutEcho(text, p));
 			if (leak) return `a static answer leaks ${leak}: ${text.slice(0, 200)}`;
 			if (/-----BEGIN |"dependencies"\s*:|\broot:x:0:0\b/.test(text)) return `a static answer served a file it should not: ${text.slice(0, 200)}`;
 		}

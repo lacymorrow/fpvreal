@@ -33,20 +33,20 @@ function loadPercent(key, fallback) {
 
 export const loadVolume = () => loadPercent(VOLUME_KEY, 0.6);
 export const loadBrightness = () => loadPercent(BRIGHTNESS_KEY, 0.5);
-// Ce défaut EST la balance musique/moteur, et c'est le seul endroit où elle
-// vit : audio-bus.js n'applique plus de trim par-dessus (il en avait un, à 0.7
-// lui aussi, ce qui atténuait deux fois — corrigé). 0.7 est la valeur mesurée à
-// la première écoute en vol.
+// This default IS the music/motor balance, and it is the only place that
+// balance lives: audio-bus.js no longer applies a trim on top (it had one, also
+// at 0.7, which attenuated twice — fixed). 0.7 is the value measured on the
+// first listen in flight.
 //
-// Réglage SÉPARÉ du volume global, pour qu'on puisse baisser la musique sans
-// baisser le moteur : le vol reste un exercice d'écoute de la machine.
+// SEPARATE from the master volume, so the music can come down without the motor
+// coming down: flying stays an exercise in listening to the machine.
 export const loadMusicVolume = () => loadPercent(MUSIC_KEY, 0.7);
 
-// Distance d'affichage du mode ?live= (#182), en MÈTRES — pas un pourcentage,
-// donc pas loadPercent(). Bornes du curseur : 100-600 m. Le coût est
-// QUADRATIQUE en rayon (nœuds ∝ r², mesuré : 200 m ≈ 1032 meshes) — 600 m
-// ≈ ×9, c'est le GPU et kh.google.com de l'utilisateur, son choix. Défaut
-// 300 m : choisi par l'utilisateur à la première écoute du curseur.
+// View distance for ?live= mode (#182), in METRES — not a percentage, so not
+// loadPercent(). Slider bounds: 100-600 m. The cost is QUADRATIC in radius
+// (nodes ∝ r², measured: 200 m ≈ 1032 meshes) — 600 m ≈ ×9, and it is the
+// user's GPU and the user's kh.google.com, so it is the user's call. Default
+// 300 m: chosen by the user on the first pass over the slider.
 export const VIEW_RANGE_MIN_M = 100;
 export const VIEW_RANGE_MAX_M = 2000;
 export function loadViewRange() {
@@ -55,10 +55,10 @@ export function loadViewRange() {
 		const saved = raw === null ? NaN : Number(raw);
 		if (Number.isFinite(saved) && saved >= VIEW_RANGE_MIN_M && saved <= VIEW_RANGE_MAX_M) return saved;
 	} catch { }
-	// 600 m, pas 300 (#32) : depuis les anneaux de LOD prolongés, doubler la
-	// portée coûte 2 fps et ~180 Mo de textures (mesuré à Paris, 740 -> 1003
-	// nœuds). Un défaut à 300 m faisait s'arrêter le monde juste derrière le
-	// drone, ce qui se voit dès qu'on se retourne. Le curseur monte à 2 km.
+	// 600 m, not 300 (#32): since the LOD rings were extended, doubling the
+	// range costs 2 fps and ~180 MB of textures (measured in Paris, 740 -> 1003
+	// nodes). A 300 m default made the world stop just behind the drone, which
+	// shows the moment you turn around. The slider goes up to 2 km.
 	return 600;
 }
 
@@ -79,12 +79,12 @@ export function loadLens() {
 	};
 }
 
-// La météo n'est plus ici (PHASE 04, Bible §31). Le vent, la pluie et le
-// brouillard appartiennent au monde et à la session : ils viennent du world
-// state de l'opérateur via src/weather.js, et aucun réglage utilisateur ne
-// permet plus de choisir le temps qu'il fait. Les modèles wind.js / rain.js /
-// fog.js n'ont pas bougé — seule la main qui écrit leurs paramètres a changé.
-// window.__sim.setWeather / setRain / setFog restent l'accès de debug.
+// The weather is no longer here (PHASE 04, Bible §31). Wind, rain and fog
+// belong to the world and to the session: they come from the operator's world
+// state through src/weather.js, and no user setting can choose the weather any
+// more. The wind.js / rain.js / fog.js models have not moved — only the hand
+// that writes their parameters has changed.
+// window.__sim.setWeather / setRain / setFog remain the debug access.
 
 // The link degradation is on at full strength by default: the point of the
 // feature is that going behind a building costs you the picture, and a version
@@ -128,7 +128,12 @@ let activeTab = TABS[0][0];
 const SWAP_NOTICE_MS = 2000;
 
 // What a row says while it waits for a key.
-const CAPTURE_PROMPT = 'PRESS A KEY — ESC CANCELS';
+//
+// The key is written in the game's one key-hint form, `[KEY] VERB` (D15,
+// terminal.js keyHints): the prose `PRESS A KEY — ESC CANCELS` was the only
+// place a key was named without brackets, and it sat in the same panel as
+// `[ESC] CLOSE` — two spellings of Escape, in two formats, on one screen.
+const CAPTURE_PROMPT = 'PRESS A KEY · [ESC] CANCEL';
 
 // Minimal element builder. `id` is written to BOTH the property and the
 // attribute: the property is what the code reads, the attribute is what
@@ -151,9 +156,9 @@ function h(tag, props = {}, children = []) {
 // It owns #settings and nothing else — the flight OSD has split into two
 // layers (drone-osd.js and fpvtp-osd.js), and the operator terminal lives in
 // terminal.js.
-// Issue #120 : caméra, objectif et lien vidéo n'étaient pas des réglages
-// destinés au joueur — ils restent pilotés par leurs valeurs stockées
-// (loadLens/loadLink, cf. main.js) mais ont quitté ce panneau.
+// Issue #120: camera, lens and video link were not settings meant for the
+// player — they are still driven by their stored values (loadLens/loadLink, cf.
+// main.js) but they have left this panel.
 export class Settings {
 	constructor(root, input) {
 		this.input = input;
@@ -235,16 +240,16 @@ export class Settings {
 			keyRows: el.querySelector('[id="key-rows"]'),
 			replayRow: el.querySelector('[id="replay-row"]'),
 		};
-		// État de l'assistant de calibrage, ou null. C'est la seule chose qui
-		// distingue le panneau ouvert du panneau en train de mesurer.
+		// State of the calibration wizard, or null. It is the only thing that
+		// tells an open panel apart from a panel that is measuring.
 		this._cal = null;
 		this._calPadId = null;
 		this._calLast = 0;
 		this._calRaf = null;
 		this.el.calButton.onclick = () => this.startCalibration();
 		el.querySelector('[id="cal-cancel"]').onclick = () => this.cancelCalibration();
-		// Posé à vrai par main.js quand un vol démarre : le panneau ouvert en vol
-		// n'écoute pas la manette (les sticks pilotent le drone — issue #123).
+		// Set true by main.js when a flight starts: the panel opened in flight
+		// does not listen to the gamepad (the sticks fly the drone — issue #123).
 		this.flightActive = false;
 		this._axisRows = [];
 		this.selectTab(activeTab);
@@ -271,10 +276,9 @@ export class Settings {
 		// Measured calibration (issue #277). The button is always there; the
 		// note beside it only ever speaks of a device that was NEVER calibrated.
 		box.appendChild(h('div', { id: 'cal-row' }, [
-			// `terminal-cta` : les crochets sont la marque d'une décision, et
-			// CALIBRATE en est une au même titre que [ RESET KEYS ] deux onglets
-			// plus loin. Deux conventions de bouton cohabitaient dans le même
-			// panneau.
+			// `terminal-cta`: the brackets are the mark of a decision, and
+			// CALIBRATE is one just as much as [ RESET KEYS ] two tabs further
+			// on. Two button conventions used to coexist in the same panel.
 			h('button', { id: 'calibrate', type: 'button', class: 'terminal-cta', text: '[ CALIBRATE ]' }),
 			h('span', { id: 'cal-note', class: 'spec' }),
 		]));
@@ -301,7 +305,12 @@ export class Settings {
 	// rather than patched: the map is the truth, the tab is a view of it.
 	buildKeyboard(box) {
 		box.appendChild(h('div', { id: 'key-rows', class: 'key-rows' }));
-		box.appendChild(button('RESET KEYS', () => this.resetKeys(), 'terminal-cta'));
+		// A rebind is patient work, and it was thrown away on one press. Same
+		// guard as RESET SETTINGS below and as the terminal's REMOVE TERRAIN
+		// (#213): the first press arms, the second one resets.
+		const reset = button('RESET KEYS', null, 'terminal-cta');
+		armConfirm(reset, () => this.resetKeys());
+		box.appendChild(reset);
 	}
 
 	buildAudio(box) {
@@ -339,8 +348,8 @@ export class Settings {
 			]),
 		]));
 		box.appendChild(h('div', { id: 'replay-row' }));
-		// Pas de confirm() de navigateur (§44, issue #213) : le bouton se
-		// réétiquette et la DEUXIÈME pression est la confirmation.
+		// No browser confirm() (§44, issue #213): the button relabels itself and
+		// the SECOND press is the confirmation.
 		const reset = button('RESET SETTINGS', null, 'terminal-cta');
 		box.appendChild(reset);
 		armConfirm(reset, () => {
@@ -573,10 +582,10 @@ export class Settings {
 	}
 
 	// Curseur de distance d'affichage du mode ?live= (#182). La ligne reste
-	// cachée hors mode live (le rayon de fenêtre n'existe pas pour une scène
-	// pré-cuite) : c'est CET appel, fait par bootLive(), qui la révèle.
+	// hidden outside live mode (the window radius does not exist for a pre-baked
+	// scene): it is THIS call, made by bootLive(), that reveals it.
 	// L'affichage suit le doigt (oninput) mais le callback ne part qu'au
-	// relâchement (onchange) : chaque cran déclenche traverse() + une vague de
+	// release (onchange): every notch triggers traverse() + a wave of
 	// fetchs vers kh.google.com — pas pendant un glissement.
 	setViewRange(meters, onChange) {
 		this.el.viewRangeRow.hidden = false;
@@ -596,14 +605,14 @@ export class Settings {
 	toggleSettings(force) {
 		const show = force ?? this.el.settings.hidden;
 		this.el.settings.hidden = !show;
-		// Fermer le panneau abandonne une mesure en cours, et rien n'est écrit :
-		// un calibrage à moitié fait ne doit pas survivre à un panneau fermé, et
-		// sa boucle rAF ne doit pas continuer à tourner derrière.
+		// Closing the panel abandons a measurement in progress, and nothing is
+		// written: a half-finished calibration must not survive a closed panel,
+		// and its rAF loop must not keep running behind it.
 		//
-		// Échap ferme donc le panneau, comme partout ailleurs — il n'annule pas
-		// « juste l'assistant ». C'est aussi ce qui arrivait de fait : Échap est
-		// traité DEUX fois (main.js et le `back` de menu-nav), et une garde qui
-		// annulait au premier passage laissait le second fermer quand même.
+		// So Escape closes the panel, as it does everywhere else — it does not
+		// cancel "just the wizard". That is also what happened in fact: Escape is
+		// handled TWICE (main.js and menu-nav's `back`), and a guard that
+		// cancelled on the first pass let the second one close anyway.
 		if (!show && this._cal) this.cancelCalibration();
 		// A key capture does not survive a closed panel either: its listener
 		// would linger, and the next keystroke would be swallowed.
@@ -612,9 +621,9 @@ export class Settings {
 			this.selectTab(activeTab);
 			this.buildAxisRows();
 			// Navigation clavier + manette (issue #123) : ↑/↓ circule entre les
-			// lignes, ←/→ règle le contrôle focalisé (menu-nav.js sait lesquels
-			// sont réglables), Échap / B referme. Attaché à l'ouverture seulement :
-			// en vol, panneau fermé, les flèches restent des commandes.
+			// rows, ←/→ adjusts the focused control (menu-nav.js knows which ones
+			// are adjustable), Escape / B closes. Attached on open only: in
+			// flight, with the panel closed, the arrows stay flight commands.
 			this._nav ??= menuNav(this.el.settings, {
 				back: () => this.toggleSettings(false),
 				gamepad: !this.flightActive,
@@ -622,7 +631,7 @@ export class Settings {
 		} else {
 			this._nav?.detach();
 			this._nav = null;
-			// Panneau fermé : la boucle de la machine s'arrête avec lui, comme
+			// Panel closed: the machine's loop stops with it, like
 			// celle de l'assistant.
 			this.unmountCalDrone();
 			// A caller that WAITS on the close (the root menu, D6) gets the hand
@@ -641,20 +650,20 @@ export class Settings {
 
 	// One row per channel: pick which axis drives it and whether to invert.
 	// Live bars next to each let you see which physical stick is which.
-	// Ce que le navigateur énumère, tel quel : identifiant, nombre d'axes,
-	// nombre de boutons, et la classe que padKind() en déduit — c'est elle qui
-	// décide du mappage par défaut, donc c'est elle qu'il faut pouvoir LIRE
-	// quand « ça ne marche pas » (issue #162). Un clic désigne le périphérique
-	// actif, ce qui compte dès qu'il y en a deux branchés.
+	// What the browser enumerates, as-is: id, axis count, button count, and the
+	// class padKind() derives from them — that class decides the default
+	// mapping, so it is the one thing you must be able to READ when "it does not
+	// work" (issue #162). A click designates the active device, which matters as
+	// soon as two are plugged in.
 	//
-	// Rappel utile au diagnostic : l'API Gamepad n'expose un périphérique
-	// qu'après une action de l'utilisateur DESSUS. Une liste vide ne veut donc
-	// pas dire « non reconnu », elle peut vouloir dire « pas encore touché » —
-	// et le texte le dit, plutôt que de laisser conclure.
+	// A note that helps diagnosis: the Gamepad API only exposes a device after
+	// the user has acted ON it. An empty list therefore does not mean "not
+	// recognised", it can mean "not touched yet" — and the text says so, rather
+	// than leaving people to conclude.
 	// ---------------------------------------------------------------------------
 	// ASSISTANT DE CALIBRAGE (issue #277)
 	//
-	// Le panneau ne décide de rien : src/calibration.js tient la machine à états
+	// The panel decides nothing: src/calibration.js holds the state machine
 	// et dit quelle consigne afficher. Ici on lui donne une trame et un dt, et on
 	// peint ce qu'elle rend.
 	// ---------------------------------------------------------------------------
@@ -664,18 +673,18 @@ export class Settings {
 		if (!pad) return;
 		this._calPadId = pad.id;
 		// Axes ET boutons : sur une radio que le navigateur mappe en
-		// « standard », le gaz sort sur une gâchette (#279).
+		// "standard", throttle comes out on a trigger (#279).
 		this._cal = beginCalibration(padSignals(pad).length, pad.axes.length);
 		this._calLast = performance.now();
 		this.el.calSummary.hidden = true;
 		this.renderCalibration(pad);
 
 		// L'assistant tourne sur SA PROPRE boucle, pas sur celle du vol :
-		// renderer.setAnimationLoop(frame) ne démarre qu'au décollage, et le
+		// renderer.setAnimationLoop(frame) only starts at take-off, and the
 		// panneau Tab s'ouvre aussi depuis le terminal, avant boot(). Sans
-		// cette boucle, l'assistant y resterait figé sur sa première consigne —
-		// c'est-à-dire cassé, exactement là où un pilote dont « ça ne marche
-		// pas » va le chercher.
+		// this loop the wizard would sit frozen on its first instruction — that
+		// is, broken, in exactly the place a pilot for whom "it does not work"
+		// goes looking for it.
 		const tick = () => {
 			if (!this._cal) { this._calRaf = null; return; }
 			this._calRaf = requestAnimationFrame(tick);
@@ -686,8 +695,8 @@ export class Settings {
 	}
 
 	cancelCalibration() {
-		// Rien n'est écrit : un calibrage abandonné laisse le périphérique
-		// exactement comme il était.
+		// Nothing is written: an abandoned calibration leaves the device exactly
+		// as it was.
 		this.stopCalibration();
 		this.renderCalibration(this.input.getGamepad());
 	}
@@ -700,15 +709,15 @@ export class Settings {
 	}
 
 	// ---------------------------------------------------------------------------
-	// LA MACHINE QUI RÉAGIT AU MANCHE (issue #281)
+	// THE MACHINE THAT ANSWERS THE STICK (issue #281)
 	//
 	// Le calibrage mesurait juste et ne montrait rien : le pilote poussait un
 	// manche et ne voyait qu'une barre. Elle vit tant que le panneau est
-	// ouvert et qu'il y a quelque chose à montrer — une mesure en cours, ou un
-	// périphérique déjà calibré, et c'est alors un banc d'essai.
+	// open and there is something to show — a measurement in progress, or an
+	// already calibrated device, and then it is a test bench.
 	// ---------------------------------------------------------------------------
 
-	// Ce que la machine doit refléter à cette frame, ou null pour la pose de
+	// What the machine must reflect on this frame, or null for the pose of
 	// repos. Aucune horloge ici : calibration-drone.js tient la sienne.
 	calDroneSample() {
 		const pad = this.input.getGamepad();
@@ -716,7 +725,8 @@ export class Settings {
 		const signals = padSignals(pad);
 		if (this._cal) return { state: this._cal, signals };
 
-		// Mesure finie : la pose vient du calibrage écrit, par le même chemin
+		// Measurement finished: the pose comes from the written calibration, by
+		// the same path
 		// que le vol. `phase: 'done'` est tout ce que calibrationPose() lit.
 		const cal = this.input.calibration;
 		if (!cal) return null;
@@ -746,11 +756,11 @@ export class Settings {
 	}
 
 	// Une trame de mesure. Le dt vient d'ici et non de main.js : la machine
-	// raisonne en millisecondes réelles, et updateAxisBars() n'en reçoit pas.
+	// reasons in real milliseconds, and updateAxisBars() is not given any.
 	stepCalibration(pad) {
 		const now = performance.now();
-		// Un onglet en arrière-plan rend un dt énorme au retour ; le borner
-		// évite de valider une consigne que personne n'a tenue.
+		// A backgrounded tab returns an enormous dt; clamping it avoids
+		// validating an instruction nobody actually held.
 		const dt = Math.min(100, now - this._calLast);
 		this._calLast = now;
 
@@ -769,7 +779,7 @@ export class Settings {
 			this.el.calSummary.hidden = false;
 			this.stopCalibration();
 			// Le mappage vient de changer sous les lignes d'axes : elles se
-			// reconstruisent, elles ne se rafraîchissent pas.
+			// are rebuilt, they are not refreshed.
 			this._axisRows = [];
 		}
 		this.renderCalibration(pad);
@@ -785,8 +795,9 @@ export class Settings {
 		this.el.padList.hidden = running;
 
 		if (!running) {
-			// La consigne ne doit pas survivre à la mesure : sinon rouvrir le
-			// panneau ferait clignoter la dernière consigne d'un calibrage fini.
+			// The instruction must not survive the measurement: otherwise
+			// reopening the panel would flash the last instruction of a finished
+			// calibration.
 			this.el.calStep.textContent = '';
 			this.el.calPrompt.textContent = '';
 			this.el.calHint.textContent = '';
@@ -805,9 +816,9 @@ export class Settings {
 		this.el.calHint.textContent = this._cal.hint;
 		this.el.calMessage.textContent = this._cal.message ?? '';
 
-		// La barre suit l'axe le plus écarté de son neutre : pendant une
+		// The bar follows the axis furthest from its neutral: during a
 		// consigne, c'est celui que le pilote est en train de pousser. Tant que
-		// le neutre n'est pas mesuré, elle suit l'axe le plus écarté de zéro.
+		// the neutral is not measured, it follows the axis furthest from zero.
 		const signals = pad ? padSignals(pad) : [];
 		const centers = this._cal.centers;
 		let best = 0;
@@ -821,16 +832,16 @@ export class Settings {
 	buildPadList() {
 		const pads = this.input.listGamepads();
 		const box = this.el.padList;
-		// updateAxisBars() rappelle buildAxisRows() à chaque frame tant qu'aucune
-		// ligne n'a pu être construite (manette pas encore annoncée). Sans cette
+		// updateAxisBars() calls buildAxisRows() again every frame for as long as
+		// no row could be built (gamepad not announced yet). Without this
 		// signature, la liste se reconstruirait 60 fois par seconde et un clic
-		// tomberait sur un bouton déjà remplacé.
+		// would land on a button that has already been replaced.
 		const sig = `${this.input.gamepadIndex}|${pads.map((g) => `${g.index}:${g.id}:${g.axes}:${g.buttons}`).join('|')}`;
 		if (sig === this._padListSig) return;
 		this._padListSig = sig;
 		box.replaceChildren();
-		// Ce qu'on montre est décidé par padListEntries() (input.js, pur et
-		// testé) ; ici on ne fait que le peindre et le rendre cliquable.
+		// What is shown is decided by padListEntries() (input.js, pure and
+		// tested); here we only paint it and make it clickable.
 		const entries = padListEntries(pads, this.input.gamepadIndex);
 		if (!entries.length) {
 			const p = document.createElement('p');
@@ -846,8 +857,8 @@ export class Settings {
 			b.textContent = g.label;
 			b.onclick = () => {
 				this.input.selectGamepad(g.index);
-				// Le mappage par défaut change avec la classe du périphérique :
-				// les lignes d'axes doivent se reconstruire, pas se rafraîchir.
+				// The default mapping changes with the device class: the axis rows
+				// must be rebuilt, not refreshed.
 				this._axisRows = [];
 				this._padListSig = null;
 				this.buildAxisRows();
@@ -865,8 +876,8 @@ export class Settings {
 
 		this.el.padMap.replaceChildren();
 		this._axisRows = CHANNELS.map((ch) => {
-			// Les boutons sont proposés comme les axes : un remap manuel doit
-			// pouvoir désigner la gâchette où le navigateur a rangé le gaz.
+			// Buttons are offered like axes: a manual remap must be able to point
+			// at the trigger where the browser filed the throttle.
 			const sel = h('select');
 			padSignals(pad).forEach((_, i) => {
 				sel.appendChild(h('option', { value: String(i), text: signalLabel(i, pad.axes.length) }));
@@ -892,13 +903,13 @@ export class Settings {
 		if (!this.settingsOpen) return;
 
 		// Une mesure en cours a sa propre boucle (startCalibration) et cache les
-		// lignes de remap : il n'y a rien à rafraîchir ici.
+		// remap rows: there is nothing to refresh here.
 		if (this._cal) return;
 
-		// La manette a pu se faire connaître après l'ouverture du panneau
-		// (ex. gamepadconnected pas encore levé par le navigateur au moment
+		// The gamepad may have announced itself after the panel opened
+		// (e.g. gamepadconnected not yet raised by the browser at the moment
 		// du premier buildAxisRows()) : on retente tant qu'aucune ligne n'a
-		// été construite plutôt que de rester bloqué sur "no controller detected".
+		// been built rather than staying stuck on "no controller detected".
 		if (this._axisRows.length === 0) { this.buildAxisRows(); return; }
 		const pad = this.input.getGamepad();
 		if (!pad) return;

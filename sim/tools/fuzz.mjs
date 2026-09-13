@@ -225,7 +225,7 @@ const CORPUS = (() => {
 // A music manifest as public/music.json holds one. `validateManifest` is the
 // gate src/music.js runs at boot, so anything it calls clean has to render.
 const musicManifest = (r) => ({
-	schemaVersion: pick(r, [1, 1, 1, 0, '1', undefined]),
+	schemaVersion: pick(r, [1, 1, 1, 0, 2, '1', null, undefined]),
 	tracks: Array.from({ length: int(r, 0, 6) }, (_, i) => ({
 		id: pick(r, [`menu-${i}`, `race5-${i}`, '', 42, null, 'menu-0']),
 		pool: pick(r, [...musicModel.MUSIC_POOLS, 'nope', null]),
@@ -1059,27 +1059,37 @@ const targets = [
 		let days;
 		try { days = weather.fromOpenMeteo(payload); } catch (err) {
 			if (!(err instanceof Error) || !err.message) return `fromOpenMeteo threw a useless error: ${pretty(err)}`;
-			// The gate is allowed to say "réponse inexploitable". It is not
-			// allowed to trip over the value: that message reaches the server log
-			// and the fallback decision, not a refusal the code chose.
-			if (err instanceof TypeError) return `fromOpenMeteo refused with an engine error: ${err.message}`;
+			// A TypeError here means it tripped over a value rather than refusing
+			// it — nonprimitive-json owns that one (`String(hourly.time[i])` on a
+			// `{"toString": null}`), so it is not reported twice.
+			if (err instanceof TypeError && !/primitive value/.test(err.message)) {
+				return `fromOpenMeteo refused with an engine error: ${err.message}`;
+			}
 			return null;
 		}
 		// Everything below is what sanitize() promises: the ranges the terminal,
 		// wind.js, rain.js and fog.js are all written against.
 		for (const [i, d] of days.entries()) {
-			const bad = firstNonFinite({ ...d, date: 0 });
+			// A bearing that ARRIVED non-finite is weather-sanitize's finding —
+			// `1e400` in a JSON body parses to Infinity, and Infinity % 360 is
+			// NaN. It is masked here so this target keeps watching the other
+			// twenty things instead of reporting that one on every run.
+			const rawDir = Number(payload?.daily?.wind_direction_10m_dominant?.[i]);
+			const dirOk = Number.isFinite(rawDir);
+			const bad = firstNonFinite({ ...d, date: 0, windDir: dirOk ? d.windDir : 0 });
 			if (bad) return `day ${i}: ${bad}`;
 			if (!weather.REGIMES.includes(d.regime)) return `day ${i}: unknown regime ${pretty(d.regime)}`;
 			if (!(d.windSpeed >= 0 && d.windSpeed <= 40)) return `day ${i}: windSpeed ${d.windSpeed}`;
 			if (!(d.windGust >= d.windSpeed)) return `day ${i}: gust ${d.windGust} under a mean of ${d.windSpeed}`;
-			if (!Number.isInteger(d.windDir) || d.windDir < 0 || d.windDir > 359) return `day ${i}: windDir ${pretty(d.windDir)}`;
+			if (dirOk && (!Number.isInteger(d.windDir) || d.windDir < 0 || d.windDir > 359)) {
+				return `day ${i}: windDir ${pretty(d.windDir)}`;
+			}
 			if (!(d.rateMmH >= 0 && d.rateMmH <= 60)) return `day ${i}: rateMmH ${d.rateMmH}`;
 			if (!(d.cloudPct >= 0 && d.cloudPct <= 100)) return `day ${i}: cloudPct ${d.cloudPct}`;
 			if (!(d.visibilityM >= 30 && d.visibilityM <= 60000)) return `day ${i}: visibilityM ${d.visibilityM}`;
 			// What the flight model is handed. A non-finite wind speed is a drone
 			// that leaves the map on the first step.
-			const sim = weather.toSimParams(d);
+			const sim = weather.toSimParams({ ...d, windDir: dirOk ? d.windDir : 0 });
 			const simBad = firstNonFinite(sim);
 			if (simBad) return `day ${i}: toSimParams holds ${simBad}`;
 			for (const k of ['rain', 'fog', 'cloud']) {
@@ -1272,10 +1282,15 @@ const targets = [
 {
 	name: 'music-manifest',
 	note: 'public/music.json, fetched at boot — validateManifest() is the gate, and anything it calls clean has to reach the jukebox',
+	// Missing fields, wrong pools, duplicate ids, absurd durations: the ways a
+	// generation run or a hand edit really leaves this file. The one shape left
+	// out is a field whose value is an OBJECT — that is music-manifest-types's
+	// finding, and letting it through here would report the same defect twice.
 	gen(r, i) {
 		const m = musicManifest(r);
+		if (i % 3 === 0) for (const t of m.tracks) delete t[pick(r, ['id', 'pool', 'file', 'durS', 'bpm'])];
 		return {
-			manifest: i % 3 === 0 ? jsonRoundTrip(mutate(r, m, 2)) : m,
+			manifest: m,
 			pool: pick(r, [...musicModel.MUSIC_POOLS, 'nope', null]),
 			seed: pick(r, ['flight-1', '', '🛸']),
 			recent: Array.from({ length: int(r, 0, 20) }, () => pick(r, ['menu-0', 'race5-1', null, ''])),
@@ -1318,31 +1333,6 @@ const targets = [
 		if (t1 && t1.pool !== pool) return `pickTrack returned a ${pretty(t1.pool)} track for pool ${pretty(pool)}`;
 		const next = musicModel.pushRecent(recent, t1?.id);
 		if (next.length > musicModel.RECENT_LIMIT) return `pushRecent grew to ${next.length}`;
-		return null;
-	},
-},
-
-{
-	name: 'music-manifest-types',
-	known: 'validateManifest() checks that every required field is PRESENT and never what it holds; buildLibrary() then calls String(track.id)',
-	note: 'public/music.json — the gate src/music.js runs before it trusts the file, and the JUKEBOX screen that reads it afterwards',
-	gen(r) {
-		return {
-			manifest: {
-				schemaVersion: 1,
-				tracks: [{
-					id: pick(r, ['menu-0', { toString: null }, [], { a: 1 }]),
-					pool: 'menu', file: 'music/0.opus', durS: 90, bpm: 128,
-				}],
-			},
-		};
-	},
-	check({ manifest }) {
-		if (musicModel.validateManifest(manifest).length > 0) return null;   // refused: the game goes silent, by design
-		// Called clean, so every screen downstream is entitled to render it.
-		try { jukebox.buildLibrary(manifest); } catch (err) {
-			return `validateManifest called this manifest clean and buildLibrary then threw ${err?.name}: ${err?.message}`;
-		}
 		return null;
 	},
 },
@@ -1619,31 +1609,68 @@ const targets = [
 },
 
 {
-	name: 'operator-file',
-	known: 'terminalModel() and countersOf() read the operator file with String(v) and (v ?? []).filter, the two shapes tools/lib/as-text.mjs and Array.isArray exist to stop',
-	note: 'the operator JSON on disk, read by the FIELD screen — the same hand-editable file the session validators already guard, on the one path that has no validator',
+	name: 'nonprimitive-json',
+	known: 'String(v) is still assumed total in four more places, and (v ?? []).filter in a fifth — the same defect tools/lib/as-text.mjs was written for (fuzzing finding 3, issue #85)',
+	// One target for one defect class, across every place this session found a
+	// new instance of it. `{"toString": null}` is valid JSON: JSON.parse builds
+	// it happily, and `String()` on it raises "Cannot convert object to
+	// primitive value" — an engine TypeError where the code meant to name a
+	// field. Three sources, all of them things the game reads and does not
+	// write: the operator file on disk, public/music.json over HTTP, and the
+	// Open-Meteo answer.
+	note: 'every remaining `String(v)` over JSON the game did not write — the operator file, public/music.json and the api.open-meteo.com body',
 	gen(r) {
+		// Every one of these survives JSON.parse — that is the point.
+		const hostile = () => pick(r, [{ toString: null }, [], { a: 1 }, { toString: 3 }]);
 		return {
+			where: pick(r, ['operator', 'music', 'open-meteo']),
 			operator: {
 				id: 'neo-0000',
 				// Valid JSON, every one of them, and none is a string.
-				name: pick(r, ['NEO', '', null, 42, { toString: null }, [], { a: 1 }, true]),
+				name: pick(r, ['NEO', '', null, 42, hostile(), true]),
 				sessions: pick(r, [[], null, false, 0, 'two', { length: 2 }, [null]]),
 				terrainCache: pick(r, [[], null, 3, {}]),
 			},
-			scenes: pick(r, [null, []]),
+			manifest: {
+				schemaVersion: pick(r, [1, hostile()]),
+				tracks: [{ id: pick(r, ['menu-0', hostile()]), pool: pick(r, ['menu', hostile()]), file: 'music/0.opus', durS: 90, bpm: 128 }],
+			},
+			payload: { daily: { time: ['2026-09-13'], weather_code: [0], precipitation_sum: [0], precipitation_hours: [0], wind_speed_10m_max: [4], wind_gusts_10m_max: [6], wind_direction_10m_dominant: [180] },
+				hourly: { time: [pick(r, ['2026-09-13T00:00', hostile()])], visibility: [20000], cloud_cover: [10] } },
 		};
 	},
-	check({ operator, scenes }) {
-		// FIELD is the first screen after boot. Whatever this file holds, it has
-		// to mount — and the six sibling formatters already learned that lesson
-		// (tools/lib/as-text.mjs, fuzzing finding 3).
-		let model;
-		try { model = terminal.terminalModel({ operator, scenes }); } catch (err) {
-			return `terminalModel threw on a stored operator: ${err?.name}: ${err?.message}`;
+	check({ where, operator, manifest, payload }) {
+		if (where === 'operator') {
+			// FIELD is the first screen after boot. Whatever the file holds, it
+			// has to mount — the six sibling formatters already learned that.
+			let model;
+			try { model = terminal.terminalModel({ operator, scenes: null }); } catch (err) {
+				return `terminalModel threw on a stored operator: ${err?.name}: ${err?.message}`;
+			}
+			if (typeof model.operatorName !== 'string') return `operatorName = ${pretty(model.operatorName)}`;
+			if (textLeak(model.footer)) return `footer ${textLeak(model.footer)}`;
+			return null;
 		}
-		if (typeof model.operatorName !== 'string') return `operatorName = ${pretty(model.operatorName)}`;
-		if (textLeak(model.footer)) return `footer ${textLeak(model.footer)}`;
+		if (where === 'music') {
+			// The gate is documented to RETURN its problems; a hostile value
+			// makes it throw them instead, out of the template literal that was
+			// about to name the offending field.
+			let problems;
+			try { problems = musicModel.validateManifest(manifest); } catch (err) {
+				return `validateManifest threw instead of reporting: ${err?.name}: ${err?.message}`;
+			}
+			if (problems.length > 0) return null;   // refused: the game goes silent, by design
+			try { jukebox.buildLibrary(manifest); } catch (err) {
+				return `validateManifest called this manifest clean and buildLibrary then threw ${err?.name}: ${err?.message}`;
+			}
+			return null;
+		}
+		// dailyMean() does String(hourly.time[i]).startsWith(day). The answer is
+		// a third party's, and the refusal the server logs should say
+		// "réponse Open-Meteo inexploitable", not name a JS conversion.
+		try { weather.fromOpenMeteo(payload); } catch (err) {
+			if (err instanceof TypeError) return `fromOpenMeteo refused with an engine error: ${err.message}`;
+		}
 		return null;
 	},
 },
@@ -1757,8 +1784,14 @@ const targets = [
 				if (!(err instanceof Error) || !err.message) return `render threw a useless error: ${pretty(err)}`;
 				continue;
 			}
-			const leak = textLeak(lines.map((l) => l.text));
-			if (leak) return `render ${leak}`;
+			// Against the TEMPLATE, not in the absolute: a crew member is allowed
+			// to say the word "undefined" (target_scan.json line 5464 does), and
+			// what matters is whether the interpolation put one there.
+			for (const [k, l] of lines.entries()) {
+				const before = String(r2.entry.lines?.[k]?.text ?? '');
+				const leak = textLeak(l.text);
+				if (leak && !textLeak(before)) return `render turned ${pretty(before)} into ${pretty(l.text)}`;
+			}
 			const beats = cadence.planExchange(lines, event, rng);
 			let last = -1;
 			for (const b of beats) {

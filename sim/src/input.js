@@ -16,12 +16,12 @@ import {
 } from './key-map.js';
 
 const STORAGE_KEY = 'fpvtp.gamepadMap';
-// Calibrages mesurés, indexés PAR PÉRIPHÉRIQUE (issue #277). STORAGE_KEY, lui,
-// n'a jamais tenu qu'un seul mappage pour tout le monde : brancher une manette
-// après avoir remappé une radio récupérait le mappage de la radio.
+// Measured calibrations, indexed PER DEVICE (issue #277). STORAGE_KEY only ever
+// held one mapping for everybody: plugging in a gamepad after remapping a radio
+// picked up the radio's mapping.
 const CAL_STORAGE_KEY = 'fpvtp.gamepadCal';
-// Deadband par défaut, utilisé tant que le périphérique n'a pas été calibré.
-// Un calibrage le remplace par le bruit RÉELLEMENT mesuré au repos.
+// Default deadband, used until the device has been calibrated. A calibration
+// replaces it with the noise ACTUALLY measured at rest.
 const DEADBAND = 0.06;
 // Fixed navigation keys, never in the key map (D13): they are forwarded to
 // main.js under their own names.
@@ -61,8 +61,8 @@ function rampAxis(value, target, dt) {
 // GAMEPAD MAPPINGS
 // -----------------------------------------------------------------------------
 
-// EdgeTX radios : gimbals à friction, la course entière du manche gauche est
-// utile — throttle en PLEINE course (voir THROTTLE_MODE).
+// EdgeTX radios: friction gimbals, so the left stick's whole travel is useful —
+// throttle on FULL travel (see THROTTLE_MODE).
 const EDGETX_MAP = {
 	roll: { axis: 0, invert: false },
 	pitch: { axis: 1, invert: true },
@@ -71,22 +71,22 @@ const EDGETX_MAP = {
 };
 
 // -----------------------------------------------------------------------------
-// MANETTES À STICKS AUTO-CENTRÉS (DualShock 4/DualSense, Xbox, génériques)
+// SELF-CENTRING GAMEPADS (DualShock 4/DualSense, Xbox, generics)
 //
-// Un seul profil : en mapping « standard » du navigateur, PlayStation et Xbox
-// exposent exactement la même disposition d'axes.
+// One profile only: in the browser's "standard" mapping, PlayStation and Xbox
+// expose exactly the same axis layout.
 //
-// axis 0 = stick gauche X    axis 2 = stick droit X
-// axis 1 = stick gauche Y    axis 3 = stick droit Y
+// axis 0 = left stick X    axis 2 = right stick X
+// axis 1 = left stick Y    axis 3 = right stick Y
 //
-// Mapping FPV voulu :
-//   gauche Y -> throttle (moitié haute seule, voir THROTTLE_MODE)
-//   gauche X -> yaw
-//   droit  X -> roll
-//   droit  Y -> pitch : stick poussé vers l'avant = nez qui pique.
-//                       L'axe vaut -1 vers l'avant et `sticks.pitch < 0` fait
-//                       piquer (flightController : pitch > 0 = cabrer), donc
-//                       PAS d'inversion. Même convention au clavier.
+// The FPV mapping wanted:
+//   left  Y -> throttle (upper half only, see THROTTLE_MODE)
+//   left  X -> yaw
+//   right X -> roll
+//   right Y -> pitch: stick pushed forward = nose drops.
+//                     The axis reads -1 forward and `sticks.pitch < 0` pitches
+//                     down (flightController: pitch > 0 = pitch up), so NO
+//                     inversion. Same convention on the keyboard.
 // -----------------------------------------------------------------------------
 
 const GAMEPAD_MAP = {
@@ -96,33 +96,31 @@ const GAMEPAD_MAP = {
 	pitch: { axis: 3, invert: false },
 };
 
-// Comment l'axe de throttle devient 0..1 :
-//   'full' : (v+1)/2 — le manche tient sa position (radio).
-//   'half' : max(0, v) — un stick auto-centré revient à 0 %, sinon lâcher la
-//            manette laisserait 50 % de gaz et rendrait le geste de
-//            désarmement (throttle < 0,08) injoignable au repos.
+// How the throttle axis becomes 0..1:
+//   'full': (v+1)/2 — the stick holds its position (radio).
+//   'half': max(0, v) — a self-centring stick returns to 0 %, otherwise letting
+//           go of the pad would leave 50 % throttle and put the disarm gesture
+//           (throttle < 0.08) out of reach at rest.
 export const THROTTLE_MODE = { radio: 'full', gamepad: 'half' };
 
 // -----------------------------------------------------------------------------
 // DEVICE DETECTION
 // -----------------------------------------------------------------------------
 
-// Les noms de marque ne suffisent pas : ils ne couvrent que les radios qu'on a
-// pensé à lister, et une radio non reconnue tombe en 'generic', donc sur
-// GAMEPAD_MAP — dont les quatre axes sont dans un ORDRE DIFFÉRENT d'EDGETX_MAP,
-// avec un gaz en demi-course. Le pilote ne voit pas « mal mappé », il voit
-// « ça ne marche pas ». Signalé sur un TBS Tango 2, qu'aucun mot de cette liste
-// n'attrapait.
+// Brand names are not enough: they only cover the radios somebody thought to
+// list, and an unrecognised radio falls through to 'generic', hence to
+// GAMEPAD_MAP — whose four axes are in a DIFFERENT ORDER from EDGETX_MAP, with
+// a half-travel throttle. The pilot does not see "badly mapped", they see "it
+// does not work". Reported on a TBS Tango 2, which no word in this list caught.
 //
-// D'où `4f54` : c'est l'identifiant produit USB des radios OpenTX/EdgeTX —
-// « OT » en ASCII — associé au fabricant `1209` (pid.codes). Vérifié sur le
-// matériel du projet : la Radiomaster Pocket s'énumère en 1209:4f54, et les
-// firmwares dérivés d'OpenTX (dont FreedomTX du Tango 2) partagent cet
-// identifiant. Un identifiant vaut mieux qu'un nom, exactement comme 045e et
-// 054c plus bas pour Xbox et PlayStation.
+// Hence `4f54`: the USB product id of OpenTX/EdgeTX radios — "OT" in ASCII —
+// paired with vendor `1209` (pid.codes). Verified on the project's own
+// hardware: the Radiomaster Pocket enumerates as 1209:4f54, and OpenTX-derived
+// firmwares (including the Tango 2's FreedomTX) share that id. An id beats a
+// name, exactly as 045e and 054c do below for Xbox and PlayStation.
 //
-// Les noms restent en second rideau, pour les radios qui s'énumèrent sous un
-// identifiant propriétaire.
+// The names stay as a second line of defence, for radios that enumerate under a
+// proprietary id.
 const RADIO_RE =
 	/4f54|edgetx|opentx|freedomtx|radiomaster|frsky|jumper|tx16|taranis|betafpv|flysky|tbs|tango|horus|boxer|zorro|commando/i;
 
@@ -131,15 +129,15 @@ const RADIO_RE =
 const XBOX_RE =
 	/xbox|xinput|045e/i;
 
-// 054c = vendor Sony, commun à la DS4 et à la DualSense. Firefox nomme la DS4
-// « Wireless Controller » tout court — mais Chrome nomme la manette Xbox
-// « Xbox Wireless Controller », d'où l'ordre de test dans padKind().
+// 054c = vendor Sony, shared by the DS4 and the DualSense. Firefox names the
+// DS4 plain "Wireless Controller" — but Chrome names the Xbox pad "Xbox
+// Wireless Controller", hence the order of the tests in padKind().
 const PLAYSTATION_RE =
 	/dualshock|dualsense|wireless controller|054c|playstation|ps[45]/i;
 
-// Renvoie 'radio' | 'xbox' | 'playstation' | 'generic'. L'ordre compte :
-// radio d'abord (une radio peut s'annoncer « ... Controller »), puis Xbox
-// avant PlayStation à cause de « Wireless Controller ».
+// Returns 'radio' | 'xbox' | 'playstation' | 'generic'. The order matters:
+// radio first (a radio can announce itself as "... Controller"), then Xbox
+// before PlayStation because of "Wireless Controller".
 export function padKind(id) {
 	const s = id || '';
 	if (RADIO_RE.test(s)) return 'radio';
@@ -148,17 +146,17 @@ export function padKind(id) {
 	return 'generic';
 }
 
-// Ce que l'écran de périphériques doit MONTRER, décidé sans DOM (issue #162).
+// What the devices screen must SHOW, decided with no DOM (issue #162).
 //
-// `pads` : la sortie de listGamepads(). `activeIndex` : l'index du périphérique
-// réellement lu par Input. Rend une ligne par périphérique — identifiant,
-// classe déduite (c'est ELLE qui décide du mappage par défaut, donc c'est elle
-// qu'il faut pouvoir lire quand « ça ne marche pas »), nombre d'axes et de
-// boutons, et l'état actif.
+// `pads`: the output of listGamepads(). `activeIndex`: the index of the device
+// Input is actually reading. Returns one row per device — id, deduced class
+// (that class is what decides the default mapping, so it is the thing you need
+// to be able to read when "it does not work"), axis and button counts, and
+// whether it is active.
 //
-// Une liste vide n'est pas « non reconnu » : l'API Gamepad n'expose un
-// périphérique qu'APRÈS une action de l'utilisateur dessus. `empty` porte cette
-// nuance pour que l'écran la dise au lieu de laisser conclure.
+// An empty list is not "unrecognised": the Gamepad API only exposes a device
+// AFTER the user has acted on it. `empty` carries that nuance so the screen can
+// say it instead of leaving you to conclude.
 export function padListEntries(pads, activeIndex) {
 	return (pads ?? []).map((g) => ({
 		index: g.index,
@@ -182,7 +180,7 @@ export function throttleModeForKind(kind) {
 	return kind === 'radio' ? THROTTLE_MODE.radio : THROTTLE_MODE.gamepad;
 }
 
-// Axe -1..1 déjà désinversé -> gaz 0..1.
+// A -1..1 axis, inversion already undone -> throttle 0..1.
 export function throttleFromAxis(v, mode) {
 	const t = mode === THROTTLE_MODE.radio ? (v + 1) / 2 : v;
 	return Math.max(0, Math.min(1, t));
@@ -198,10 +196,10 @@ export const CHANNELS = [
 // -----------------------------------------------------------------------------
 // CALIBRAGE MESURÉ (issue #277)
 //
-// Le calibrage produit par src/calibration.js décrit le périphérique tel qu'il
-// est : neutre, course et bruit mesurés, mode de course du gaz observé. Il
-// prime sur `map` + `throttleMode`, qui restent le chemin des périphériques
-// jamais calibrés.
+// The calibration produced by src/calibration.js describes the device as it
+// actually is: measured centre, travel and noise, observed throttle travel
+// mode. It wins over `map` + `throttleMode`, which stay the path for devices
+// that were never calibrated.
 // -----------------------------------------------------------------------------
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -227,9 +225,9 @@ export function isValidCalibration(cal) {
 	});
 }
 
-// Le calibrage d'UN périphérique, ou null. Un stockage illisible retombe sur
-// null plutôt que de jeter : une clé corrompue ne doit pas empêcher de booter,
-// même règle que loadMap().
+// ONE device's calibration, or null. Unreadable storage falls back to null
+// rather than throwing: a corrupt key must not stop the boot — same rule as
+// loadMap().
 export function calStoreGet(store, padId) {
 	if (!store || typeof store !== 'object') return null;
 	const cal = store[padId];
@@ -240,11 +238,10 @@ export function calStoreSet(store, padId, cal) {
 	return { ...(store && typeof store === 'object' ? store : {}), [padId]: cal };
 }
 
-// Les quatre sticks lus à travers le calibrage. Aucune supposition : ni « le
-// neutre est à 0 », ni « la course vaut ±1 », ni « ce gaz revient au centre »,
-// ni « un manche est sur un axe » (#279 : `signals` porte les axes PUIS les
-// boutons, parce qu'une radio en mapping « standard » sort son gaz sur une
-// gâchette).
+// The four sticks read through the calibration. No assumptions: not "centre is
+// at 0", not "travel is +/-1", not "this throttle self-centres", not "a stick is
+// on an axis" (#279: `signals` carries the axes THEN the buttons, because a
+// radio in "standard" mapping puts its throttle on a trigger).
 export function sticksFromCalibration(signals, cal) {
 	const c = cal.channels;
 	const at = (name) => signals[c[name].axis] ?? 0;
@@ -256,10 +253,10 @@ export function sticksFromCalibration(signals, cal) {
 	};
 }
 
-// Un calibrage « supposé » à partir d'un profil écrit à la main : c'est ce que
-// devient un remap manuel fait sur un périphérique jamais calibré. Les valeurs
-// de course y sont des suppositions (neutre 0, course ±1) — exactement celles
-// qu'un vrai calibrage remplace par des mesures.
+// An "assumed" calibration built from a hand-written profile: this is what a
+// manual remap becomes on a device that was never calibrated. Its travel values
+// are guesses (centre 0, travel +/-1) — exactly the ones a real calibration
+// replaces with measurements.
 export function assumedCalibration(map, throttleMode) {
 	const channels = {};
 	for (const name of CAL_CHANNELS) {
@@ -271,21 +268,21 @@ export function assumedCalibration(map, throttleMode) {
 	return { channels, deadband: DEADBAND, throttleMode };
 }
 
-// Un remap manuel appliqué à un calibrage. Le panneau Tab laisse toujours
-// choisir l'axe et le sens à la main : ce chemin doit continuer à marcher SUR
-// un périphérique calibré, sinon la case « inv » n'aurait plus aucun effet.
+// A manual remap applied to a calibration. The Tab panel still lets you pick
+// the axis and the direction by hand: that path has to keep working ON a
+// calibrated device, otherwise the "inv" box would have no effect at all.
 //
-// Ce qu'on garde et ce qu'on jette : sur le même axe, le pilote conteste un
-// SENS, pas une mesure — neutre et course restent. Sur un autre axe, rien n'a
-// jamais été mesuré, on retombe sur les suppositions.
+// What is kept and what is thrown away: on the same axis the pilot is disputing
+// a DIRECTION, not a measurement — centre and travel stay. On another axis
+// nothing was ever measured, so it falls back to the guesses.
 export function remapChannel(cal, channel, axis, invert) {
 	const previous = cal.channels[channel];
 	const sameAxis = previous?.axis === axis;
 
 	let next;
 	if (channel === 'throttle') {
-		// Le plancher reste le plancher. Sur un gaz auto-centré c'est le
-		// neutre : le déplacer mettrait du gaz manette lâchée.
+		// The floor stays the floor. On a self-centring throttle that is the
+		// centre: moving it would leave throttle on with the pad let go.
 		next = sameAxis
 			? { axis, lo: previous.lo, hi: previous.lo + (invert ? -1 : 1) * Math.abs(previous.hi - previous.lo) }
 			: throttleEndpoints(axis, invert, cal.throttleMode);
@@ -298,11 +295,11 @@ export function remapChannel(cal, channel, axis, invert) {
 	return { ...cal, channels: { ...cal.channels, [channel]: next } };
 }
 
-// Plancher et plafond d'un gaz dont on ne connaît que le sens : pleine course
-// d'une butée à l'autre, ou demi-course à partir du neutre.
+// Floor and ceiling of a throttle whose direction is all that is known: full
+// travel from stop to stop, or half travel from the centre.
 function throttleEndpoints(axis, invert, throttleMode) {
-	// Pleine course : d'une butée à l'autre, soit 2 unités d'axe. Demi-course :
-	// du neutre à une butée, soit 1.
+	// Full travel: stop to stop, i.e. 2 axis units. Half travel: centre to one
+	// stop, i.e. 1.
 	const span = throttleMode === THROTTLE_MODE.radio ? 2 : 1;
 	const lo = throttleMode === THROTTLE_MODE.radio ? (invert ? 1 : -1) : 0;
 	return { axis, lo, hi: lo + (invert ? -span : span) };
@@ -337,14 +334,14 @@ export class Input {
 			saved ??
 			defaultMapForKind('generic');
 
-		// Calibrages mesurés, un par périphérique (issue #277). `calibration`
-		// est celui du périphérique ACTIF : tant qu'il est nul, on lit les axes
-		// comme avant, avec le profil deviné.
+		// Measured calibrations, one per device (issue #277). `calibration` is
+		// the ACTIVE device's: while it is null the axes are read as before,
+		// through the guessed profile.
 		this._calStore = loadCalStore();
 		this.calibration = null;
 
-		// Réévalué à l'activation d'une manette : une radio garde la pleine
-		// course, tout le reste passe en demi-course.
+		// Re-evaluated when a pad is activated: a radio keeps full travel,
+		// everything else goes to half travel.
 		this.throttleMode = THROTTLE_MODE.gamepad;
 
 		this.sticks = {
@@ -390,9 +387,9 @@ export class Input {
 
 			const k = e.key.toLowerCase();
 
-			// Un champ de saisie garde ses touches (#222) : Espace y est un
-			// espace, pas une pause — main.js fait preventDefault sur l'action.
-			// Même règle que menu-nav. Échap passe quand même : il n'édite rien.
+			// A text field keeps its keys (#222): Space there is a space, not a
+			// pause — main.js calls preventDefault on the action. Same rule as
+			// menu-nav. Escape still goes through: it edits nothing.
 			if (isTextEntry(e.target) && k !== 'escape') return;
 
 			this.keys.add(k);
@@ -409,8 +406,8 @@ export class Input {
 				this.onAction(k, e);
 			}
 
-			// Espace et les flèches sont des commandes de vol : on empêche le
-			// défilement de la page.
+			// Space and the arrows are flight commands: stop the page from
+			// scrolling.
 			if (k === ' ' || k.startsWith('arrow')) {
 				e.preventDefault();
 			}
@@ -549,11 +546,10 @@ export class Input {
 			}
 		}
 
-		// Un seul pad branché : le seuil de mouvement n'a d'utilité que pour
-		// départager plusieurs manettes candidates (« laquelle bouge en
-		// premier »). Avec une seule manette, l'exiger ne fait qu'empêcher
-		// la détection d'un stick au repos ou trop stable (ex. gimbal Hall
-		// d'une radio) — on l'adopte directement.
+		// Only one pad plugged in: the movement threshold is only useful to
+		// choose between several candidates ("which one moves first"). With a
+		// single pad, demanding it merely prevents detection of a stick at rest
+		// or too steady (a radio's Hall gimbal, say) — so adopt it directly.
 		if (pads.length === 1) {
 			return this._activate(pads[0]);
 		}
@@ -587,9 +583,8 @@ export class Input {
 
 		const kind = padKind(p.id);
 
-		// Le mode de throttle suit toujours le matériel : il décrit la course
-		// physique du manche, pas une préférence — un remap utilisateur ne le
-		// concerne pas.
+		// Throttle mode always follows the hardware: it describes the stick's
+		// physical travel, not a preference — a user remap has no say in it.
 		this.throttleMode = throttleModeForKind(kind);
 
 		// Automatically choose the proper map
@@ -598,9 +593,9 @@ export class Input {
 			this.map = defaultMapForKind(kind);
 		}
 
-		// Un calibrage MESURÉ pour CE périphérique prime sur tout le reste :
-		// c'est la seule source qui ne devine rien. Il fixe aussi le mode de
-		// course du gaz, qui n'est alors plus déduit de la marque.
+		// A MEASURED calibration for THIS device wins over everything else: it
+		// is the only source that guesses nothing. It also fixes the throttle
+		// travel mode, which is then no longer deduced from the brand.
 		this.applyCalibration(calStoreGet(this._calStore, p.id));
 
 		console.log('[input] using gamepad:', p.id, `(${kind})`);
@@ -614,7 +609,8 @@ export class Input {
 	// CALIBRAGE
 	// ---------------------------------------------------------------------------
 
-	// Le calibrage du périphérique actif, ou null pour revenir au profil deviné.
+	// The active device's calibration, or null to fall back to the guessed
+	// profile.
 	applyCalibration(cal) {
 		this.calibration = cal;
 		if (!cal) return;
@@ -622,15 +618,15 @@ export class Input {
 		this.throttleMode = cal.throttleMode;
 	}
 
-	// Fin de l'assistant : on persiste SOUS L'IDENTIFIANT du périphérique, pour
-	// que brancher l'autre manette ne récupère pas ce calibrage-ci.
+	// End of the wizard: persisted UNDER THE DEVICE ID, so that plugging in the
+	// other pad does not pick this calibration up.
 	setCalibration(padId, cal) {
 		this._calStore = calStoreSet(this._calStore, padId, cal);
 		saveCalStore(this._calStore);
 		this.applyCalibration(cal);
 	}
 
-	// L'identifiant du périphérique actif — la clé de stockage d'un calibrage.
+	// The active device's id — the storage key for a calibration.
 	activePadId() {
 		return (navigator.getGamepads?.() ?? [])[this.gamepadIndex]?.id ?? null;
 	}
@@ -708,10 +704,10 @@ export class Input {
 			JSON.stringify(this.map)
 		);
 
-		// Sur un périphérique calibré, le mappage lu en vol vient du calibrage :
-		// sans cette ligne, changer l'axe ou cocher « inv » n'aurait tout
-		// simplement plus d'effet. Le remap suit, et reste attaché à CE
-		// périphérique.
+		// On a calibrated device the mapping read in flight comes from the
+		// calibration: without this line, changing the axis or ticking "inv"
+		// would simply have no effect. The remap follows, and stays attached to
+		// THIS device.
 		const padId = this.activePadId();
 		if (this.calibration && padId) {
 			this.setCalibration(padId, remapChannel(this.calibration, channel, axis, invert));
@@ -722,18 +718,17 @@ export class Input {
 	// UPDATE
 	// ---------------------------------------------------------------------------
 
-	// `frozen` (issue #33) : la simulation est gelée (pause, panneau de réglages,
-	// intro, banc) mais la boucle de frame continue d'appeler update(). Sans ce
-	// drapeau, le gaz clavier — un INTÉGRATEUR, comme un vrai manche : il reste
-	// où on le laisse — monte pendant qu'on tape dans le panneau. Taper « z »
-	// sur la page de remappage armait le gaz à fond, et le drone partait à la
-	// verticale à la fermeture du panneau. Le geste ne pilote pas : il ne doit
-	// donc rien intégrer.
+	// `frozen` (issue #33): the simulation is frozen (pause, settings panel,
+	// intro, bench) but the frame loop keeps calling update(). Without this
+	// flag the keyboard throttle — an INTEGRATOR, like a real stick: it stays
+	// where you leave it — climbs while you type in the panel. Typing "z" on
+	// the remap page armed full throttle, and the drone shot straight up when
+	// the panel closed. The gesture is not flying: it must integrate nothing.
 	//
-	// Seule l'INTÉGRATION est suspendue, pas la lecture : les manches de la
-	// manette restent lus (ils sont absolus, les recopier est sans effet de
-	// bord) et `this.keys` continue de suivre l'état réel du clavier, sans quoi
-	// une touche relâchée pendant le gel resterait enfoncée au dégel.
+	// Only the INTEGRATION is suspended, not the reading: the pad's sticks are
+	// still read (they are absolute, copying them has no side effect) and
+	// `this.keys` keeps following the real keyboard state, without which a key
+	// released during the freeze would stay down when it thaws.
 	update(dt, { frozen = false } = {}) {
 		const pad =
 			this.getGamepad();
@@ -756,9 +751,9 @@ export class Input {
 	// ---------------------------------------------------------------------------
 
 	readStandardGamepad(pad) {
-		// Périphérique calibré : on lit ses axes avec ses propres mesures —
-		// neutre, course et bruit relevés sur CE matériel. Le chemin ci-dessous
-		// reste celui des périphériques jamais calibrés, avec ses suppositions.
+		// A calibrated device: its axes are read through its own measurements —
+		// centre, travel and noise taken on THIS hardware. The path below stays
+		// the one for never-calibrated devices, with its guesses.
 		if (this.calibration) {
 			Object.assign(this.sticks, sticksFromCalibration(padSignals(pad), this.calibration));
 			return true;
@@ -772,9 +767,9 @@ export class Input {
 				return null;
 			}
 
-			// Même espace d'indices que le calibrage : les axes, puis les
-			// boutons (#279). Un remap manuel doit pouvoir désigner une
-			// gâchette, sinon il ne rattrape pas ce que le calibrage rattrape.
+			// The same index space as the calibration: the axes, then the
+			// buttons (#279). A manual remap has to be able to name a trigger,
+			// otherwise it cannot fix what a calibration fixes.
 			const v =
 				padSignals(pad)[m.axis];
 
@@ -822,10 +817,10 @@ export class Input {
 	// GAMEPAD READER
 	// ---------------------------------------------------------------------------
 
-	// Un seul chemin de lecture pour tout le monde : radio, PlayStation, Xbox
-	// et manettes génériques ne diffèrent que par `this.map` et
-	// `this.throttleMode`. C'est ce qui rend le remap du panneau Settings
-	// effectif sur TOUTES les manettes (il écrit dans `this.map`).
+	// One reading path for everybody: radio, PlayStation, Xbox and generic pads
+	// differ only in `this.map` and `this.throttleMode`. That is what makes the
+	// Settings panel's remap effective on EVERY pad (it writes into
+	// `this.map`).
 	readGamepad(pad) {
 		return this.readStandardGamepad(pad);
 	}
@@ -878,7 +873,7 @@ export class Input {
 			roll += 1;
 		}
 
-		// Pitch — même convention que la manette : « en avant » fait piquer.
+		// Pitch — same convention as the pad: "forward" drops the nose.
 		if (has('pitchDown')) {
 			pitch -= 1;
 		}
@@ -983,8 +978,8 @@ function loadStoredKeyMap() {
 	}
 }
 
-// Les calibrages mesurés, tous périphériques confondus. Illisible -> {} : une
-// clé corrompue ne doit pas empêcher le sim de booter.
+// Every measured calibration, all devices together. Unreadable -> {}: a corrupt
+// key must not stop the sim from booting.
 function loadCalStore() {
 	try {
 		const saved = JSON.parse(localStorage.getItem(CAL_STORAGE_KEY));
@@ -999,7 +994,7 @@ function saveCalStore(store) {
 	try {
 		localStorage.setItem(CAL_STORAGE_KEY, JSON.stringify(store));
 	} catch {
-		// Un stockage plein ou refusé ne doit pas casser la fin de l'assistant :
+		// Full or refused storage must not break the end of the wizard:
 		// le calibrage reste actif pour la session en cours.
 	}
 }

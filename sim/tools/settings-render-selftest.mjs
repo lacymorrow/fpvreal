@@ -139,7 +139,11 @@ t('REBIND captures the next key, persists it and hands it to the Input', () => {
 	const row = p.rows().find((r) => r.dataset.action === 'photo');
 	row.querySelectorAll('button').find((b) => b.textContent.includes('REBIND')).click();
 	assert.ok(row.textContent.includes('PRESS A KEY'), 'the row asks for a key');
-	assert.ok(row.textContent.includes('ESC CANCELS'), 'and says how to back out');
+	// The way out is written in the game's one key-hint form, `[KEY] VERB`, not
+	// as prose: the panel's own foot already says `[ESC] CLOSE`, and two
+	// spellings of Escape on one screen is what this settles.
+	assert.ok(row.textContent.includes('[ESC] CANCEL'), 'and says how to back out, in [KEY] VERB form');
+	assert.ok(!row.textContent.includes('ESC CANCELS'), 'the prose form is gone');
 
 	const ev = p.key('x');
 	assert.ok(ev.stopped, 'the captured key does not reach the flight or the menus');
@@ -224,7 +228,7 @@ t('closing the panel ends any capture in progress', () => {
 	p.settings.open('controller');
 });
 
-t('RESET KEYS restores the defaults', () => {
+t('RESET KEYS restores the defaults, and needs two presses to do it', () => {
 	const p = mount();
 	p.settings.open('keyboard');
 	const row = p.rows().find((r) => r.dataset.action === 'respawn');
@@ -232,7 +236,13 @@ t('RESET KEYS restores the defaults', () => {
 	p.key('x');
 	assert.deepEqual(p.input.getKeyMap().respawn, ['x']);
 
-	p.btn('RESET KEYS').click();
+	// Destructive, so it is armed (#213): the first press only relabels.
+	const reset = p.btn('RESET KEYS');
+	reset.click();
+	assert.equal(reset.textContent, '[ RESET KEYS — CONFIRM ]', 'the first press only arms');
+	assert.deepEqual(p.input.getKeyMap().respawn, ['x'], 'and nothing has been reset yet');
+	reset.click();
+	assert.equal(reset.textContent, '[ RESET KEYS ]', 'the second press fires and disarms');
 	assert.deepEqual(p.input.getKeyMap(), loadKeyMap(null));
 	assert.deepEqual(loadKeyMap(dom.storage.get(KEY_MAP_STORAGE)), loadKeyMap(null));
 	assert.ok(p.rows().find((r) => r.dataset.action === 'respawn').textContent.includes('R'));
@@ -277,9 +287,10 @@ t('SYSTEM shows the version, hides the view range until ?live=, and Reset needs 
 	assert.ok(reset, 'the reset button is under SYSTEM');
 	assert.ok(system.querySelectorAll('button').includes(reset));
 	reset.click();
-	assert.ok(reset.textContent.includes('CONFIRM'), 'the first press only arms');
+	// CONFIRM stays INSIDE the brackets (src/confirm-button.js, screen.js).
+	assert.equal(reset.textContent, '[ RESET SETTINGS — CONFIRM ]', 'the first press only arms');
 	reset.click();
-	assert.ok(!reset.textContent.includes('CONFIRM'), 'the second press fires and disarms');
+	assert.equal(reset.textContent, '[ RESET SETTINGS ]', 'the second press fires and disarms');
 });
 
 t('REPLAY BRIEFING appears only once the slot is filled', () => {

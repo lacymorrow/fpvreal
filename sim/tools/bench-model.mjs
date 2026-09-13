@@ -1,37 +1,37 @@
-// Logique pure du BENCH (PHASE 26). Aucune E/S, aucun DOM, aucun localStorage :
-// importable par src/bench.js côté navigateur et par le selftest.
+// Pure BENCH logic (PHASE 26). No I/O, no DOM, no localStorage: importable by
+// src/bench.js in the browser and by the selftest.
 //
 // ---------------------------------------------------------------------------
-// Ce qu'est le banc, et pourquoi il a le droit d'exister dans cette fiction
+// What the bench is, and why it is allowed to exist inside this fiction
 //
-// FPVTP! est un outil de reverse engineering écrit par des hackers hardware, et
-// un tel outil a toujours un banc : le montage local sur lequel on teste la
-// chaîne d'interception contre une cible synthétique avant de la pointer sur
-// une vraie. On ne débugge pas son stack sur une cible qu'on peut griller.
+// FPVTP! is a reverse-engineering tool written by hardware hackers, and such a
+// tool always has a bench: the local rig on which you test the interception
+// chain against a synthetic target before pointing it at a real one. You do not
+// debug your stack on a target you can burn.
 //
-//   NO TARGET       il n'y a personne au bout — un modèle, pas une machine
-//   NO LINK         le flux revient de ta propre installation
-//   NO HACK         on ne s'introduit pas dans son propre banc
-//   NO LOSS         rien de distant n'existe, donc rien ne peut être perdu
-//   NOTHING LOGGED  rien ne s'est passé dans le monde, donc rien n'est écrit
+//   NO TARGET       there is nobody at the other end — a model, not a machine
+//   NO LINK         the feed comes back from your own rig
+//   NO HACK         you do not break into your own bench
+//   NO LOSS         nothing remote exists, so nothing can be lost
+//   NOTHING LOGGED  nothing happened in the world, so nothing is written
 //
-// Les cinq lignes sont la même phrase. C'est simultanément la fiction et la
-// règle technique, et c'est ce qui empêche le banc d'être une dérogation :
-// « The world persists. The machine doesn't. » tient toujours, puisqu'au banc
-// il n'y a ni monde ni machine — il y a un modèle.
+// The five lines are one sentence. They are the fiction and the technical rule
+// at once, and that is what keeps the bench from being an exemption: "The world
+// persists. The machine doesn't." still holds, because at the bench there is
+// neither world nor machine — there is a model.
 //
 // ---------------------------------------------------------------------------
-// La règle de normalisation
+// The normalisation rule
 //
-// normalize() RAMÈNE, elle ne REJETTE jamais. Une valeur hors bornes est
-// bornée, une valeur absurde retombe sur son défaut, une config corrompue
-// redevient une config valide. Le banc est l'endroit sans frustration : il n'a
-// pas le droit de refuser d'ouvrir parce qu'une clé lui déplaît.
+// normalize() BRINGS BACK, it never REJECTS. An out-of-range value is clamped,
+// an absurd value falls back to its default, a corrupt config becomes a valid
+// config again. The bench is the place without frustration: it has no right to
+// refuse to open because it dislikes a key.
 //
-// Et il n'applique PAS les règles de cohérence météo de sanitize() (le vent
-// chasse le brouillard, il ne pleut pas sous un ciel bleu). Elles sont justes
-// pour un bulletin et fausses pour un banc : ici, demander une averse sous un
-// ciel dégagé est une demande légitime, et elle doit arriver.
+// And it does NOT apply sanitize()'s weather coherence rules (wind chases fog
+// away, it does not rain under a blue sky). Those are right for a forecast and
+// wrong for a bench: here, asking for a downpour under a clear sky is a
+// legitimate request, and it has to arrive.
 
 import { simParamsOf } from './lib/weather.mjs';
 
@@ -48,9 +48,9 @@ export const BENCH_VERSION = 1;
 // maps it here rather than dropping the cursor back on FIELD.
 export const MODES = ['field', 'bench', 'data', 'jukebox', 'settings'];
 
-// Copie de l'écran de choix. En anglais (D5), et vérifiée par le selftest :
-// c'est la première chose que voit un opérateur après son nom, et elle doit
-// dire ce que chaque voie coûte, pas ce qu'elle offre.
+// The copy of the selection screen. In English (D5), and checked by the
+// selftest: it is the first thing an operator sees after their name, and it has
+// to say what each way costs, not what it offers.
 export const MODE_SELECT = {
 	title: 'SELECT OPERATION MODE',
 	// "acquire terrain" was a promise no shipped build can keep: acquisition is
@@ -86,28 +86,27 @@ export const MODE_SELECT = {
 	},
 };
 
-// Les quatre lignes que le banc affiche sur lui-même, et la cinquième qui est
-// la promesse d'étanchéité. Le selftest vérifie qu'elles sont toujours là :
-// si un jour le banc écrit quelque chose, cette ligne devient un mensonge.
+// The four lines the bench shows about itself, and the fifth one that is the
+// promise of watertightness. The selftest checks they are still there: the day
+// the bench writes something, that line becomes a lie.
 export const BENCH_CREED = ['NO TARGET', 'NO LINK', 'NO HACK', 'NO LOSS'];
 export const BENCH_SEAL = 'NOTHING HERE IS LOGGED.';
 
 export const ENTRY_MODES = ['IDLE', 'COMFORTABLE', 'ACTIVE', 'CHALLENGING', 'HOLY_SHIT'];
 export const LINK_MODES = ['LOOPBACK', 'SIMULATED'];
 export const BATTERY_MODES = ['REAL', 'HELD'];
-// L'OSD du drone, pas celui de FPVTP! (PHASE 12, double HUD). CLEAR rend
-// exactement ce que `droneOsdLayout()` sait déjà rendre — `null`, son mode de
-// panne NO_OSD : une machine montée sans OSD, pour filmer. L'incrustation
-// FPVTP! ne bouge jamais : ce n'est pas le drone qui la dessine, c'est
-// l'opérateur, et elle porte PHOTO READY et la fin de vol.
+// The drone's OSD, not FPVTP!'s (PHASE 12, the double HUD). CLEAR renders
+// exactly what `droneOsdLayout()` already knows how to render — `null`, its
+// NO_OSD failure mode: a machine built without an OSD, for filming. The FPVTP!
+// overlay never moves: the drone does not draw it, the operator does, and it
+// carries PHOTO READY and the end of the flight.
 export const HUD_MODES = ['CLASSIC', 'CLEAR'];
 export const TERRAIN_KINDS = ['cached', 'live'];
 
-// Bornes. Larges à dessein — le banc n'est pas un bulletin, il doit pouvoir
-// aller jusqu'aux extrêmes que le monde ne produirait jamais deux jours de
-// suite. Les plafonds sont ceux des modèles eux-mêmes, pas des goûts :
-// wind.js sature au-delà de 25 m/s, rain.js au-delà de 60 mm/h, et fog.js ne
-// descend pas sous 30 m de visibilité.
+// Bounds. Wide on purpose — the bench is not a forecast, it has to reach the
+// extremes the world would never produce two days running. The ceilings are the
+// models' own, not a matter of taste: wind.js saturates past 25 m/s, rain.js
+// past 60 mm/h, and fog.js does not go below 30 m of visibility.
 export const LIMITS = {
 	windSpeed:   { min: 0, max: 25,    step: 0.5 },
 	gustFactor:  { min: 1, max: 3,     step: 0.1 },
@@ -142,9 +141,9 @@ export const BENCH_DEFAULTS = Object.freeze({
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-// Un nombre, ou le défaut. `Number(null)` vaut 0 et `Number('')` aussi : on
-// passe par Number.isFinite APRÈS la conversion pour que null/''/undefined
-// retombent tous sur le défaut plutôt que sur zéro.
+// A number, or the default. `Number(null)` is 0 and so is `Number('')`: the
+// Number.isFinite check comes AFTER the conversion so that null/''/undefined all
+// fall back to the default rather than to zero.
 function num(v, fallback, limit) {
 	// Number() THROWS on a symbol, a bigint, and on any object with no path to
 	// a primitive (`Object.create(null)`, which is what a stored config becomes
@@ -160,7 +159,7 @@ function oneOf(v, allowed, fallback) {
 	return allowed.includes(v) ? v : fallback;
 }
 
-// Ramène n'importe quoi à une config jouable. Ne lève jamais.
+// Brings anything back to a playable config. Never throws.
 export function normalizeBenchConfig(raw, { families = null } = {}) {
 	const d = BENCH_DEFAULTS;
 	const r = (raw && typeof raw === 'object') ? raw : {};
@@ -168,10 +167,10 @@ export function normalizeBenchConfig(raw, { families = null } = {}) {
 	const a = (r.airframe && typeof r.airframe === 'object') ? r.airframe : {};
 	const t = (r.terrain && typeof r.terrain === 'object') ? r.terrain : {};
 
-	// `families` est la liste réelle importée de drone-profiles.js quand
-	// l'appelant l'a sous la main. Le modèle ne l'importe pas lui-même : il
-	// resterait juste de savoir qu'une famille est une chaîne, et le selftest
-	// pourrait alors mentir sur une famille supprimée.
+	// `families` is the real list imported from drone-profiles.js when the
+	// caller has it to hand. The model does not import it itself: all that would
+	// be left is knowing that a family is a string, and the selftest could then
+	// lie about a family that has been removed.
 	const family = families
 		? oneOf(a.family, families, families.includes(d.airframe.family) ? d.airframe.family : families[0])
 		: (typeof a.family === 'string' && a.family ? a.family : d.airframe.family);
@@ -180,8 +179,8 @@ export function normalizeBenchConfig(raw, { families = null } = {}) {
 		version: BENCH_VERSION,
 		airframe: {
 			family,
-			// null = profil NOMINAL de la famille (celui du banc tune-pid).
-			// Une chaîne = un exemplaire tiré, comme une vraie cible.
+			// null = the family's NOMINAL profile (the tune-pid bench's own).
+			// A string = a drawn individual, like a real target.
 			seed: typeof a.seed === 'string' && a.seed ? a.seed : null,
 		},
 		terrain: {

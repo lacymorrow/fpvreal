@@ -345,7 +345,10 @@ function localTerrain(root, scenes) {
 			if (focusSortIdx >= 0) refocusSort();
 			else if (focusSearch) refocusSearch();
 			else {
-				const rows = list.querySelectorAll('button.terminal-area');
+				// `.terminal-area` and not `button.terminal-area`: inside this list
+				// the class is only ever on a row, and the tag qualifier was the
+				// last thing keeping the screen off the fake DOM (tools/lib).
+				const rows = list.querySelectorAll('.terminal-area');
 				(rows[Math.min(focusIdx, rows.length - 1)] ?? s.box.querySelector('button'))?.focus();
 			}
 		};

@@ -15,8 +15,8 @@ import { Geofence } from './geofence.js';
 export const CATEGORIES = ['COMFORTABLE', 'ACTIVE', 'CHALLENGING', 'HOLY_SHIT'];
 export const WEIGHTS = [60, 25, 12, 3];
 
-// Hash FNV-1a d'une chaîne → graine 32 bits, puis xorshift (même idiome que
-// tools/target-model.mjs et src/link.js : petit, déterministe, rejouable).
+// FNV-1a hash of a string -> 32-bit seed, then xorshift (the same idiom as
+// tools/target-model.mjs and src/link.js: small, deterministic, replayable).
 export function rngFrom(seed) {
 	let h = 0x811c9dc5;
 	const s = String(seed);
@@ -55,35 +55,34 @@ export const RANGES = {
 	HOLY_SHIT: { aglM: [1.5, 5], speedMs: [25, 40], tiltDeg: [40, 80], rateDps: [150, 400] },
 };
 
-// La marge au bord, désormais celle de la clôture (#139) et non plus une
-// valeur locale. Elle valait 10 m, ce qui suffisait à ne pas tirer un point
-// au-delà du dernier chunk chargé — mais pas à naître HORS de l'avertissement
-// de zone : R_CAUTION se compte en dizaines de mètres. Un vol ne doit jamais
-// commencer sur un « NO COVERAGE ».
+// The edge margin, now the fence's own (#139) rather than a local value. It
+// used to be 10 m, which was enough not to draw a point beyond the last loaded
+// chunk — but not enough to be born OUTSIDE the zone warning: R_CAUTION is tens
+// of metres. A flight must never begin on a "NO COVERAGE".
 //
-// C'est le couloir EFFECTIF de la scène qu'on lit (`effectiveCorridor.caution`)
-// et non la constante R_CAUTION : la clôture borne son couloir au tiers du plus
-// petit demi-côté (geofence.js), donc sur une petite carte elle avertit BIEN
-// plus près du bord que 113 m. Retirer la constante de chaque côté y retirerait
-// une bande que la clôture ne réclame pas. Mesuré sur les 25 scènes de
-// public/scenes/ : sur parcdesprinces (demi-côtés 139 × 151 m) la constante ne
-// laisserait qu'une bande de 51 × 76 m — 4,6 % de l'emprise — là où le couloir
-// effectif vaut 46,2 m et en laisse 185 × 209. Et sur une carte de moins de
-// 113 m de demi-côté l'encart CROISERAIT (x0 > x1) ; le couloir effectif, qui
-// vaut au plus halfMin/3, ne le peut pas.
+// What is read is the scene's EFFECTIVE corridor (`effectiveCorridor.caution`)
+// and not the R_CAUTION constant: the fence bounds its corridor to a third of
+// the smallest half-side (geofence.js), so on a small map it warns FAR closer
+// to the edge than 113 m. Taking the constant off each side would remove a band
+// the fence does not ask for. Measured over the 25 scenes in public/scenes/: on
+// parcdesprinces (half-sides 139 x 151 m) the constant would leave a band of
+// only 51 x 76 m — 4.6 % of the footprint — where the effective corridor is
+// 46.2 m and leaves 185 x 209. And on a map with a half-side under 113 m the
+// inset would CROSS OVER (x0 > x1); the effective corridor, at most halfMin/3,
+// cannot.
 //
-// Un Geofence est construit plutôt que la formule recopiée : c'est lui qui
-// décide de la borne, et il n'y a aucune raison d'en tenir un second
-// exemplaire ici. Le coût est nul — occupancyOf() ne passe ici qu'au défaut de
-// cache, une fois par instance Physics.
+// A Geofence is built rather than the formula copied: it is what decides the
+// bound, and there is no reason to keep a second copy of it here. The cost is
+// nil — occupancyOf() only comes through on a cache miss, once per Physics
+// instance.
 //
-// La marge est STRICTE, et par construction plutôt que par chance : un tirage
-// vaut x = x0 + (i + rand()) * dx avec 0 <= i <= cols-1, et rngFrom() est un
-// xorshift32 dont l'état ne peut jamais atteindre 0 depuis un état non nul —
-// donc rand() vit dans ]0, 1[, bornes exclues. x est donc strictement dans
-// ]x0, x1[, jamais posé dessus. Or zoneOf() bascule en CAUTION dès que la
-// marge est <= caution : c'est cette exclusion-là qui garantit la propriété,
-// pas les 10 000 tirages de tools/selftest.mjs, qui ne font que la surveiller.
+// The margin is STRICT, and by construction rather than by luck: a draw is
+// x = x0 + (i + rand()) * dx with 0 <= i <= cols-1, and rngFrom() is an
+// xorshift32 whose state can never reach 0 from a non-zero state — so rand()
+// lives in ]0, 1[, bounds excluded. x is therefore strictly inside ]x0, x1[,
+// never sitting on it. And zoneOf() switches to CAUTION as soon as the margin
+// is <= caution: that exclusion is what guarantees the property, not the 10,000
+// draws in tools/selftest.mjs, which only watch over it.
 function edgeMarginOf(manifest) {
 	return new Geofence(manifest.bbox).effectiveCorridor.caution;
 }
@@ -130,26 +129,25 @@ function groundAt(physics, manifest, x, z) {
 	return physics.groundBelow(x, top, z, span);
 }
 
-// Où, dans cette scène, y a-t-il du sol ?
+// Where, in this scene, is there any ground?
 //
-// Le tirage prenait un point n'importe où dans la bbox du manifeste. Une scène
-// rectangulaire remplit la sienne, donc ça marchait. Une scène tracée au
-// polygone (issue #30) ne la remplit pas : sur un corridor de fleuve, 315
-// tirages sur 400 tombaient dans le vide, et generateEntryState() finissait par
-// se rabattre sur un spawn au repos — exactement ce que PHASE 13 existe pour
-// éviter.
+// The draw used to pick a point anywhere in the manifest bbox. A rectangular
+// scene fills its own, so that worked. A scene traced with a polygon (issue
+// #30) does not: on a river corridor, 315 draws out of 400 fell into the void,
+// and generateEntryState() ended up falling back to a resting spawn — exactly
+// what PHASE 13 exists to avoid.
 //
-// On balaie donc une grille grossière une seule fois, et on ne tire plus que
-// dans les cellules qui ont du sol. Le balayage coûte quelques milliers de
-// rayons ; il remplace des milliers de tirages perdus.
+// So a coarse grid is swept once, and the draw only ever picks from the cells
+// that have ground. The sweep costs a few thousand rays; it replaces thousands
+// of wasted draws.
 //
-// La taille de cellule suit une tuile slippy au zoom 20 (~25 m) : assez fine
-// pour épouser un corridor, assez grossière pour que le balayage reste court.
+// Cell size follows a slippy tile at zoom 20 (~25 m): fine enough to hug a
+// corridor, coarse enough for the sweep to stay short.
 const OCCUPANCY_CELL_M = 25;
 const OCCUPANCY_MAX_SIDE = 64;
 
-// Clé sur l'instance Physics : c'est le maillage qui décide de l'occupation, et
-// une WeakMap laisse le tout partir avec la scène.
+// Keyed on the Physics instance: the mesh is what decides occupancy, and a
+// WeakMap lets the whole thing go away with the scene.
 const occupancyCache = new WeakMap();
 
 export function occupancyOf(physics, manifest) {
@@ -166,19 +164,19 @@ export function occupancyOf(physics, manifest) {
 	const cells = [];
 	for (let j = 0; j < rows; j++) {
 		for (let i = 0; i < cols; i++) {
-			// Le centre de la cellule : un point par cellule suffit à dire
-			// « il y a du terrain par ici », et le tirage repique ensuite au hasard
-			// dans la cellule retenue.
+			// The centre of the cell: one point per cell is enough to say
+			// "there is terrain around here", and the draw then picks at random
+			// inside whichever cell it kept.
 			if (groundAt(physics, manifest, x0 + (i + 0.5) * dx, z0 + (j + 0.5) * dz) !== null) {
 				cells.push(j * cols + i);
 			}
 		}
 	}
 
-	// Aucune cellule touchée : soit la scène est vide, soit elle est plus fine
-	// que la grille. On rend alors toute l'emprise plutôt qu'une liste vide, ce
-	// qui ramène exactement au comportement d'avant — le tirage rejette, et
-	// generateEntryState() garde son repli.
+	// No cell hit: either the scene is empty, or it is finer than the grid. The
+	// whole footprint is returned rather than an empty list, which lands exactly
+	// on the previous behaviour — the draw rejects, and generateEntryState()
+	// keeps its fallback.
 	const grid = cells.length
 		? { x0, z0, dx, dz, cols, rows, cells, cellSize: Math.min(dx, dz), full: cells.length === cols * rows }
 		: { x0, z0, dx: x1 - x0, dz: z1 - z0, cols: 1, rows: 1, cells: [0], cellSize: Math.min(dx, dz), full: true };
@@ -189,8 +187,8 @@ export function occupancyOf(physics, manifest) {
 
 export function sampleCandidate(category, manifest, physics, rand) {
 	const ranges = RANGES[category];
-	// Sur une scène pleine, toutes les cellules sont occupées et le tirage
-	// redevient uniforme dans la bbox : le comportement historique, intact.
+	// On a full scene every cell is occupied and the draw becomes uniform in the
+	// bbox again: the historical behaviour, untouched.
 	const grid = occupancyOf(physics, manifest);
 	const cell = grid.cells[Math.min(grid.cells.length - 1, Math.floor(rand() * grid.cells.length))];
 	const x = grid.x0 + (cell % grid.cols + rand()) * grid.dx;
@@ -321,15 +319,14 @@ export function capCategory(category, maxCategory) {
 	return CATEGORIES[Math.min(at, ceiling)];
 }
 
-// Le rectangle où un vol a le droit de commencer : la bbox moins le couloir
-// CAUTION effectif de la scène, exactement celui qu'utilise occupancyOf() pour
-// le tirage. Sorti en fonction parce que le REPLI doit désormais s'y ramener
-// lui aussi (issue #149).
+// The rectangle a flight is allowed to begin in: the bbox minus the scene's
+// effective CAUTION corridor, exactly the one occupancyOf() uses for the draw.
+// Pulled out into a function because the FALLBACK now has to come back into it
+// as well (issue #149).
 //
-// La borne du couloir (halfMin/3, geofence.js) interdit à l'encart de croiser
-// sur une carte réelle. Une bbox dégénérée — le banc, où il n'y a pas de carte
-// — le peut : on retombe alors sur le centre plutôt que de rendre un intervalle
-// à l'envers.
+// The corridor bound (halfMin/3, geofence.js) forbids the inset from crossing
+// over on a real map. A degenerate bbox — the bench, where there is no map —
+// can: it falls back to the centre rather than returning a reversed interval.
 export function insetRect(manifest) {
 	const m = edgeMarginOf(manifest);
 	const { min, max } = manifest.bbox;
@@ -340,9 +337,9 @@ export function insetRect(manifest) {
 	return { x0, x1, z0, z1 };
 }
 
-// zoneOf() bascule en CAUTION dès que la marge est <= caution : se poser PILE
-// sur le bord de l'encart naîtrait donc encore dans l'avertissement. On rentre
-// d'une petite longueur, bornée par la moitié du côté pour ne jamais traverser.
+// zoneOf() switches to CAUTION as soon as the margin is <= caution, so landing
+// EXACTLY on the edge of the inset would still be born inside the warning. Come
+// in by a small length, bounded by half the side so it can never cross over.
 const INSET_EPS_M = 0.5;
 
 const clampInto = (v, lo, hi) => {
@@ -350,29 +347,30 @@ const clampInto = (v, lo, hi) => {
 	return Math.min(hi - eps, Math.max(lo + eps, v));
 };
 
-// Hauteur au-dessus du sol qu'on redonne à un repli qu'on a dû déplacer :
-// geometrySafe() exige déjà plus d'un mètre, et un repli est censé être le
-// point le plus tranquille de la scène, pas le plus juste.
+// The height above ground given back to a fallback that had to be moved:
+// geometrySafe() already demands more than a metre, and a fallback is meant to
+// be the calmest point in the scene, not the tightest.
 const FALLBACK_CLEARANCE_M = 2;
 
-// Le point de repli, au repos. Exporté pour le banc (PHASE 26), où se poser au
-// sol moteurs au ralenti est un état qu'on demande, pas celui où l'on finit
-// après vingt tirages ratés.
+// The fallback point, at rest. Exported for the bench (PHASE 26), where sitting
+// on the ground at idle is a state you ask for, not the one you end up in after
+// twenty failed draws.
 //
-// manifest.spawn N'EST PAS contraint par la clôture : mesuré sur les 25
-// manifestes de public/scenes/, il tombe en HOLD sur parcdesprinces et en
-// CAUTION sur bastille et triomphe (issue #149). Un repli — ou tout chemin qui
-// repart de là — commençait donc le vol sur un « NO COVERAGE », et sur
-// parcdesprinces avec le rappel de clôture déjà actif.
+// manifest.spawn is NOT constrained by the fence: measured over the 25
+// manifests in public/scenes/, it falls in HOLD on parcdesprinces and in
+// CAUTION on bastille and triomphe (issue #149). A fallback — or any path that
+// starts again from there — therefore began the flight on a "NO COVERAGE", and
+// on parcdesprinces with the fence push already active.
 //
-// On ramène donc le point dans l'encart. Le déplacer horizontalement sans
-// retoucher son altitude le poserait dans un bâtiment ou sous le terrain : dès
-// qu'on a une Physics, on le REPOSE sur le sol qui est réellement là. Sans
-// Physics (appel purement manifeste), on corrige ce qu'on peut — les x/z — et
-// on laisse le y, ce qui reste strictement mieux que le point d'origine.
+// So the point is brought back into the inset. Moving it horizontally without
+// touching its altitude would put it inside a building or under the terrain: as
+// soon as there is a Physics, it is PUT BACK DOWN on the ground that is really
+// there. Without a Physics (a manifest-only call), what can be corrected is —
+// the x/z — and the y is left alone, which is still strictly better than the
+// original point.
 //
-// manifest.spawn lui-même n'est pas touché : il reste la position de la station
-// sol (l'`emitter` de main.js), qui, elle, n'a aucune raison de bouger.
+// manifest.spawn itself is not touched: it stays the ground station's position
+// (main.js's `emitter`), which has no reason to move.
 export function fallbackCandidate(manifest, physics = null) {
 	const { x0, x1, z0, z1 } = insetRect(manifest);
 	const spawn = manifest.spawn;
@@ -384,9 +382,9 @@ export function fallbackCandidate(manifest, physics = null) {
 	if (moved && physics) {
 		const ground = groundAt(physics, manifest, x, z);
 		if (ground !== null) {
-			// On garde la garde au sol d'origine quand elle est mesurable et
-			// plus généreuse : un spawn déjà perché ne doit pas se retrouver
-			// collé au toit sur lequel on vient de le déplacer.
+			// Keep the original ground clearance when it is measurable and more
+			// generous: a spawn already perched must not end up stuck to the
+			// roof it has just been moved onto.
 			const from = groundAt(physics, manifest, spawn.x, spawn.z);
 			const agl = from === null ? FALLBACK_CLEARANCE_M : Math.max(FALLBACK_CLEARANCE_M, spawn.y - from);
 			y = ground + agl;

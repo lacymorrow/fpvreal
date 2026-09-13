@@ -90,10 +90,10 @@ check('a scene with no ground falls back to the whole bbox', voidGrid.cells.leng
 
 console.log('\nentry-state: the draw lands on ground');
 
-// Ce qui compte n'est pas qu'un tirage isolé réussisse toujours — c'est que
-// generateEntryState(), qui retente 20 fois avant de se rabattre sur un spawn
-// au repos, n'ait pratiquement jamais à se rabattre. On mesure donc le tirage
-// CONTRE UN TÉMOIN : l'ancien comportement, uniforme dans la bbox.
+// What matters is not that an isolated draw always succeeds — it is that
+// generateEntryState(), which retries 20 times before falling back to a resting
+// spawn, practically never has to fall back. So the draw is measured AGAINST A
+// CONTROL: the old behaviour, uniform in the bbox.
 const missRate = (phys, draw) => {
 	const rand = rngFrom('draw-check');
 	let miss = 0;
@@ -101,8 +101,8 @@ const missRate = (phys, draw) => {
 	return miss / 400;
 };
 const withGrid = (cat, phys, rand) => sampleCandidate(cat, manifestOf(BBOX), phys, rand);
-// Témoin : exactement ce que faisait sampleCandidate avant, un point au hasard
-// dans l'emprise.
+// The control: exactly what sampleCandidate used to do, a random point in the
+// footprint.
 const uniformInBbox = (cat, phys, rand) => {
 	const x = BBOX.min[0] + 10 + rand() * (BBOX.max[0] - BBOX.min[0] - 20);
 	const z = BBOX.min[2] + 10 + rand() * (BBOX.max[2] - BBOX.min[2] - 20);
@@ -117,9 +117,9 @@ check('corridor: the draw misses far less than drawing in the bbox',
 	after < before / 3,
 	`${(before * 100).toFixed(0)}% → ${(after * 100).toFixed(0)}%`);
 
-// Et la conséquence qui motivait tout : le repli de generateEntryState() tient
-// 20 tentatives, donc un taux d'échec p donne p^20 de sessions démarrant à
-// l'arrêt au lieu d'arriver en vol.
+// And the consequence that motivated all of it: generateEntryState()'s fallback
+// holds out for 20 attempts, so a miss rate of p gives p^20 of sessions starting
+// at a standstill instead of arriving in flight.
 const fallback = (p) => p ** 20;
 check('corridor: fallback to a resting spawn becomes negligible',
 	fallback(after) < 1e-6 && fallback(before) > 1e-3,
@@ -280,76 +280,77 @@ console.log('\nentry-state: bench overrides');
 		fallbackCandidate(manifest).position !== manifest.spawn);
 }
 
-// --- issue #149 : le REPLI ne naît plus dans la clôture ----------------------
+// --- issue #149: the FALLBACK is no longer born inside the fence -------------
 
-console.log('\nentry-state: le point de repli contre la clôture (#149)');
+console.log('\nentry-state: the fallback point against the fence (#149)');
 
-// La zone de clôture d'un point, telle que l'OSD la lirait au premier pas.
+// A point's fence zone, as the OSD would read it on the first step.
 const zoneAt = (bbox, p) => new Geofence(bbox).update(p).zone;
 
 {
-	// Une carte dont le spawn est PILE au bord : la forme du défaut mesuré sur
-	// parcdesprinces, bastille et triomphe, où manifest.spawn tombait en HOLD
-	// ou en CAUTION alors qu'un tirage réussi, lui, était déjà contraint.
+	// A map whose spawn sits RIGHT on the edge: the shape of the flaw measured
+	// on parcdesprinces, bastille and triomphe, where manifest.spawn fell in
+	// HOLD or CAUTION while a successful draw was already constrained.
 	const bbox = { min: [-140, 0, -150], max: [140, 60, 150] };
 	const manifest = { bbox, spawn: { x: 128, y: 10, z: 0 } };
-	check('témoin : ce spawn-là est bien DANS la clôture',
+	check('control: that spawn really is INSIDE the fence',
 		zoneAt(bbox, manifest.spawn) !== 'NOMINAL', zoneAt(bbox, manifest.spawn));
 
 	const at = fallbackCandidate(manifest).position;
-	check('le repli est ramené en zone NOMINAL', zoneAt(bbox, at) === 'NOMINAL', zoneAt(bbox, at));
+	check('the fallback is brought back into the NOMINAL zone', zoneAt(bbox, at) === 'NOMINAL', zoneAt(bbox, at));
 
 	const r = insetRect(manifest);
-	check('le repli est STRICTEMENT dans l\'encart, pas posé sur son bord',
+	check('the fallback is STRICTLY inside the inset, not sitting on its edge',
 		at.x > r.x0 && at.x < r.x1 && at.z > r.z0 && at.z < r.z1);
 
-	check('manifest.spawn lui-même n\'a pas bougé (c\'est la station sol)',
+	check('manifest.spawn itself has not moved (it is the ground station)',
 		manifest.spawn.x === 128 && manifest.spawn.z === 0);
 }
 
 {
-	// Un spawn déjà au centre ne doit pas être déplacé pour rien : sans quoi
-	// les 22 cartes qui allaient bien changeraient de point d'entrée.
+	// A spawn already in the middle must not be moved for nothing: otherwise the
+	// 22 maps that were fine would change entry point.
 	const bbox = { min: [-140, 0, -150], max: [140, 60, 150] };
 	const manifest = { bbox, spawn: { x: 3, y: 12, z: -4 } };
 	const at = fallbackCandidate(manifest).position;
-	check('un spawn déjà NOMINAL est laissé exactement où il est',
+	check('a spawn already NOMINAL is left exactly where it is',
 		at.x === 3 && at.y === 12 && at.z === -4);
 }
 
 {
-	// Déplacé horizontalement, le point doit être REPOSÉ sur le sol qui est là :
-	// garder l'ancien y le mettrait dans un bâtiment ou sous le terrain.
+	// Moved horizontally, the point must be PUT BACK DOWN on the ground that is
+	// there: keeping the old y would put it inside a building or under the
+	// terrain.
 	const bbox = { min: [-140, 0, -150], max: [140, 60, 150] };
 	const manifest = { bbox, spawn: { x: 135, y: 10, z: 0 } };
-	const physics = { groundBelow: () => 25 };   // un toit à 25 m sous le point visé
+	const physics = { groundBelow: () => 25 };   // a roof 25 m below the target point
 	const at = fallbackCandidate(manifest, physics).position;
-	check('le repli déplacé est reposé au-dessus du sol réel', at.y > 25, `y=${at.y}`);
-	check('et il garde une garde au sol utilisable', at.y - 25 >= 2, `agl=${at.y - 25}`);
+	check('the moved fallback is put back above the real ground', at.y > 25, `y=${at.y}`);
+	check('and it keeps a usable ground clearance', at.y - 25 >= 2, `agl=${at.y - 25}`);
 }
 
 {
-	// Une bbox dégénérée (le banc : pas de carte) ne doit pas produire un
-	// encart à l'envers ni un NaN.
+	// A degenerate bbox (the bench: no map) must produce neither a reversed
+	// inset nor a NaN.
 	const bbox = { min: [0, 0, 0], max: [0, 0, 0] };
 	const manifest = { bbox, spawn: { x: 0, y: 1, z: 0 } };
 	const r = insetRect(manifest);
-	check('bbox dégénérée : encart non croisé', r.x0 <= r.x1 && r.z0 <= r.z1);
+	check('degenerate bbox: the inset does not cross over', r.x0 <= r.x1 && r.z0 <= r.z1);
 	const at = fallbackCandidate(manifest).position;
-	check('bbox dégénérée : le repli reste un point fini',
+	check('degenerate bbox: the fallback stays a finite point',
 		Number.isFinite(at.x) && Number.isFinite(at.y) && Number.isFinite(at.z));
 }
 
 {
-	// Et sur les manifestes RÉELLEMENT installés : c'est la mesure de l'issue.
-	// La suite ne dépend pas d'une scène précise — elle vérifie ce qui est là.
+	// And on the manifests ACTUALLY installed: that is the issue's measurement.
+	// What follows depends on no particular scene — it checks what is there.
 	const SIM_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 	const scenesDir = path.join(SIM_ROOT, 'public/scenes');
 	const slugs = fs.existsSync(scenesDir)
 		? fs.readdirSync(scenesDir).filter((d) => fs.existsSync(path.join(scenesDir, d, 'manifest.json')))
 		: [];
 	if (!slugs.length) {
-		console.log('  SKIP  aucune scène installée : rien à mesurer ici');
+		console.log('  SKIP  no scene installed: nothing to measure here');
 	} else {
 		const bad = [];
 		for (const slug of slugs) {
@@ -358,7 +359,7 @@ const zoneAt = (bbox, p) => new Geofence(bbox).update(p).zone;
 			const z = zoneAt(m.bbox, fallbackCandidate(m).position);
 			if (z !== 'NOMINAL') bad.push(`${slug}:${z}`);
 		}
-		check(`les ${slugs.length} scène(s) installée(s) replient toutes en NOMINAL`,
+		check(`all ${slugs.length} installed scene(s) fall back into NOMINAL`,
 			bad.length === 0, bad.join(', '));
 	}
 }

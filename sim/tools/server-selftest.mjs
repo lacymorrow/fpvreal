@@ -325,6 +325,58 @@ try {
 	check('une méthode non supportée sur un fichier rend 405 JSON',
 		notAllowed.status === 405 && (notAllowed.headers.get('content-type') ?? '').includes('json'));
 
+	// --- security response headers --------------------------------------------
+	//
+	// Set once in server/index.mjs, before the API and the file server see the
+	// request, so the test is that they reach EVERY kind of response — a
+	// document, a scene chunk, an API answer and an error alike. A per-route
+	// header is one a route can forget.
+	{
+		const hdr = async (p) => (await fetch(base + p)).headers;
+		const doc = await hdr('/');
+		const api = await hdr('/__map-api/scenes');
+		const err = await hdr('/definitely-not-here.html');
+		for (const [name, want] of Object.entries({
+			'x-content-type-options': 'nosniff',
+			'x-frame-options': 'DENY',
+			'referrer-policy': 'no-referrer',
+			'cross-origin-opener-policy': 'same-origin',
+		})) {
+			check(`${name} is set on the document, the API and an error alike`,
+				doc.get(name) === want && api.get(name) === want && err.get(name) === want);
+		}
+
+		// Report-Only, deliberately: the policy has never been exercised in a
+		// browser, and a wrong enforced policy is a black screen. See the note
+		// in server/headers.mjs for what turns it into an enforced one.
+		const csp = doc.get('content-security-policy-report-only') ?? '';
+		check('the document carries a Content-Security-Policy, in Report-Only',
+			csp.length > 0 && doc.get('content-security-policy') === null);
+		// The directives the app genuinely needs. Each of these was read off the
+		// source, and getting one wrong is what breaks the game on launch day.
+		check('… whose script-src allows WASM (Rapier) and the inline WebGL2 probe',
+			/script-src [^;]*'wasm-unsafe-eval'/.test(csp) && /script-src [^;]*'unsafe-inline'/.test(csp));
+		check('… whose connect-src allows the terrain and the search',
+			/connect-src [^;]*https:\/\/kh\.google\.com/.test(csp)
+			&& /connect-src [^;]*https:\/\/nominatim\.openstreetmap\.org/.test(csp));
+		check('… whose img-src allows the three basemaps of src/map-layers.js',
+			/img-src [^;]*tile\.openstreetmap\.org/.test(csp)
+			&& /img-src [^;]*tile\.opentopomap\.org/.test(csp)
+			&& /img-src [^;]*server\.arcgisonline\.com/.test(csp));
+		check('… whose worker-src allows the module workers',
+			/worker-src 'self' blob:/.test(csp));
+		check('… and which forbids framing, base rewriting and plugins',
+			/frame-ancestors 'none'/.test(csp) && /base-uri 'none'/.test(csp)
+			&& /object-src 'none'/.test(csp));
+
+		// A .bin chunk is not a browsing context: the ~400-byte policy has no
+		// business riding on responses a scene fetches by the thousand.
+		const chunk = await hdr(`/scenes/${SLUG}/manifest.json`);
+		check('the document policy does NOT ride on scene data',
+			chunk.get('content-security-policy-report-only') === null
+			&& chunk.get('x-content-type-options') === 'nosniff');
+	}
+
 	// --- le garde-fou réseau ---------------------------------------------------
 	assert.throws(() => resolveOptions({ host: '0.0.0.0' }), /refused in local mode/);
 	check('resolveOptions refuse --host 0.0.0.0 en mode local', true);

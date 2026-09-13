@@ -142,11 +142,11 @@ const RC_SMOOTHING = 40;        // Hz
 const MOTOR_IDLE = 0.055;       // Betaflight dynamic idle: props never stop, or
                                 // there is nothing to recover from
 
-// Exportés (avec actualRate plus bas) parce que tools/geofence-measure.mjs a
-// besoin de parler la langue de ce contrôleur : son pilote ACRO synthétique
-// vise l'assiette la plus inclinée que l'auto-stabilisation tienne et rallie
-// l'horizon au taux que le mode angle demanderait. Recopier ces trois-là dans
-// le banc en ferait des chiffres qui dérivent en silence.
+// Exported (with actualRate below) because tools/geofence-measure.mjs needs to
+// speak this controller's own language: its synthetic ACRO pilot aims for the
+// steepest attitude self-levelling will hold and returns to the horizon at the
+// rate angle mode would ask for. Copying those three into the bench would turn
+// them into numbers that drift apart in silence.
 export const ANGLE_MAX_TILT = 42 * DEG;
 export const ANGLE_STRENGTH = 9.0;   // rad/s of rate demand per rad of angle error
 const ALT_KP = 3.2, ALT_KD = 3.6;
@@ -287,10 +287,10 @@ export class FlightController {
 		this.armed = true;
 	}
 
-	// Désarmement Betaflight (PHASE 06). Coupe les moteurs — le mixer met déjà
-	// tout à zéro quand `!armed`. Rien ne sait ici ce qu'est une session. Depuis
-	// que l'atterrissage a disparu (D9, 2026-09-08) le pilote n'a plus de geste
-	// qui appelle ceci : seule main.js le fait, quand la machine est perdue.
+	// Betaflight disarm (PHASE 06). Cuts the motors — the mixer already zeroes
+	// everything when `!armed`. Nothing here knows what a session is. Since
+	// landing disappeared (D9, 2026-09-08) the pilot has no gesture that calls
+	// this: only main.js does, when the machine is lost.
 	disarm() { this.armed = false; }
 
 	arm() { this.armed = true; }
