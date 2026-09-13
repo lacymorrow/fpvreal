@@ -1,7 +1,7 @@
 {
   "name": "fpvtp-sim",
   "productName": "FPVTP",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "private": true,
   "description": "FPVThePlanet! — FPV drone flight over real cities, in the browser",
   "author": "lionrayonnant",
