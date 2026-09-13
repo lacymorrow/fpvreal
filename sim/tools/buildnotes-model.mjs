@@ -1,9 +1,10 @@
-// BUILD NOTES (PHASE 21, D8). Une échelle écrite à la main : le volume est trop
-// faible et trop curatorial pour la génération en lot.
+// BUILD NOTES (PHASE 21, D8). A hand-written ladder: the volume is too small
+// and too curatorial for batch generation.
 //
-// Règle d'écriture, et raison d'être du selftest : une note parle de l'OUTIL,
-// AU PASSÉ. Jamais de l'opérateur, jamais d'une suite. C'est ce qui laisse le
-// lore décoratif alors même que l'échelle se déverrouille au fil des sessions.
+// The writing rule, and the reason the selftest exists: a note talks about the
+// TOOL, in the PAST TENSE. Never about the operator, never about what comes
+// next. That is what keeps the lore decorative even as the ladder unlocks
+// session after session.
 
 export const NOTES = [
 	{ build: '0.1.0', unlock: { terrains: 0, sessions: 0, targets: 0 }, lines: [
@@ -56,19 +57,26 @@ export const NOTES = [
 	] },
 ];
 
+// The operator file is read, not written, by this module: a hand edit can put
+// anything under `sessions` and `terrainCache`, and `?? []` only covers null
+// and undefined — `"sessions": 0` walked straight into `.filter is not a
+// function` and took the whole FIELD screen down with it. Array.isArray is the
+// only test that holds (fuzzing finding 3, same class as tools/lib/as-text.mjs).
+const arrayOf = (v) => (Array.isArray(v) ? v : []);
+
 export function countersOf(operator) {
 	return {
-		terrains: operator?.terrainCache?.length ?? 0,
-		sessions: operator?.sessions?.length ?? 0,
-		targets: (operator?.sessions ?? []).filter((s) => s?.target).length,
+		terrains: arrayOf(operator?.terrainCache).length,
+		sessions: arrayOf(operator?.sessions).length,
+		targets: arrayOf(operator?.sessions).filter((s) => s?.target).length,
 	};
 }
 
 const reached = (c, u) => c.terrains >= u.terrains && c.sessions >= u.sessions && c.targets >= u.targets;
 
-// Un préfixe, jamais un filtre : les seuils étant croissants (le selftest le
-// fige), la première note hors de portée arrête l'échelle. Sans ça, un trou
-// dans la liste donnerait un numéro de build incohérent avec ce qui est lisible.
+// A prefix, never a filter: the thresholds are increasing (the selftest pins
+// that), so the first note out of reach stops the ladder. Without it, a gap in
+// the list would give a build number inconsistent with what can be read.
 export function unlockedNotes(counters) {
 	const out = [];
 	for (const note of NOTES) {

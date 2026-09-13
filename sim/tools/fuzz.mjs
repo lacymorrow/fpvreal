@@ -17,7 +17,9 @@
 // A target carrying `known: '<why>'` reproduces a defect nobody has fixed yet.
 // It stays in the file — it is how the fix gets verified — but it is left OUT
 // of the default run, because a red CI that is red on purpose stops being read.
-// `--list` names them, `--known` runs them, `--only <name>` runs one.
+// `--list` names them, `--known` runs them, `--only <name>` runs one. No target
+// carries one today: the four that did were fixed, and each is now a gate in
+// the default run.
 //
 // A target carrying `async: true` has an async check (the Worker pool) and runs
 // through runTargetAsync with a smaller case count.
@@ -124,10 +126,24 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 // requirePoly() in server/api.mjs, mirrored here rather than imported: the
 // server file drags the whole API in, and what matters is the RULE — a ring
 // that gets past it is a trace someone really drew.
-// server/api.mjs:751. Mirrored rather than imported, same reason as the ring
-// gate below: what matters is the RULE, and importing the API drags the whole
-// server in.
+// server/api.mjs:751 and its neighbour. Mirrored rather than imported, same
+// reason as the ring gate below: what matters is the RULE, and importing the
+// API drags the whole server in. requireAffordable() applies both — the first
+// to either zone shape, the second only to a trace.
 const MAX_GRID_CELLS = 4_000_000;
+const MAX_POLY_WORK = 20_000_000;
+
+// Timing a trace means RUNNING it, and a ceiling-sized trace costs a third of a
+// second: five thousand of them turn an eleven-second suite into a three-minute
+// one. So map-poly-cost only computes a trace that is the most expensive one it
+// has accepted so far — the running record. That is deterministic (same seed,
+// same records), it is O(log n) computations rather than O(n) so raising
+// `--cases` does not make the target slower, and it always spends the time on
+// the worst case rather than on whichever trace happened to come first: lift
+// either ceiling and the records climb into the seconds, which is the finding.
+const POLY_TIMED_FROM = 1_000_000;
+// Never reset: one process is one run of the target.
+let polyWorst = 0;
 
 const acceptsPoly = (p) => {
 	if (!Array.isArray(p) || p.length % 2 !== 0 || p.length < 6 || p.length > 400) return false;
@@ -902,7 +918,7 @@ const targets = [
 		// provider is reachable and well-behaved on most runs; the point of the
 		// target is the run where it is not.
 		const hit = {
-			name: pick(r, ['Tokyo', '', 'Île de la Cité', 42, null, { toString: null }]),
+			name: pick(r, ['Tokyo', '', '\u00cele de la Cit\u00e9', 42, null, { toString: null }]),
 			display_name: pick(r, ['Tokyo, Japan, 100-0001', '', ...NASTY_STRINGS.slice(0, 4), { toString: null }, ['a']]),
 			addresstype: pick(r, ['city', 'neighbourhood', 'building', 'nope', null, { toString: null }]),
 			type: pick(r, ['administrative', null]),
@@ -938,7 +954,7 @@ const targets = [
 			},
 			provider: pick(r, [{ id: 'google', label: 'Google Earth' }, { id: 'x' }, null, { label: { toString: null } }]),
 			registry: chance(r, 0.3) ? anyValue(r, 2) : { providers: [{ id: 'google', label: 'Google Earth' }, null, { label: 'no id' }], default: pick(r, ['google', 'gone', null]) },
-			name: pick(r, ['Tokyo', '', '   ', 'Île de la Cité', '🛸', { toString: null }, 42, null, 'A'.repeat(400)]),
+			name: pick(r, ['Tokyo', '', '   ', '\u00cele de la Cit\u00e9', '🛸', { toString: null }, 42, null, 'A'.repeat(400)]),
 			zone: chance(r, 0.5) ? null : { bbox: { south: 48.8, north: 48.9, west: 2.2, east: 2.4 } },
 			phase: pick(r, ['download', 'decode', 'rebuild', 'prep', 'nope', null, { toString: null }, 7]),
 		};
@@ -1131,7 +1147,6 @@ const targets = [
 
 {
 	name: 'weather-sanitize',
-	known: 'sanitize() clamps every field but the bearing, which it only takes modulo 360 — and Infinity % 360 is NaN',
 	note: 'weather.sanitize() — the single point where an Open-Meteo answer and the generator are made physically possible, before anything classifies them or sends them to wind.js/rain.js/fog.js',
 	gen(r) {
 		// Exactly what a `daily` entry can carry once JSON.parse is done with it:
@@ -1277,8 +1292,7 @@ const targets = [
 
 {
 	name: 'map-poly-cost',
-	known: 'MAX_GRID_CELLS bounds how many tiles a trace sweeps but not what each one costs — tileIntersectsPolygon walks the whole ring per tile, and requirePoly allows 200 vertices',
-	note: 'the COST of a trace requireZone()/requireAffordable() accept — POST /__map-api/describe is documented "instantanée, appelable à chaque déplacement de la souris" and the scanner does exactly that',
+	note: 'the COST of a trace requireZone()/requireAffordable() accept — POST /__map-api/describe is documented "callable on every mouse move" and the scanner does exactly that',
 	gen(r) {
 		// Ring size matters as much as ring extent here, so both are drawn.
 		const n = pick(r, [3, 12, 60, 200]);
@@ -1289,23 +1303,42 @@ const targets = [
 	check({ ring, zoom }) {
 		if (!Number.isInteger(zoom) || zoom < 13 || zoom > 20) return null;
 		if (!acceptsPoly(ring)) return null;
-		// Counted, never allocated: a target that actually ran the grid would be
-		// the denial of service it is reporting. tileGrid() is pure arithmetic,
-		// and it is the same call requireAffordable() makes.
+		// tileGrid() is pure arithmetic and allocates nothing — the same call
+		// requireAffordable() makes before it decides.
 		const b = tiles.polygonBounds(ring);
 		const grid = tiles.tileGrid(b, zoom);
 		const cells = grid.cols * grid.rows;
-		if (cells > MAX_GRID_CELLS) return null;   // refused by requireAffordable, and rightly
+		const vertices = ring.length / 2;
 		// polygonGrid() runs tileIntersectsPolygon() once per cell, and that
-		// walks the whole ring: the cost is cells x vertices, not cells. Measured
-		// on this machine at ~17 ns per unit (3.1 M cells x 200 vertices = 10.7 s),
-		// so 2e7 is about a third of a second — already far past "instantaneous",
-		// and the route is called on mouse move.
-		const work = cells * (ring.length / 2);
-		if (work > 2e7) {
-			return `a trace the server accepts costs ${cells.toExponential(2)} cells x ${ring.length / 2} vertices`
-				+ ` = ~${(work * 1.7e-8).toFixed(1)} s of blocked event loop at zoom ${zoom}`
-				+ ` (${(b.north - b.south).toFixed(3)}° by ${(b.east - b.west).toFixed(3)}°)`;
+		// walks the WHOLE ring: the cost is cells x vertices, not cells. Both
+		// ceilings refuse before anything is allocated, so a ring past either of
+		// them is never computed — here or on the server.
+		const work = cells * vertices;
+		if (cells > MAX_GRID_CELLS || work > MAX_POLY_WORK) return null;
+		// Everything left is a trace the server really accepts and really
+		// computes, so this target really computes it, and times it. That is the
+		// invariant, and it is why this is a gate rather than a restatement of
+		// the ceiling: whatever gets past requireAffordable() has to be fast
+		// enough for a route the scanner calls on mouse move. Remove either
+		// ceiling and the traces that come back in are computed here, where they
+		// take seconds. The budget is deliberately loose — 2e7 units measured
+		// ~0.36 s here — because a CI runner under load is slower than a
+		// workstation, and what would be a regression is a trace costing SECONDS,
+		// not tens of milliseconds more.
+		if (work < POLY_TIMED_FROM || work <= polyWorst) return null;
+		polyWorst = work;
+		const t0 = performance.now();
+		const full = tiles.polygonGrid(ring, zoom);
+		const ms = performance.now() - t0;
+		if (ms > 3000) {
+			return `a trace the server accepts took ${ms.toFixed(0)} ms to describe`
+				+ ` (${cells.toExponential(2)} cells x ${vertices} vertices at zoom ${zoom},`
+				+ ` ${(b.north - b.south).toFixed(3)}° by ${(b.east - b.west).toFixed(3)}°)`;
+		}
+		// And it has to be the grid it was counted from: requireAffordable()
+		// budgets on tileGrid(), polygonGrid() is what actually runs.
+		if (full.cols !== grid.cols || full.rows !== grid.rows) {
+			return `polygonGrid swept ${full.cols}x${full.rows} where the guard budgeted ${grid.cols}x${grid.rows}`;
 		}
 		return null;
 	},
@@ -1614,7 +1647,7 @@ const targets = [
 			},
 			scenes: chance(r, 0.25) ? null : Array.from({ length: int(r, 0, 5) }, () => ({
 				slug: pick(r, ['tour-eiffel', '', 'a-b']),
-				name: pick(r, ['Tour Eiffel', '', 'Île de la Cité', 'x'.repeat(300)]),
+				name: pick(r, ['Tour Eiffel', '', '\u00cele de la Cit\u00e9', 'x'.repeat(300)]),
 				bytes: pick(r, [1234567, 0, -1, NaN, null, undefined, 1e18, '5']),
 			})),
 			shared: chance(r, 0.5),
@@ -1642,7 +1675,6 @@ const targets = [
 
 {
 	name: 'nonprimitive-json',
-	known: 'String(v) is still assumed total in four more places, and (v ?? []).filter in a fifth — the same defect tools/lib/as-text.mjs was written for (fuzzing finding 3, issue #85)',
 	// One target for one defect class, across every place this session found a
 	// new instance of it. `{"toString": null}` is valid JSON: JSON.parse builds
 	// it happily, and `String()` on it raises "Cannot convert object to
@@ -1697,9 +1729,10 @@ const targets = [
 			}
 			return null;
 		}
-		// dailyMean() does String(hourly.time[i]).startsWith(day). The answer is
-		// a third party's, and the refusal the server logs should say
-		// "réponse Open-Meteo inexploitable", not name a JS conversion.
+		// dailyMean() puts hourly.time[i] through asText() before
+		// .startsWith(day). The answer is a third party's, and the refusal the
+		// server logs should say "unusable Open-Meteo answer", not name a JS
+		// conversion.
 		try { weather.fromOpenMeteo(payload); } catch (err) {
 			if (err instanceof TypeError) return `fromOpenMeteo refused with an engine error: ${err.message}`;
 		}
@@ -1774,7 +1807,7 @@ const targets = [
 			// null (i.e. into ineligibility), which is exactly the promise here.
 			ctx: {
 				operator: { name: pick(r, ['NEO', '', null, 42]) },
-				machine: { gpu: pick(r, ['Apple M2', null]), display: pick(r, ['2560 × 1440', null]) },
+				machine: { gpu: pick(r, ['Apple M2', null]), display: pick(r, ['2560 \u00d7 1440', null]) },
 				area: { name: pick(r, ['tour-eiffel', '', null, { toString: null }]) },
 				weather: { summary: pick(r, ['CLEAR / CALM', null]), windMs: pick(r, [4, 0, NaN, Infinity, null]), rain: pick(r, ['2.0 mm/h', null]), visibility: pick(r, ['10 km', null]) },
 				scan: { count: pick(r, [4, 0, NaN, null]) },

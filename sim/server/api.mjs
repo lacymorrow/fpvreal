@@ -742,13 +742,32 @@ function requireZone(b) {
 // /probe are worse in the other direction: each one fans out to kh.google.com
 // until traverse() hits its own MAX_NODES.
 //
-// 4 M cells is deliberately far above anything real. `add-map --radius 25`
-// (the default) sweeps 51 x 51 = 2,601 cells; the largest zone this manual
-// documents, radius 35, is 71 x 71 = 5,041. 4 M is a 2000 x 2000 grid, about
-// 50 x 50 km at zoom 20 — some three orders of magnitude past any zone anyone
-// would actually acquire, and still bounded at ~0.2 s and a few MB. The point
-// is not to be tight, it is to be finite.
+// 4 M cells is deliberately far above anything real. `--radius` is in METRES
+// (traverse.mjs:zoneOf), so `add-map --radius 25` (the default) is a 50 m square
+// and sweeps 3 x 3 = 9 tiles at zoom 20; radius 35, the largest this manual
+// documents, is 4 x 4 = 16. Even a 2 km radius is 160 x 160 = 25,600. 4 M is a
+// 2000 x 2000 grid, about 50 x 50 km at zoom 20 — orders of magnitude past any
+// zone anyone would actually acquire, and still bounded at ~0.2 s and a few MB.
+// The point is not to be tight, it is to be finite.
 const MAX_GRID_CELLS = 4_000_000;
+
+// The cell count is the whole cost of the BBOX path, and only part of the cost
+// of the POLY one. polygonGrid() runs tileIntersectsPolygon() once per cell and
+// that walks the WHOLE ring — so the work is cells x vertices, and requirePoly
+// allows 200 vertices. Under the cell cap alone, a 200-vertex 0.2 degree trace
+// still measured `POST /describe: 10742 ms`, during which a plain concurrent
+// GET waited 10745 ms: the route documented as "callable on every mouse move"
+// froze every other player on a `shared` instance.
+//
+// Calibrated the same way MAX_GRID_CELLS was, from what add-map legitimately
+// asks for. The largest zone the manual documents (radius 35 = 16 tiles) at the
+// maximum 200 vertices is 3.2e3 units of work; a 4 km x 4 km hand-drawn trace at
+// 200 vertices measures 5.1e6 and 100 ms; 8 km x 8 km at 200 vertices is 3.2e7
+// and 587 ms. Measured here at ~18 ms per 1e6 units, so 2e7 is about 0.36 s —
+// the same order as the ~0.2 s MAX_GRID_CELLS was picked for, four orders of
+// magnitude above any real acquisition, and thirty times cheaper than the
+// finding. A 25 x 25 km trace at a realistic 20 vertices still passes.
+const MAX_POLY_WORK = 20_000_000;
 
 // The mask is only ever used to DRAW the staircase of kept tiles, and
 // scanner.js already stops drawing it once tiles fall below 7 px. Past this
@@ -759,9 +778,10 @@ const MAX_GRID_CELLS = 4_000_000;
 const MAX_MASK_CELLS = 250_000;
 
 // Refuses a zone whose grid at this zoom would be unaffordable, BEFORE any
-// grid is allocated — tileGrid() only computes bounds, it allocates nothing.
-// The message names the limit and what to do about it, because the two ways
-// out are not obvious: shrink the zone, or drop the zoom.
+// grid is allocated — tileGrid() only computes bounds, it allocates nothing,
+// and the vertex count is already in hand. The message names the limit and what
+// to do about it, because the ways out are not obvious: shrink the zone, drop
+// the zoom, or — on the poly path — simplify the trace.
 function requireAffordable(zone, zoom) {
 	const box = zone.poly ? polygonBounds(zone.poly) : zone.bbox;
 	const g = tileGrid(box, zoom);
@@ -770,6 +790,17 @@ function requireAffordable(zone, zoom) {
 		throw new Error(
 			`zone too large at zoom ${zoom}: ${cells.toLocaleString('en')} tiles, `
 			+ `limit ${MAX_GRID_CELLS.toLocaleString('en')} — reduce the zone or lower the zoom`);
+	}
+	if (zone.poly) {
+		const vertices = zone.poly.length / 2;
+		const work = cells * vertices;
+		if (work > MAX_POLY_WORK) {
+			throw new Error(
+				`zone too large at zoom ${zoom}: ${cells.toLocaleString('en')} tiles x `
+				+ `${vertices} outline vertices = ${work.toLocaleString('en')} intersection tests, `
+				+ `limit ${MAX_POLY_WORK.toLocaleString('en')} — reduce the zone, lower the zoom, `
+				+ 'or simplify the outline');
+		}
 	}
 	return zone;
 }

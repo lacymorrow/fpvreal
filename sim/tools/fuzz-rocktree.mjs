@@ -172,7 +172,6 @@ const targets = [
 
 {
 	name: 'node-pb',
-	known: 'nothing between parseNode() and RAPIER.ColliderDesc.trimesh() checks the decode: a strip index past the vertex plane and a NaN in the placement matrix both reach the collider, and physics.js already records that a bad trimesh aborts the WASM instead of throwing',
 	note: 'NodeData from kh.google.com, decoded in src/rocktree-worker.js and handed to Three and to Rapier\'s trimesh',
 	gen(r, i) {
 		return { buf: i % 8 === 0 ? noise(r) : corrupt(r, pick(r, NODES)), exclude: chance(r, 0.3) ? [int(r, 0, 7)] : [] };
@@ -291,7 +290,7 @@ const targets = [
 		const paths = new Set();
 		for (const n of out.retained) {
 			if (!n.path.startsWith(bulkPath)) return `expandBulk retained ${n.path}, which is not under ${pretty(bulkPath)}`;
-			// The guard the comment calls "une divergence à ne pas introduire":
+			// The guard traverse.mjs calls a divergence not to be introduced:
 			// a 4-digit relative path must not overshoot the requested level.
 			if (n.path.length > level) return `expandBulk retained ${n.path} (${n.path.length} digits) for level ${level}`;
 			if (paths.has(n.path)) return `expandBulk retained ${n.path} twice`;

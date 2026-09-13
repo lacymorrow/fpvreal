@@ -1,8 +1,8 @@
 // node tools/music-selftest.mjs
 //
-// Couvre le modèle PUR de l'arc musical : sélection, intensité, prompts,
-// manifeste, bouclage. Rien ici ne touche Web Audio, le DOM ni le GPU — ce qui
-// s'écoute se vérifie à l'oreille, pas ici.
+// Covers the PURE model of the musical arc: selection, intensity, prompts,
+// manifest, looping. Nothing here touches Web Audio, the DOM or the GPU -- what
+// is listened to is checked by ear, not here.
 
 import { strict as assert } from 'node:assert';
 import { readFileSync, existsSync } from 'node:fs';
@@ -32,173 +32,172 @@ function test(name, fn) {
 	catch (e) { console.error(`✗ ${name}\n  ${e.message}`); process.exitCode = 1; }
 }
 
-// --- pools et familles ------------------------------------------------------
+// --- pools and families -----------------------------------------------------
 
-test('chaque famille de drone a son pool, et les deux pools hors FAMILIES sont connus', () => {
+test('every drone family has its pool, and the two pools outside FAMILIES are known', () => {
 	for (const f of FAMILIES) {
-		assert.ok(MUSIC_POOLS.includes(f), `famille ${f} sans pool musical`);
+		assert.ok(MUSIC_POOLS.includes(f), `family ${f} has no music pool`);
 		assert.equal(poolForFamily(f), f);
 	}
-	// Deux pools ne sont pas dans FAMILIES, pour deux raisons opposées : `menu`
-	// n'est pas un drone du tout, et `swarmNode` en est un qui se PILOTE mais
-	// que FAMILIES exclut volontairement (jamais un candidat de scan ordinaire,
-	// jamais un ambiant — src/drone-profiles.js). L'ordre suit MUSIC_POOLS.
+	// Two pools are not in FAMILIES, for opposite reasons: `menu` is not a drone
+	// at all, and `swarmNode` is one that IS flown but that FAMILIES excludes on
+	// purpose (never an ordinary scan candidate, never an ambient one --
+	// src/drone-profiles.js). The order follows MUSIC_POOLS.
 	assert.deepEqual(MUSIC_POOLS.filter((p) => !FAMILIES.includes(p)), ['menu', 'swarmNode']);
-	// Et celui-là, contrairement à `menu`, DOIT rendre un pool.
+	// And that one, unlike `menu`, MUST return a pool.
 	assert.equal(poolForFamily('swarmNode'), 'swarmNode');
 });
 
-test('menu n\'est pas un pool de drone', () => {
+test('menu is not a drone pool', () => {
 	assert.equal(poolForFamily('menu'), null);
-	assert.equal(poolForFamily('inconnu'), null);
+	assert.equal(poolForFamily('unknown'), null);
 });
 
-test('chaque pool a un noyau, une fourchette de BPM et une sensation', () => {
+test('every pool has a core, a BPM range and a feel', () => {
 	for (const p of MUSIC_POOLS) {
 		const spec = POOLS[p];
-		assert.ok(spec, `pool ${p} sans spec`);
-		assert.ok(spec.core.length > 40, `${p} : noyau trop court`);
-		assert.ok(spec.feel.length > 5, `${p} : sensation manquante`);
-		assert.ok(spec.bpm[0] < spec.bpm[1], `${p} : fourchette de BPM vide`);
+		assert.ok(spec, `pool ${p} has no spec`);
+		assert.ok(spec.core.length > 40, `${p}: core too short`);
+		assert.ok(spec.feel.length > 5, `${p}: feel missing`);
+		assert.ok(spec.bpm[0] < spec.bpm[1], `${p}: empty BPM range`);
 	}
 });
 
 // --- prompts ----------------------------------------------------------------
 
-test('buildPrompt est déterministe', () => {
+test('buildPrompt is deterministic', () => {
 	const a = buildPrompt('race5', 'seed-a');
 	const b = buildPrompt('race5', 'seed-a');
 	assert.deepEqual(a, b);
 });
 
-test('deux seeds donnent des prompts différents', () => {
+test('two seeds give different prompts', () => {
 	const seen = new Set();
 	for (let i = 0; i < 30; i++) seen.add(buildPrompt('race5', `s${i}`).prompt);
-	assert.ok(seen.size > 15, `trop peu de variété : ${seen.size}/30`);
+	assert.ok(seen.size > 15, `too little variety: ${seen.size}/30`);
 });
 
-test('le BPM reste dans la fourchette de la famille', () => {
+test('the BPM stays inside the family range', () => {
 	for (const p of MUSIC_POOLS) {
 		const [lo, hi] = POOLS[p].bpm;
 		for (let i = 0; i < 40; i++) {
 			const { bpm } = buildPrompt(p, `s${i}`);
-			assert.ok(bpm >= lo && bpm <= hi, `${p} : ${bpm} hors [${lo},${hi}]`);
+			assert.ok(bpm >= lo && bpm <= hi, `${p}: ${bpm} outside [${lo},${hi}]`);
 		}
 	}
 });
 
-test('tout prompt porte la clôture de genre et son BPM', () => {
+test('every prompt carries the genre fence and its BPM', () => {
 	for (const p of MUSIC_POOLS) {
 		const { prompt, bpm } = buildPrompt(p, 'x');
-		assert.ok(prompt.includes(negativesFor(p)), `${p} : négatifs absents`);
-		assert.ok(prompt.includes(NEGATIVES_COMMON), `${p} : anti-cible absente`);
-		assert.ok(prompt.includes(`${bpm} BPM`), `${p} : BPM absent du prompt`);
+		assert.ok(prompt.includes(negativesFor(p)), `${p}: negatives missing`);
+		assert.ok(prompt.includes(NEGATIVES_COMMON), `${p}: anti-target missing`);
+		assert.ok(prompt.includes(`${bpm} BPM`), `${p}: BPM missing from the prompt`);
 	}
 });
 
-test('HEAVY est le SEUL pool à porter des voix, et seulement sans paroles', () => {
+test('HEAVY is the ONLY pool to carry voices, and only wordless ones', () => {
 	assert.deepEqual(Object.keys(POOL_VOICE), ['heavy5'],
-		'la voix est la signature de HEAVY, pas une couleur commune');
+		'the voice is HEAVY\'s signature, not a shared colour');
 	for (const p of MUSIC_POOLS) {
 		const { prompt } = buildPrompt(p, 'x');
 		if (p === 'heavy5') {
-			assert.ok(prompt.includes(WORDLESS_VOICE), 'heavy5 : clôture de voix absente');
-			assert.ok(!prompt.includes(NO_VOICE), 'heavy5 : interdit les voix qu\'il demande');
+			assert.ok(prompt.includes(WORDLESS_VOICE), 'heavy5: voice fence missing');
+			assert.ok(!prompt.includes(NO_VOICE), 'heavy5: forbids the voices it asks for');
 		} else {
-			assert.ok(prompt.includes(NO_VOICE), `${p} : devrait être strictement instrumental`);
+			assert.ok(prompt.includes(NO_VOICE), `${p}: should be strictly instrumental`);
 		}
 	}
 });
 
-test('même avec voix, aucun prompt ne peut devenir une chanson', () => {
-	// Ce que la Bible §37 vise réellement : le narrateur, la voix de hacker, la
-	// parole. Un chœur traité comme un instrument n'est pas ça — mais des
-	// paroles, si.
+test('even with voices, no prompt can become a song', () => {
+	// What Bible section 37 really targets: the narrator, the hacker voice, the
+	// spoken word. A choir treated as an instrument is not that -- lyrics are.
 	for (const p of MUSIC_POOLS) {
 		const { prompt } = buildPrompt(p, 'x');
 		for (const forbidden of ['no lyrics', 'no spoken word']) {
 			const covered = prompt.includes(forbidden) || prompt.includes(NO_VOICE);
-			assert.ok(covered, `${p} : rien n'interdit « ${forbidden.slice(3)} »`);
+			assert.ok(covered, `${p}: nothing forbids "${forbidden.slice(3)}"`);
 		}
 	}
 });
 
-test('aucun prompt ne se contredit lui-même', () => {
-	// Le défaut qui a motivé POOL_AXIS_BANS : un noyau à « punk intensity »
-	// recevait « restrained and patient », et le modèle tranchait tout seul —
-	// vers le plus mou. Un prompt qui se contredit est un prompt qui ne demande
-	// plus rien.
+test('no prompt contradicts itself', () => {
+	// The defect that motivated POOL_AXIS_BANS: a core at "punk intensity" was
+	// given "restrained and patient", and the model settled it on its own -- in
+	// favour of the softer one. A prompt that contradicts itself is a prompt that
+	// no longer asks for anything.
 	for (const pool of MUSIC_POOLS) {
 		const bans = POOL_AXIS_BANS[pool] ?? {};
 		for (let i = 0; i < 300; i++) {
 			const { axes, prompt } = buildPrompt(pool, `s${i}`);
 			for (const [axis, values] of Object.entries(bans)) {
 				assert.ok(!values.includes(axes[axis]),
-					`${pool} : « ${axes[axis]} » contredit son noyau`);
+					`${pool}: "${axes[axis]}" contradicts its core`);
 				for (const v of values) {
-					assert.ok(!prompt.includes(v), `${pool} : « ${v} » a fui dans le prompt`);
+					assert.ok(!prompt.includes(v), `${pool}: "${v}" leaked into the prompt`);
 				}
 			}
 		}
 	}
 });
 
-test('le grain matériel survit à un bannissement', () => {
-	// Le grain est le seul axe toujours présent : c'est lui qui tient l'ancrage
-	// « joué sur du matériel », donc l'ADN. Le bannir ne doit pas le supprimer.
+test('the hardware grain survives a ban', () => {
+	// Grain is the only axis always present: it is what holds the "played on
+	// hardware" anchor, hence the DNA. Banning it must not remove it.
 	for (const pool of MUSIC_POOLS) {
 		for (let i = 0; i < 50; i++) {
 			const { axes } = buildPrompt(pool, `g${i}`);
-			assert.ok(axes.grain, `${pool} : morceau sans ancrage matériel`);
-			assert.ok(AXES.grain.includes(axes.grain), `${pool} : grain hors vocabulaire`);
+			assert.ok(axes.grain, `${pool}: track with no hardware anchor`);
+			assert.ok(AXES.grain.includes(axes.grain), `${pool}: grain outside the vocabulary`);
 			assert.ok(!(POOL_AXIS_BANS[pool]?.grain ?? []).includes(axes.grain),
-				`${pool} : grain banni retenu`);
+				`${pool}: a banned grain was kept`);
 		}
 	}
 });
 
-test('on ne bannit que ce qui existe dans le vocabulaire des axes', () => {
-	// Une faute de frappe dans POOL_AXIS_BANS serait un bannissement muet : la
-	// valeur contradictoire continuerait de sortir sans que rien ne le dise.
+test('only what exists in the axis vocabulary can be banned', () => {
+	// A typo in POOL_AXIS_BANS would be a silent ban: the contradictory value
+	// would keep coming out with nothing to say so.
 	for (const [pool, bans] of Object.entries(POOL_AXIS_BANS)) {
-		assert.ok(MUSIC_POOLS.includes(pool), `bannissement pour un pool inconnu : ${pool}`);
+		assert.ok(MUSIC_POOLS.includes(pool), `ban for an unknown pool: ${pool}`);
 		for (const [axis, values] of Object.entries(bans)) {
-			assert.ok(AXES[axis], `${pool} : axe inconnu « ${axis} »`);
+			assert.ok(AXES[axis], `${pool}: unknown axis "${axis}"`);
 			for (const v of values) {
-				assert.ok(AXES[axis].includes(v), `${pool}.${axis} : « ${v} » n'est pas une valeur de cet axe`);
+				assert.ok(AXES[axis].includes(v), `${pool}.${axis}: "${v}" is not a value of that axis`);
 			}
 		}
 	}
 });
 
-test('aucun prompt ne contient de terme hors ADN', () => {
-	// Le prompt DIT « no modern EDM drop » ; ce qu'on interdit ici, c'est de le
-	// demander en positif.
+test('no prompt contains a term outside the DNA', () => {
+	// The prompt SAYS "no modern EDM drop"; what is forbidden here is asking for
+	// it in the positive.
 	const banned = ['orchestral', 'cinematic score', 'dubstep', 'future bass', 'hip hop', 'rock band'];
 	for (const p of MUSIC_POOLS) {
 		for (let i = 0; i < 20; i++) {
 			const { prompt } = buildPrompt(p, `s${i}`);
 			const head = prompt.slice(0, prompt.indexOf(negativesFor(p)));
-			for (const b of banned) assert.ok(!head.includes(b), `${p} : « ${b} » dans le prompt`);
+			for (const b of banned) assert.ok(!head.includes(b), `${p}: "${b}" in the prompt`);
 		}
 	}
 });
 
-test('un morceau reçoit AXES_PER_TRACK axes plus le grain', () => {
+test('a track receives AXES_PER_TRACK axes plus the grain', () => {
 	const { axes } = buildPrompt('cinewhoop', 'x');
 	assert.equal(Object.keys(axes).length, AXES_PER_TRACK + 1);
-	assert.ok(axes.grain, 'le grain est toujours tiré');
+	assert.ok(axes.grain, 'the grain is always drawn');
 	assert.ok(AXES.grain.includes(axes.grain));
 });
 
-test('chaque axe propose une option neutre sauf le grain', () => {
+test('every axis offers a neutral option except the grain', () => {
 	for (const name of AXIS_NAMES) {
 		if (name === 'grain') { assert.ok(!AXES[name].includes(null)); continue; }
-		assert.ok(AXES[name].includes(null), `${name} : pas d'option neutre`);
+		assert.ok(AXES[name].includes(null), `${name}: no neutral option`);
 	}
 });
 
-// Mots trop communs pour dire quoi que ce soit d'une identité musicale.
+// Words too common to say anything about a musical identity.
 const STOP = new Set(('and the of a an with in to that at more than into over under '
 	+ 'early late 2000s 1990s music musical sound like its it is are be').split(' '));
 
@@ -206,22 +205,20 @@ const contentWords = (core) => new Set(core.toLowerCase()
 	.replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
 	.filter((w) => w.length > 3 && !STOP.has(w)));
 
-// Seuil réglé sur la mesure, pas au jugé. Le couple le plus proche après la
-// réécriture v2 est race5 ↔ toothpick à 0,149 — et ces deux-là sont, à
-// l'écoute, les plus reconnaissables de la bibliothèque : leurs mots communs
-// (« energetic », « percussion », « underground ») sont génériques, pas
-// identitaires. 0,16 laisse donc passer ce qui marche et attrape la
-// régression : avant la v2, race5 ↔ heavy5 était à 0,190 en partageant
-// « mechanical percussion kick distorted bass », et heavy5 sonnait comme un
-// race5 raté.
+// Threshold set on the measurement, not by eye. The closest pair after the v2
+// rewrite is race5 vs toothpick at 0.149 -- and those two are, by ear, the most
+// recognisable in the library: their shared words ("energetic", "percussion",
+// "underground") are generic, not identifying. 0.16 therefore lets through what
+// works and catches the regression: before v2, race5 vs heavy5 sat at 0.190
+// sharing "mechanical percussion kick distorted bass", and heavy5 sounded like a
+// failed race5.
 const MAX_CORE_OVERLAP = 0.16;
 
-test('deux pools ne se marchent pas dessus', () => {
-	// Attention à ce que ce test prouve : le recouvrement lexical est un
-	// détecteur d'odeur, pas un verdict. Deux prompts disjoints peuvent rendre
-	// deux morceaux jumeaux, et seule l'oreille tranche (music-review). Ce
-	// qu'il attrape, lui, c'est le cas où l'on a ÉCRIT deux fois la même
-	// famille — ce qui est arrivé.
+test('two pools do not tread on each other', () => {
+	// Careful about what this test proves: lexical overlap is a smell detector,
+	// not a verdict. Two disjoint prompts can render twin tracks, and only the ear
+	// settles that (music-review). What it does catch is the case where the same
+	// family was WRITTEN twice -- which happened.
 	const pools = Object.keys(POOLS);
 	for (let i = 0; i < pools.length; i++) {
 		for (let j = i + 1; j < pools.length; j++) {
@@ -230,116 +227,113 @@ test('deux pools ne se marchent pas dessus', () => {
 			const shared = [...a].filter((w) => b.has(w));
 			const overlap = shared.length / new Set([...a, ...b]).size;
 			assert.ok(overlap <= MAX_CORE_OVERLAP,
-				`${pools[i]} ↔ ${pools[j]} : ${overlap.toFixed(3)} de recouvrement [${shared.join(' ')}]`);
+				`${pools[i]} vs ${pools[j]}: ${overlap.toFixed(3)} overlap [${shared.join(' ')}]`);
 		}
 	}
 });
 
-test('aucun noyau ne recule sur trois adjectifs à la fois', () => {
-	// La v1 de cinewhoop disait « subtle », « gentle » et « restrained » dans
-	// la même phrase : rien ne s'engageait, et c'est le pool qui a le moins
-	// convaincu à la première écoute. Un hedge va bien (le « slightly strange »
-	// de MICRO est une torsion, pas un recul) ; trois, c'est un prompt qui
-	// n'ose rien demander.
+test('no core hedges on three adjectives at once', () => {
+	// The v1 of cinewhoop said "subtle", "gentle" and "restrained" in the same
+	// sentence: nothing committed, and it was the pool that convinced least on
+	// first listen. One hedge is fine (MICRO's "slightly strange" is a twist, not
+	// a retreat); three is a prompt that dares ask for nothing.
 	const hedges = ['subtle', 'gentle', 'restrained', 'slightly', 'somewhat', 'mild', 'soft'];
 	for (const p of Object.keys(POOLS)) {
 		const core = POOLS[p].core.toLowerCase();
 		const found = hedges.filter((h) => core.includes(h));
-		assert.ok(found.length < 3, `${p} : ${found.length} adjectifs qui reculent [${found.join(' ')}]`);
+		assert.ok(found.length < 3, `${p}: ${found.length} hedging adjectives [${found.join(' ')}]`);
 	}
 });
 
-test('un pool inconnu échoue franchement', () => {
+test('an unknown pool fails outright', () => {
 	assert.throws(() => buildPrompt('nope', 'x'), /pool inconnu/);
 });
 
-// --- intensité --------------------------------------------------------------
+// --- intensity ----------------------------------------------------------------
 
-test('intensityParams est borné aux extrémités', () => {
+test('intensityParams is bounded at both ends', () => {
 	assert.equal(intensityParams(0).cutoffHz, INTENSITY.cutoffHz[0]);
 	assert.equal(intensityParams(1).cutoffHz, INTENSITY.cutoffHz[1]);
 	assert.equal(intensityParams(1).gain, 1);
 	assert.ok(Math.abs(intensityParams(0).gain - Math.pow(10, INTENSITY.gainDb[0] / 20)) < 1e-9);
 });
 
-test('intensityParams sature hors de [0,1] au lieu de diverger', () => {
+test('intensityParams saturates outside [0,1] instead of diverging', () => {
 	assert.deepEqual(intensityParams(-5), intensityParams(0));
 	assert.deepEqual(intensityParams(9), intensityParams(1));
 });
 
-test('intensityParams ne rend jamais NaN', () => {
+test('intensityParams never returns NaN', () => {
 	for (const bad of [NaN, undefined, null, 'x', Infinity]) {
 		const { cutoffHz, gain } = intensityParams(bad);
-		assert.ok(Number.isFinite(cutoffHz) && Number.isFinite(gain), `NaN sur ${bad}`);
+		assert.ok(Number.isFinite(cutoffHz) && Number.isFinite(gain), `NaN on ${bad}`);
 	}
 });
 
-test('intensityParams est strictement croissant', () => {
+test('intensityParams is strictly increasing', () => {
 	let prevC = -1; let prevG = -1;
 	for (let k = 0; k <= 1.0001; k += 0.05) {
 		const { cutoffHz, gain } = intensityParams(k);
-		assert.ok(cutoffHz > prevC, `coupure non croissante à k=${k}`);
-		assert.ok(gain > prevG, `gain non croissant à k=${k}`);
+		assert.ok(cutoffHz > prevC, `cutoff not increasing at k=${k}`);
+		assert.ok(gain > prevG, `gain not increasing at k=${k}`);
 		prevC = cutoffHz; prevG = gain;
 	}
 });
 
-test('le HACK est bien « la pièce d\'à côté » et le DROP est plein', () => {
-	assert.ok(PHASE_INTENSITY.HACK < PHASE_INTENSITY.MENU, 'le hack doit être plus sourd que le menu');
+test('HACK really is "the next room" and DROP is full', () => {
+	assert.ok(PHASE_INTENSITY.HACK < PHASE_INTENSITY.MENU, 'the hack must be more muffled than the menu');
 	assert.ok(PHASE_INTENSITY.MENU < PHASE_INTENSITY.DROP);
 	assert.equal(PHASE_INTENSITY.DROP, 1);
-	// À l'intensité du hack, la coupure doit rester basse : sinon on n'entend
-	// pas une musique lointaine, on entend une musique moins forte. Relevée à
-	// 1,2 kHz avec HACK (issue retour terrain : le hack était inaudible) — la
-	// borne monte avec elle, mais reste loin des ~19 kHz du plein volume.
+	// At the hack's intensity the cutoff must stay low: otherwise you do not hear
+	// distant music, you hear quieter music. Raised to 1.2 kHz along with HACK
+	// (field feedback: the hack was inaudible) -- the bound rises with it, but
+	// stays far from the ~19 kHz of full volume.
 	assert.ok(intensityParams(PHASE_INTENSITY.HACK).cutoffHz < 1200);
 });
 
-test('le plancher de vol laisse la musique VRAIMENT présente', () => {
+test('the flight floor leaves the music REALLY present', () => {
 	assert.ok(PHASE_INTENSITY.FLOOR > PHASE_INTENSITY.HACK);
-	// Le plancher n'est pas une valeur de confort : c'est la garantie qu'un
-	// geste de pilotage normal ne fait pas disparaître la musique. À 0,30 elle
-	// tombait à -14 dB derrière une coupure à 1,2 kHz, ce qui s'entendait comme
-	// une extinction.
+	// The floor is not a comfort value: it is the guarantee that a normal
+	// piloting gesture does not make the music disappear. At 0.30 it dropped to
+	// -14 dB behind a 1.2 kHz cutoff, which was heard as a shutdown.
 	const p = intensityParams(PHASE_INTENSITY.FLOOR);
-	assert.ok(20 * Math.log10(p.gain) > -9, `plancher à ${(20 * Math.log10(p.gain)).toFixed(1)} dB, trop bas`);
-	assert.ok(p.cutoffHz > 3000, `plancher à ${Math.round(p.cutoffHz)} Hz, trop sourd`);
-	// Mais il reste un arc : le plein doit rester nettement au-dessus.
-	assert.ok(PHASE_INTENSITY.FLOOR < 0.8, 'un plancher trop haut annule l\'arc');
+	assert.ok(20 * Math.log10(p.gain) > -9, `floor at ${(20 * Math.log10(p.gain)).toFixed(1)} dB, too low`);
+	assert.ok(p.cutoffHz > 3000, `floor at ${Math.round(p.cutoffHz)} Hz, too muffled`);
+	// But there is still an arc: full must stay clearly above.
+	assert.ok(PHASE_INTENSITY.FLOOR < 0.8, 'a floor set too high cancels the arc');
 });
 
-test('couper les gaz ne coupe pas la musique', () => {
-	// En FPV on coupe les gaz sans arrêt — punch, chop, dive, coast. C'est le
-	// geste le plus courant du pilotage, et il ne doit pas ducker la musique.
+test('cutting the throttle does not cut the music', () => {
+	// In FPV the throttle is cut constantly -- punch, chop, dive, coast. It is the
+	// most common gesture in piloting, and it must not duck the music.
 	for (const speedMs of [5, 15, 25]) {
-		const plein = flightIntensity({ throttle: 1, speedMs });
-		const coupe = flightIntensity({ throttle: 0, speedMs });
-		const dbPlein = 20 * Math.log10(intensityParams(plein).gain);
-		const dbCoupe = 20 * Math.log10(intensityParams(coupe).gain);
-		assert.ok(dbPlein - dbCoupe < 2.5,
-			`à ${speedMs} m/s, couper les gaz retire ${(dbPlein - dbCoupe).toFixed(1)} dB`);
+		const full = flightIntensity({ throttle: 1, speedMs });
+		const cut = flightIntensity({ throttle: 0, speedMs });
+		const dbFull = 20 * Math.log10(intensityParams(full).gain);
+		const dbCut = 20 * Math.log10(intensityParams(cut).gain);
+		assert.ok(dbFull - dbCut < 2.5,
+			`at ${speedMs} m/s, cutting the throttle removes ${(dbFull - dbCut).toFixed(1)} dB`);
 	}
 });
 
-test('la vitesse pèse nettement plus que le manche', () => {
-	// Le manche est nerveux, la vitesse a de l'inertie. Un rapport trop
-	// équilibré rend la musique sensible à un geste qui ne change rien à ce que
-	// le pilote ressent.
+test('speed weighs clearly more than the stick', () => {
+	// The stick is twitchy, speed has inertia. A ratio that is too balanced makes
+	// the music sensitive to a gesture that changes nothing about what the pilot
+	// feels.
 	assert.ok(FLIGHT.wSpeed >= 3 * FLIGHT.wThrottle,
-		`rapport ${(FLIGHT.wSpeed / FLIGHT.wThrottle).toFixed(1)}, le manche pèse trop`);
+		`ratio ${(FLIGHT.wSpeed / FLIGHT.wThrottle).toFixed(1)}, the stick weighs too much`);
 });
 
-test('le lissage est asymétrique : monter vite, redescendre lentement', () => {
-	// Le vrai remède aux coupures de gaz. Une coupure dure une demi-seconde,
-	// une accalmie dure dix secondes ; avec une constante unique les deux se
-	// ressemblent.
+test('the smoothing is asymmetric: rise fast, fall slowly', () => {
+	// The real remedy to throttle chops. A chop lasts half a second, a lull lasts
+	// ten; with a single constant the two look alike.
 	assert.ok(INTENSITY_TAU.fall > 4 * INTENSITY_TAU.rise,
-		`descente ${INTENSITY_TAU.fall} s contre montée ${INTENSITY_TAU.rise} s : pas assez asymétrique`);
-	// Un chop d'une demi-seconde ne doit parcourir qu'une fraction du chemin.
-	const parcouru = 1 - Math.exp(-0.5 / INTENSITY_TAU.fall);
-	assert.ok(parcouru < 0.35, `un chop de 0,5 s parcourt ${(parcouru * 100).toFixed(0)} % de la descente`);
-	// Mais un rush doit s'entendre tout de suite.
-	assert.ok(1 - Math.exp(-0.5 / INTENSITY_TAU.rise) > 0.8, 'la montée est trop lente pour un rush');
+		`fall ${INTENSITY_TAU.fall} s against rise ${INTENSITY_TAU.rise} s: not asymmetric enough`);
+	// A half-second chop must only travel a fraction of the way.
+	const travelled = 1 - Math.exp(-0.5 / INTENSITY_TAU.fall);
+	assert.ok(travelled < 0.35, `a 0.5 s chop travels ${(travelled * 100).toFixed(0)} % of the fall`);
+	// But a rush must be heard straight away.
+	assert.ok(1 - Math.exp(-0.5 / INTENSITY_TAU.rise) > 0.8, 'the rise is too slow for a rush');
 });
 
 test('flightIntensity reste dans [FLOOR, 1]', () => {
@@ -351,43 +345,43 @@ test('flightIntensity reste dans [FLOOR, 1]', () => {
 	for (const c of cases) {
 		const k = flightIntensity(c);
 		assert.ok(Number.isFinite(k), `NaN sur ${JSON.stringify(c)}`);
-		assert.ok(k >= PHASE_INTENSITY.FLOOR - 1e-9 && k <= 1 + 1e-9, `${k} hors bornes sur ${JSON.stringify(c)}`);
+		assert.ok(k >= PHASE_INTENSITY.FLOOR - 1e-9 && k <= 1 + 1e-9, `${k} out of bounds on ${JSON.stringify(c)}`);
 	}
 });
 
-test('désarmé, la musique attend au plancher', () => {
+test('disarmed, the music waits at the floor', () => {
 	assert.equal(flightIntensity({ throttle: 1, speedMs: 40, armed: false }), PHASE_INTENSITY.FLOOR);
 });
 
-test('un rush est plus intense qu\'un stationnaire', () => {
+test('a rush is more intense than a hover', () => {
 	const hover = flightIntensity({ throttle: 0.45, speedMs: 0.5 });
 	const rush = flightIntensity({ throttle: 0.95, speedMs: 28 });
-	// La plage est plus étroite depuis que le plancher est haut, mais l'arc doit
-	// rester franc : au moins 4 dB entre un stationnaire et un rush.
+	// The range is narrower now that the floor is high, but the arc must stay
+	// clear: at least 4 dB between a hover and a rush.
 	const dbHover = 20 * Math.log10(intensityParams(hover).gain);
 	const dbRush = 20 * Math.log10(intensityParams(rush).gain);
-	assert.ok(dbRush - dbHover > 4, `arc trop plat : ${(dbRush - dbHover).toFixed(1)} dB`);
+	assert.ok(dbRush - dbHover > 4, `arc too flat: ${(dbRush - dbHover).toFixed(1)} dB`);
 });
 
-test('la vitesse pèse plus que le manche', () => {
-	// C'est ce que le joueur SUBIT qui porte l'intensité, pas ce qu'il fait :
-	// plein gaz dans un mur ne doit pas sonner comme un rush.
+test('speed weighs more than the stick', () => {
+	// It is what the player UNDERGOES that carries the intensity, not what they
+	// do: full throttle into a wall must not sound like a rush.
 	assert.ok(FLIGHT.wSpeed > FLIGHT.wThrottle);
-	assert.ok(Math.abs(FLIGHT.wSpeed + FLIGHT.wThrottle - 1) < 1e-9, 'les poids doivent sommer à 1');
+	assert.ok(Math.abs(FLIGHT.wSpeed + FLIGHT.wThrottle - 1) < 1e-9, 'the weights must sum to 1');
 });
 
-test('le rituel duck la musique sans la faire taire', () => {
+test('the ritual ducks the music without silencing it', () => {
 	assert.ok(DUCK.ritual > 0 && DUCK.ritual < 1);
 	assert.ok(DUCK.ms > 0);
 });
 
-test('les durées de transition sont ordonnées comme la mise en scène', () => {
-	// Le crash coupe net, l'entrée en scène est un geste.
-	assert.ok(FADE.kill < FADE.drop, 'le crash doit couper plus court que le drop');
+test('the transition durations are ordered like the staging', () => {
+	// The crash cuts dead, the entrance is a gesture.
+	assert.ok(FADE.kill < FADE.drop, 'the crash must cut shorter than the drop');
 	assert.ok(FADE.drop < FADE.menuToHack);
 });
 
-// --- sélection --------------------------------------------------------------
+// --- selection ----------------------------------------------------------------
 
 const fakeManifest = {
 	schemaVersion: MUSIC_SCHEMA_VERSION,
@@ -396,98 +390,98 @@ const fakeManifest = {
 	})).concat([{ id: 'menu-a', pool: 'menu', file: 'music/menu/menu-a.opus', durS: 90, bpm: 90 }]),
 };
 
-test('pickTrack est déterministe sur une même seed', () => {
+test('pickTrack is deterministic on the same seed', () => {
 	const a = pickTrack(fakeManifest, 'race5', 'seed::0');
 	const b = pickTrack(fakeManifest, 'race5', 'seed::0');
 	assert.equal(a.id, b.id);
 });
 
-test('pickTrack ne sort jamais du pool demandé', () => {
+test('pickTrack never leaves the requested pool', () => {
 	for (let i = 0; i < 50; i++) {
 		assert.equal(pickTrack(fakeManifest, 'race5', `s${i}`).pool, 'race5');
 	}
 });
 
-test('pickTrack écarte les morceaux récents', () => {
+test('pickTrack sets recent tracks aside', () => {
 	const recent = ['race5-a', 'race5-b', 'race5-c'];
 	for (let i = 0; i < 50; i++) {
 		assert.equal(pickTrack(fakeManifest, 'race5', `s${i}`, recent).id, 'race5-d');
 	}
 });
 
-test('un pool entièrement récent rejoue plutôt que de rendre le silence', () => {
+test('an entirely recent pool replays rather than returning silence', () => {
 	const all = fakeManifest.tracks.filter((t) => t.pool === 'race5').map((t) => t.id);
 	const t = pickTrack(fakeManifest, 'race5', 'x', all);
 	assert.ok(t && all.includes(t.id));
 });
 
-test('un pool vide rend null, pas une exception', () => {
+test('an empty pool returns null, not an exception', () => {
 	assert.equal(pickTrack(fakeManifest, 'cinewhoop', 'x'), null);
 	assert.equal(pickTrack({ tracks: [] }, 'race5', 'x'), null);
 	assert.equal(pickTrack(null, 'race5', 'x'), null);
 	assert.equal(pickTrack(undefined, 'race5', 'x'), null);
 });
 
-test('pushRecent met en tête, dédoublonne et borne', () => {
+test('pushRecent puts first, deduplicates and bounds', () => {
 	let r = [];
 	for (let i = 0; i < RECENT_LIMIT + 8; i++) r = pushRecent(r, `t${i}`);
 	assert.equal(r.length, RECENT_LIMIT);
 	assert.equal(r[0], `t${RECENT_LIMIT + 7}`);
 	const again = pushRecent(r, r[3]);
 	assert.equal(again[0], r[3]);
-	assert.equal(new Set(again).size, again.length, 'doublon dans les récents');
+	assert.equal(new Set(again).size, again.length, 'duplicate among the recent ones');
 });
 
-test('pushRecent supporte un id absent', () => {
+test('pushRecent copes with a missing id', () => {
 	assert.deepEqual(pushRecent(['a'], null), ['a']);
 });
 
-// --- manifeste --------------------------------------------------------------
+// --- manifest -----------------------------------------------------------------
 
-test('le manifeste factice est valide', () => {
+test('the fake manifest is valid', () => {
 	assert.deepEqual(validateManifest(fakeManifest), []);
 });
 
-test('validateManifest refuse ce qui rendrait le jeu muet en silence', () => {
+test('validateManifest refuses what would silently mute the game', () => {
 	const bad = (m) => validateManifest(m).length > 0;
 	assert.ok(bad(null));
 	assert.ok(bad({ schemaVersion: 99, tracks: [] }));
 	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: 'nope' }));
-	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'race5', file: 'f', bpm: 1 }] }), 'durS manquant');
-	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'nope', file: 'f', durS: 1, bpm: 1 }] }), 'pool inconnu');
-	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'race5', file: 'f', durS: 0, bpm: 1 }] }), 'durée nulle');
+	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'race5', file: 'f', bpm: 1 }] }), 'durS missing');
+	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'nope', file: 'f', durS: 1, bpm: 1 }] }), 'unknown pool');
+	assert.ok(bad({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks: [{ id: 'x', pool: 'race5', file: 'f', durS: 0, bpm: 1 }] }), 'zero duration');
 });
 
-test('validateManifest attrape les doublons d\'id et de fichier', () => {
+test('validateManifest catches duplicate ids and files', () => {
 	const dup = (tracks) => validateManifest({ schemaVersion: MUSIC_SCHEMA_VERSION, tracks });
 	const t = { pool: 'race5', durS: 1, bpm: 1 };
-	assert.ok(dup([{ ...t, id: 'a', file: 'f1' }, { ...t, id: 'a', file: 'f2' }]).some((p) => /id dupliqué/.test(p)));
-	assert.ok(dup([{ ...t, id: 'a', file: 'f' }, { ...t, id: 'b', file: 'f' }]).some((p) => /file dupliqué/.test(p)));
+	assert.ok(dup([{ ...t, id: 'a', file: 'f1' }, { ...t, id: 'a', file: 'f2' }]).some((p) => /duplicate id/.test(p)));
+	assert.ok(dup([{ ...t, id: 'a', file: 'f' }, { ...t, id: 'b', file: 'f' }]).some((p) => /duplicate file/.test(p)));
 });
 
-test('le manifeste livré, s\'il existe, est valide et pointe vers des fichiers présents', () => {
+test('the shipped manifest, if it exists, is valid and points at files that are there', () => {
 	const p = join(SIM, 'public/music.json');
-	if (!existsSync(p)) return; // avant la première vague, il n'y a rien à valider
+	if (!existsSync(p)) return; // before the first wave there is nothing to validate
 	const m = JSON.parse(readFileSync(p, 'utf8'));
 	assert.deepEqual(validateManifest(m), []);
 	for (const t of m.tracks) {
-		assert.ok(existsSync(join(SIM, 'public', t.file)), `fichier absent : ${t.file}`);
+		assert.ok(existsSync(join(SIM, 'public', t.file)), `file missing: ${t.file}`);
 	}
 });
 
 // --- pipeline ---------------------------------------------------------------
 
-test('trackId est stable et sépare bien les voisins', () => {
+test('trackId is stable and separates neighbours well', () => {
 	assert.equal(trackId('race5', 'v1', 0), trackId('race5', 'v1', 0));
 	const ids = [];
 	for (let i = 0; i < 200; i++) ids.push(trackId('race5', 'v1', i));
-	assert.equal(new Set(ids).size, 200, 'collision d\'id');
-	// Le point de l'avalanche : deux index consécutifs ne doivent pas donner
-	// deux ids qui se ressemblent, sinon la revue à l'oreille se trompe de ligne.
+	assert.equal(new Set(ids).size, 200, 'id collision');
+	// The point of the avalanche: two consecutive indices must not give two ids
+	// that look alike, or the listening review picks the wrong line.
 	assert.notEqual(ids[0].slice(-8, -4), ids[1].slice(-8, -4));
 });
 
-test('planFor produit un plan complet et reproductible', () => {
+test('planFor produces a complete, reproducible plan', () => {
 	const a = planFor({ pool: 'heavy5', count: 4, seedBase: 'v1', duration: 90 });
 	const b = planFor({ pool: 'heavy5', count: 4, seedBase: 'v1', duration: 90 });
 	assert.deepEqual(a.map((j) => j.id), b.map((j) => j.id));
@@ -495,38 +489,38 @@ test('planFor produit un plan complet et reproductible', () => {
 	for (const j of a) {
 		assert.equal(j.pool, 'heavy5');
 		assert.equal(j.durationS, 90);
-		assert.ok(Number.isInteger(j.modelSeed) && j.modelSeed >= 0, 'la seed du modèle doit être un entier positif');
+		assert.ok(Number.isInteger(j.modelSeed) && j.modelSeed >= 0, 'the model seed must be a positive integer');
 		assert.ok(j.prompt.includes(negativesFor(j.pool)));
 		assert.ok(j.out.endsWith(`${j.id}.wav`));
 	}
 });
 
-test('loopFilter découpe en tête/corps/queue et recolle les deux jonctions', () => {
+test('loopFilter cuts head/body/tail and rejoins both seams', () => {
 	const f = loopFilter({ startS: 0, endS: 90, crossfadeS: 3 });
-	assert.ok(f.includes('atrim=0:3'), 'tête');
-	assert.ok(f.includes('atrim=87:90'), 'queue');
-	assert.ok(f.includes('atrim=3:87'), 'corps');
-	assert.ok(f.includes('[tail][head]acrossfade=d=3'), 'la queue se fond DANS la tête, pas l\'inverse');
-	assert.ok(f.indexOf('[joint][body]concat') > f.indexOf('acrossfade'), 'le raccord précède le corps');
+	assert.ok(f.includes('atrim=0:3'), 'head');
+	assert.ok(f.includes('atrim=87:90'), 'tail');
+	assert.ok(f.includes('atrim=3:87'), 'body');
+	assert.ok(f.includes('[tail][head]acrossfade=d=3'), 'the tail fades INTO the head, not the other way round');
+	assert.ok(f.indexOf('[joint][body]concat') > f.indexOf('acrossfade'), 'the seam comes before the body');
 });
 
-test('loopFilter tient compte du silence de tête coupé', () => {
+test('loopFilter accounts for the trimmed head silence', () => {
 	const f = loopFilter({ startS: 1.2, endS: 88, crossfadeS: 3 });
 	assert.ok(f.includes('atrim=1.2:4.2'));
 	assert.ok(f.includes('atrim=85:88'));
 });
 
-test('loopFilter refuse un segment trop court pour son recouvrement', () => {
+test('loopFilter refuses a segment too short for its crossfade', () => {
 	assert.throws(() => loopFilter({ startS: 0, endS: 6, crossfadeS: 3 }), /trop court/);
 });
 
-test('la première passe demande bien une mesure', () => {
+test('the first pass really asks for a measurement', () => {
 	const f = loudnormMeasureFilter();
 	assert.ok(f.startsWith('loudnorm='));
 	assert.ok(f.includes(`I=${TARGET_LUFS}`));
 	assert.ok(f.includes(`TP=${TARGET_PEAK_DBFS}`));
-	assert.ok(f.includes('print_format=json'), 'sans JSON, la seconde passe n\'a rien à lire');
-	assert.ok(!f.includes('measured_'), 'la première passe ne connaît encore rien');
+	assert.ok(f.includes('print_format=json'), 'without JSON the second pass has nothing to read');
+	assert.ok(!f.includes('measured_'), 'the first pass knows nothing yet');
 });
 
 const measured = {
@@ -534,65 +528,65 @@ const measured = {
 	input_thresh: '-26.10', target_offset: '-0.40',
 };
 
-test('la seconde passe reporte TOUTES les mesures et reste linéaire', () => {
+test('the second pass reports EVERY measurement and stays linear', () => {
 	const f = loudnormApplyFilter(measured);
 	for (const [key, value] of [
 		['measured_I', measured.input_i], ['measured_TP', measured.input_tp],
 		['measured_LRA', measured.input_lra], ['measured_thresh', measured.input_thresh],
 		['offset', measured.target_offset],
 	]) {
-		assert.ok(f.includes(`${key}=${value}`), `${key} absent de la seconde passe`);
+		assert.ok(f.includes(`${key}=${value}`), `${key} missing from the second pass`);
 	}
-	// Sans linear=true, loudnorm compresse la dynamique au lieu de se contenter
-	// d'un gain statique quand un gain statique suffit.
+	// Without linear=true, loudnorm compresses the dynamics instead of settling
+	// for a static gain when a static gain is enough.
 	assert.ok(f.includes('linear=true'));
 	assert.ok(f.includes(`I=${TARGET_LUFS}`) && f.includes(`TP=${TARGET_PEAK_DBFS}`) && f.includes(`LRA=${TARGET_LRA}`));
 });
 
-test('une mesure incomplète échoue au lieu de normaliser à une passe', () => {
-	// Le piège silencieux : loudnorm accepte un filtre sans measured_*, et rend
-	// alors une normalisation à une passe — donc une bibliothèque qui s'étale.
+test('an incomplete measurement fails instead of normalising in one pass', () => {
+	// The silent trap: loudnorm accepts a filter with no measured_*, and then
+	// returns a one-pass normalisation -- hence a library that sprawls.
 	for (const missing of Object.keys(measured)) {
 		const partial = { ...measured };
 		delete partial[missing];
-		assert.throws(() => loudnormApplyFilter(partial), /mesure loudnorm incomplète/, `${missing} manquant non détecté`);
+		assert.throws(() => loudnormApplyFilter(partial), /mesure loudnorm incompl\u00e8te/, `${missing} missing, not detected`);
 	}
-	assert.throws(() => loudnormApplyFilter(null), /incomplète/);
-	assert.throws(() => loudnormApplyFilter({ ...measured, input_tp: 'nan' }), /incomplète/);
+	assert.throws(() => loudnormApplyFilter(null), /incompl\u00e8te/);
+	assert.throws(() => loudnormApplyFilter({ ...measured, input_tp: 'nan' }), /incompl\u00e8te/);
 });
 
-test('la cible de crête laisse de la marge sous 0 dBFS', () => {
-	assert.ok(TARGET_PEAK_DBFS < 0, 'Opus peut dépasser à la décompression');
+test('the peak target leaves headroom under 0 dBFS', () => {
+	assert.ok(TARGET_PEAK_DBFS < 0, 'Opus can overshoot on decoding');
 	assert.ok(TARGET_LRA > 0);
 });
 
-test('le recouvrement de boucle est audible mais court', () => {
+test('the loop crossfade is audible but short', () => {
 	assert.ok(CROSSFADE_S >= 1 && CROSSFADE_S <= 6);
 });
 
-test('le gate attrape un morceau VIDE, pas seulement un morceau plat', () => {
-	// Le trou qui a laissé passer trois tirages de menu décrits comme « y a même
-	// pas de musique ». L'écart RMS ne suffit pas : un morceau très dynamique a
-	// lui aussi un grand écart. Ce qui distingue le vide, c'est la PROPORTION du
-	// morceau passée sous la médiane.
+test('the gate catches an EMPTY track, not only a flat one', () => {
+	// The hole that let through three menu draws described as "there is not even
+	// any music". The RMS spread is not enough: a very dynamic track also has a
+	// large spread. What distinguishes emptiness is the PROPORTION of the track
+	// spent below the median.
 	const t = { durationS: 90, lufs: -14, truePeak: 0, headSilenceS: 0, tailSilenceS: 1, rmsSpreadDb: 20, sideDb: -14 };
-	// Mesures réelles des trois tirages ratés.
+	// Real measurements of the three failed draws.
 	for (const silentFraction of [0.15, 0.36]) {
 		assert.ok(judge({ ...t, silentFraction }, 90).reasons.some((r) => /vide/.test(r)),
-			`${silentFraction * 100} % de vide non détecté`);
+			`${silentFraction * 100} % emptiness not detected`);
 	}
-	// Et le pire morceau ACCEPTÉ à l'oreille doit continuer de passer.
+	// And the worst track ACCEPTED by ear must keep passing.
 	assert.deepEqual(judge({ ...t, silentFraction: 0.06 }, 90).reasons, [],
-		'6 % de vide est la mesure de cinewhoop-1fbea112, validé à l\'oreille');
+		'6 % emptiness is the measurement of cinewhoop-1fbea112, validated by ear');
 });
 
-test('menu ne peut plus recevoir d\'axe qui le vide', () => {
-	// Le noyau du pool dit déjà « sparse minimal percussion, patient and
-	// watchful ». Un axe qui ajoute du vide par-dessus rend un prompt qui ne
-	// demande rien. J'avais banni « relentless and driving » — la mauvaise
-	// direction : les trois morceaux de menu qui marchent sont les plus DENSES.
+test('menu can no longer receive an axis that empties it', () => {
+	// The pool's core already says "sparse minimal percussion, patient and
+	// watchful". An axis that adds emptiness on top gives a prompt that asks for
+	// nothing. "relentless and driving" had been banned -- the wrong direction:
+	// the three menu tracks that work are the DENSEST.
 	const bans = POOL_AXIS_BANS.menu;
-	assert.ok(bans.energy.includes('restrained and patient'), 'menu peut encore se faire vider');
+	assert.ok(bans.energy.includes('restrained and patient'), 'menu can still be emptied');
 	assert.ok(bans.density.includes('sparse arrangement, lots of space'));
 	for (let i = 0; i < 300; i++) {
 		const { axes } = buildPrompt('menu', `s${i}`);
@@ -601,87 +595,87 @@ test('menu ne peut plus recevoir d\'axe qui le vide', () => {
 	}
 });
 
-test('judge accepte un morceau sain et nomme chaque défaut', () => {
+test('judge accepts a sound track and names every defect', () => {
 	const sane = { durationS: 90, lufs: -13, truePeak: -1.2, headSilenceS: 0.1, tailSilenceS: 1.0, rmsSpreadDb: 6, silentFraction: 0, sideDb: -14 };
 	assert.deepEqual(judge(sane, 90).reasons, []);
-	assert.ok(judge({ ...sane, durationS: 40 }, 90).reasons.some((r) => /durée/.test(r)));
-	assert.ok(judge({ ...sane, headSilenceS: 9 }, 90).reasons.some((r) => /tête/.test(r)));
+	assert.ok(judge({ ...sane, durationS: 40 }, 90).reasons.some((r) => /dur\u00e9e/.test(r)));
+	assert.ok(judge({ ...sane, headSilenceS: 9 }, 90).reasons.some((r) => /t\u00eate/.test(r)));
 	assert.ok(judge({ ...sane, tailSilenceS: 30 }, 90).reasons.some((r) => /queue/.test(r)));
 	assert.ok(judge({ ...sane, lufs: -40 }, 90).reasons.some((r) => /LUFS/.test(r)));
-	assert.ok(judge({ ...sane, lufs: NaN }, 90).reasons.some((r) => /non mesuré/.test(r)));
+	assert.ok(judge({ ...sane, lufs: NaN }, 90).reasons.some((r) => /non mesur\u00e9/.test(r)));
 	assert.ok(judge({ ...sane, rmsSpreadDb: 0.1 }, 90).reasons.some((r) => /nappe/.test(r)));
 	assert.ok(judge({ ...sane, sideDb: -70 }, 90).reasons.some((r) => /mono/.test(r)));
-	assert.ok(judge({ ...sane, truePeak: 20 }, 90).reasons.some((r) => /cassé/.test(r)));
+	assert.ok(judge({ ...sane, truePeak: 20 }, 90).reasons.some((r) => /cass\u00e9/.test(r)));
 });
 
-test('le gate ne rejette PAS une crête inter-échantillon normale', () => {
-	// 19 des 21 morceaux du lot de calibration dépassent 0 dBFS. C'est le
-	// comportement normal d'un master fort, et music-loop.mjs le corrige par un
-	// gain statique. Rejeter là-dessus viderait la bibliothèque.
+test('the gate does NOT reject a normal inter-sample peak', () => {
+	// 19 of the 21 tracks in the calibration batch go past 0 dBFS. That is the
+	// normal behaviour of a loud master, and music-loop.mjs corrects it with a
+	// static gain. Rejecting on that would empty the library.
 	const sane = { durationS: 90, lufs: -13, headSilenceS: 0, tailSilenceS: 1, rmsSpreadDb: 6, silentFraction: 0, sideDb: -14 };
 	for (const truePeak of [0.1, 0.6, 1.4, 2.9]) {
-		assert.deepEqual(judge({ ...sane, truePeak }, 90).reasons, [], `crête ${truePeak} rejetée à tort`);
+		assert.deepEqual(judge({ ...sane, truePeak }, 90).reasons, [], `peak ${truePeak} rejected wrongly`);
 	}
 });
 
-test('le gate laisse vivre les genres volontairement égaux', () => {
-	// Le dub techno (LONG RANGE) et l'ambiance de menu sont hypnotiques par
-	// construction : un seuil d'écart RMS trop haut rejetterait exactement les
-	// pools dont c'est l'identité. Mesures réelles du lot : 1.29 et 1.75 dB.
+test('the gate lets deliberately even genres live', () => {
+	// Dub techno (LONG RANGE) and the menu ambience are hypnotic by construction:
+	// an RMS-spread threshold set too high would reject exactly the pools whose
+	// identity that is. Real measurements from the batch: 1.29 and 1.75 dB.
 	const even = { durationS: 90, lufs: -14, truePeak: 1.1, headSilenceS: 0, tailSilenceS: 1, silentFraction: 0, sideDb: -18 };
 	for (const rmsSpreadDb of [1.29, 1.75, 3.3]) {
-		assert.deepEqual(judge({ ...even, rmsSpreadDb }, 90).reasons, [], `écart ${rmsSpreadDb} dB rejeté à tort`);
+		assert.deepEqual(judge({ ...even, rmsSpreadDb }, 90).reasons, [], `spread ${rmsSpreadDb} dB rejected wrongly`);
 	}
-	// Mais le silence déguisé reste attrapé.
+	// But disguised silence is still caught.
 	assert.ok(judge({ ...even, rmsSpreadDb: 0.2 }, 90).reasons.some((r) => /nappe/.test(r)));
 });
 
-test('le fondu de queue normal du modèle passe, une queue morte non', () => {
+test('the model\'s normal tail fade passes, a dead tail does not', () => {
 	const t = { durationS: 90, lufs: -13, truePeak: 0.5, headSilenceS: 0, rmsSpreadDb: 6, silentFraction: 0, sideDb: -14 };
 	for (const tailSilenceS of [0, 1.12, 2.95, 4.42]) {
-		assert.deepEqual(judge({ ...t, tailSilenceS }, 90).reasons, [], `queue ${tailSilenceS} s rejetée à tort`);
+		assert.deepEqual(judge({ ...t, tailSilenceS }, 90).reasons, [], `tail ${tailSilenceS} s rejected wrongly`);
 	}
 	assert.ok(judge({ ...t, tailSilenceS: 30 }, 90).reasons.some((r) => /queue/.test(r)));
 });
 
-test('les bornes du gate sont ordonnées et plausibles', () => {
+test('the gate bounds are ordered and plausible', () => {
 	assert.ok(BOUNDS.lufs[0] < BOUNDS.lufs[1]);
 	assert.ok(BOUNDS.lufs[0] < TARGET_LUFS && TARGET_LUFS < BOUNDS.lufs[1],
-		'la cible de normalisation doit tomber dans la plage acceptée');
+		'the normalisation target must fall inside the accepted range');
 	assert.ok(BOUNDS.headSilenceS < BOUNDS.tailSilenceS,
-		'on tolère plus de silence en queue : music-loop la recoupe');
+		'more silence is tolerated at the tail: music-loop trims it back');
 	assert.ok(BOUNDS.minSideDb < 0);
 	assert.ok(BOUNDS.maxSilentFraction > 0.06 && BOUNDS.maxSilentFraction < 0.15,
-		'le seuil de vide doit laisser passer le pire morceau accepté (6 %) et attraper les ratés (15 %)');
+		'the emptiness threshold must pass the worst accepted track (6 %) and catch the failures (15 %)');
 });
 
-test('la génération reste au point de fonctionnement du modèle', () => {
-	// Contre-intuitif, donc à protéger : monter le nombre de pas DÉGRADE ce
-	// modèle. Stable Audio 3 est construit pour l'inférence rapide et 8 pas est
-	// son régime nominal, pas un raccourci. À 50 pas la sortie tombe de 3,6 à
-	// 8,7 dB et part hors-style — vérifié à l'oreille sur le pool `menu`.
-	assert.equal(DEFAULTS.steps, 8, 'le modèle sort de son régime au-delà');
-	// Et le CFG reste bas : à 7 le rendu sort déjà compressé (-5,3 LUFS, LRA 4,4).
-	assert.ok(DEFAULTS.cfgScale <= 2, `cfg ${DEFAULTS.cfgScale} : le rendu sera écrasé`);
+test('generation stays at the model\'s operating point', () => {
+	// Counter-intuitive, hence protected: raising the step count DEGRADES this
+	// model. Stable Audio 3 is built for fast inference and 8 steps is its
+	// nominal regime, not a shortcut. At 50 steps the output drops from 3.6 to
+	// 8.7 dB and goes out of style -- checked by ear on the `menu` pool.
+	assert.equal(DEFAULTS.steps, 8, 'the model leaves its regime past that');
+	// And the CFG stays low: at 7 the render already comes out compressed (-5.3 LUFS, LRA 4.4).
+	assert.ok(DEFAULTS.cfgScale <= 2, `cfg ${DEFAULTS.cfgScale}: the render will be crushed`);
 });
 
-test('suggestSeedBase suit la série et n\'entre jamais en collision', () => {
-	// Le piège le plus facile du pipeline : réutiliser une graine ne produit pas
-	// d'autres morceaux, elle rend EXACTEMENT les mêmes, que le worker saute
-	// ensuite comme déjà générés. On croit avoir agrandi la bibliothèque et il
-	// ne s'est rien passé — silencieusement.
+test('suggestSeedBase follows the series and never collides', () => {
+	// The easiest trap in the pipeline: reusing a seed does not produce other
+	// tracks, it returns EXACTLY the same ones, which the worker then skips as
+	// already generated. You believe the library grew and nothing happened --
+	// silently.
 	assert.equal(suggestSeedBase(new Set()), 'v1');
 	assert.equal(suggestSeedBase(new Set(['v5'])), 'v6');
 	assert.equal(suggestSeedBase(new Set(['cal1', 'v2', 'v3', 'v5'])), 'v6');
-	// Une graine hors série ne doit pas bloquer la suggestion.
+	// A seed outside the series must not block the suggestion.
 	assert.equal(suggestSeedBase(new Set(['cal1'])), 'v1');
-	// Et la suggestion ne doit jamais être déjà prise.
+	// And the suggestion must never already be taken.
 	for (const used of [new Set(['v1']), new Set(['v1', 'v2', 'v3']), new Set(['v9', 'cal1'])]) {
-		assert.ok(!used.has(suggestSeedBase(used)), 'la suggestion entre en collision');
+		assert.ok(!used.has(suggestSeedBase(used)), 'the suggestion collides');
 	}
 });
 
-// --- retrait ----------------------------------------------------------------
+// --- removal ------------------------------------------------------------------
 
 const lib = [
 	{ id: 'race5-a', pool: 'race5', file: 'music/race5/a.opus', durS: 80, bpm: 148, seed: 'cal1::0' },
@@ -690,30 +684,29 @@ const lib = [
 	{ id: 'menu-b', pool: 'menu', file: 'music/menu/b.opus', durS: 80, bpm: 90, seed: 's50::0' },
 ];
 
-test('partition sépare par graine et par id', () => {
-	const parGraine = partition(lib, { before: 's50' });
-	assert.deepEqual(parGraine.drop.map((t) => t.id), ['race5-a', 'menu-a']);
-	assert.deepEqual(parGraine.keep.map((t) => t.id), ['race5-b', 'menu-b']);
+test('partition splits by seed and by id', () => {
+	const bySeed = partition(lib, { before: 's50' });
+	assert.deepEqual(bySeed.drop.map((t) => t.id), ['race5-a', 'menu-a']);
+	assert.deepEqual(bySeed.keep.map((t) => t.id), ['race5-b', 'menu-b']);
 
-	const parId = partition(lib, { ids: ['menu-b'] });
-	assert.deepEqual(parId.drop.map((t) => t.id), ['menu-b']);
-	assert.equal(parId.keep.length, 3);
+	const byId = partition(lib, { ids: ['menu-b'] });
+	assert.deepEqual(byId.drop.map((t) => t.id), ['menu-b']);
+	assert.equal(byId.keep.length, 3);
 });
 
-test('partition ne retire rien sans critère', () => {
+test('partition removes nothing without a criterion', () => {
 	const p = partition(lib, {});
 	assert.equal(p.drop.length, 0);
 	assert.equal(p.keep.length, lib.length);
 });
 
-test('partition supporte un morceau sans graine', () => {
-	// Les entrées les plus anciennes du manifeste pourraient ne pas en avoir ;
-	// les traiter comme « à retirer » silencieusement serait une perte de
-	// données déguisée en nettoyage.
-	const sansGraine = [{ id: 'x', pool: 'menu', file: 'f', durS: 1, bpm: 1 }];
-	const p = partition(sansGraine, { before: 's50' });
-	assert.equal(p.drop.length, 1, 'un morceau sans graine ne survit pas à --before, et c\'est voulu');
-	assert.equal(partition(sansGraine, { ids: [] }).drop.length, 0);
+test('partition copes with a track that has no seed', () => {
+	// The oldest manifest entries might not have one; treating them silently as
+	// "to be removed" would be data loss disguised as housekeeping.
+	const seedless = [{ id: 'x', pool: 'menu', file: 'f', durS: 1, bpm: 1 }];
+	const p = partition(seedless, { before: 's50' });
+	assert.equal(p.drop.length, 1, 'a track with no seed does not survive --before, and that is intended');
+	assert.equal(partition(seedless, { ids: [] }).drop.length, 0);
 });
 
-console.log(`music-selftest : ${passed} tests`);
+console.log(`music-selftest: ${passed} tests`);

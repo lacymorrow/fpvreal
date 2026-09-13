@@ -34,7 +34,6 @@
     "selftest:scenes": "node tools/scenes-json-selftest.mjs",
     "fuzz": "node tools/fuzz.mjs && node tools/fuzz-rocktree.mjs && node tools/fuzz-api.mjs",
     "fuzz:api": "node tools/fuzz-api.mjs",
-    "fuzz:known": "node tools/fuzz.mjs --known && node tools/fuzz-rocktree.mjs --known",
     "export-glb": "node --max-old-space-size=8192 tools/export-glb.mjs",
     "tune": "node tools/tune-pid.mjs",
     "dialogue:gen": "node tools/dialogue/generate.mjs",
