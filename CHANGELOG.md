@@ -53,7 +53,88 @@ Ce que la première mise en ligne réelle a trouvé. La 1.0.0 a été taguée av
 qu'une instance publique existe : tout ce qui suit a été découvert en la
 déployant pour de bon, et rien de tout cela ne pouvait l'être autrement.
 
+### Modifié
+
+- **Les moteurs sont un bilan de couple, plus un ajustement de courbe.**
+  `omega = omegaMax * cmd^rpmCurve` suivi d'un retard du premier ordre, c'était
+  TROIS constantes ajustées par famille (`rpmCurve`, `tauSpinUp`,
+  `tauSpinDown`) pour un seul mécanisme — et étant ajustées, elles pouvaient
+  tout absorber : aucune combinaison n'était jamais fausse, donc rien n'était
+  vérifiable. Nouveau `sim/src/motor.js` : force contre-électromotrice
+  `e = Ke·omega`, courant `i = (duty·V − e)/R`, couple `Ke·(i − i0)`, et le
+  bilan `J·domega/dt = Q_moteur − Q_hélice`. Tout ce que les trois constantes
+  encodaient en tombe : la forme du régime en fonction du manche (la racine
+  d'une quadratique, dont l'exposant 0,65 était l'approximation — c'est
+  pourquoi il tenait entre 0,5 et 1), l'asymétrie montée/descente (mesurée
+  désormais à 24 ms contre 36 ms, contre 22/45 ms posés à la main), le pack qui
+  sagge, et le courant — qui était un SECOND ajustement à côté du premier.
+  Les trois constantes disparaissent des profils, remplacées par
+  `motor: { kv, noLoadCurrent }` pris du moteur que chaque famille nommait déjà
+  en commentaire ; la résistance n'est pas stockée mais **dérivée de maxOmega**,
+  donc le régime de pointe — et avec lui la poussée, le rapport poussée-poids
+  et la vitesse max — reste autoritatif, au chiffre près, pour les six
+  familles. Deux erreurs physiques corrigées au passage : le manche de
+  stationnaire s'inverse maintenant par le vrai bilan et non par
+  `cmd^(2·rpmCurve)` (0,245 → 0,342 sur freestyle5, plus proche des ~30 % d'un
+  vrai 5" en 6:1), et le courant PACK n'est pas le courant BOBINAGE — un ESC est
+  un hacheur, le pack ne fournit que la fraction `duty`, ce qui ramène le
+  stationnaire d'un 5" de 34 A à **12 A**, ce que tire réellement un 650 g.
+  PID réécrits par `tools/tune-pid.mjs --write all`, jamais à la main.
+
 ### Corrigé
+
+- **Le régime d'anneau tourbillonnaire ne lâchait jamais, et ignorait la
+  taille des hélices.** Deux défauts dans `propwash`. Ses seuils étaient en
+  m/s ABSOLUS, identiques pour les six familles — exactement l'erreur que
+  `kAxial` avait déjà commise (issue #71) : la vitesse induite vh va de
+  5,3 m/s (toothpick) à 11,5 m/s (cinewhoop), donc un seuil fixe à 2 m/s
+  faisait entrer en VRS à 0,38 vh sur une machine et 0,17 vh sur une autre,
+  un facteur 2,2 sur un seuil censé être une propriété de l'écoulement. Pire,
+  la courbe SATURAIT et y restait : passé 8 m/s de descente le disque était
+  maintenu en VRS plein, à 20 comme à 40 m/s. Or aucun anneau ne peut exister
+  là-bas — au-delà de Vd = 2·vh le rotor est en **moulinet**, écoulement
+  établi et lisse. C'est une BANDE, pas une rampe. Elle est désormais exprimée
+  en unités de vh, ses extrémités calées pour reproduire exactement l'onset et
+  le pic mesurés de `freestyle5` sur son propre vh de 7,17 m/s (2 et 8 m/s →
+  0,279 et 1,116 vh) : la machine de référence garde son ressenti au
+  centième, chaque autre famille culmine enfin à SON régime. Trois gardes
+  structurelles dans `tools/aero-selftest.mjs` (zéro au stationnaire, zéro
+  au-delà du moulinet, un seul pic par famille).
+
+- **Le drone refusait de tomber : plus il descendait vite, plus il poussait
+  fort.** Signalé comme « le drone flotte, il est trop léger ». Le terme
+  d'inflow axial de `quad.js` est une pente au PREMIER ORDRE — le commentaire
+  qui le dérive le dit — mais il était appliqué sans borne. En descente rapide
+  il était donc évalué jusqu'à Vc/vh = −3,5, plusieurs fois au-delà de ce qu'un
+  développement linéaire peut prétendre, et la conséquence partait à l'envers :
+  à manche de stationnaire tenu, `freestyle5` produisait 0,92 × son poids à
+  8 m/s de descente mais **1,23 ×** à 25 m/s. Le `propwash`, qui porte le régime
+  d'anneau tourbillonnaire, saturait dès 8 m/s et ne pouvait plus rien y
+  opposer. Le terme axial s'arrête désormais à la frontière du **moulinet**
+  (Vc = −2·vh) — pas un nombre choisi : c'est là que la théorie de la quantité
+  de mouvement admet de nouveau une solution. Seul le côté descente est borné :
+  stationnaire, montée et portance translationnelle passent **au bit près**
+  (montée plein gaz : 31,928 m/s avant comme après). Deux gardes dans
+  `tools/aero-selftest.mjs`, dont l'invariant structurel « au-delà de la
+  frontière, tomber plus vite n'achète jamais plus de poussée ».
+
+- **La gravité s'arrêtait dès que le rendu ralentissait.** Deux défauts
+  indépendants, tous les deux dans l'horloge et aucun dans le modèle de vol.
+  D'abord, `Physics.step(motors, dt)` ignorait son `dt` côté Rapier : le moteur
+  intégrait toujours `world.timestep`, donc la cellule avançait de `dt` pendant
+  que la gravité, les vitesses et les contacts avançaient de 1/250 s — un pas de
+  1/50 s tombait au **cinquième de g**. Ensuite, la boucle de frame n'achetait
+  au plus que 12 pas de 1/250 s, soit 48 ms de monde par frame, et **jetait** le
+  reste de l'accumulateur : en dessous de ~21 fps toute la simulation passait au
+  ralenti (48 % du temps réel à 10 fps, 3 % pendant les stalls de streaming de
+  700-1700 ms déjà documentés). Le symptôme visible étant un drone qui reste
+  suspendu au lieu de tomber, le défaut se lisait comme une gravité cassée. Le
+  pas est désormais **étiré** (borné à 1/60 s) au lieu d'être abandonné : le
+  coût d'un rattrapage reste plafonné à 12 pas — la raison d'être du plafond —
+  mais le monde avance bien du temps réellement écoulé, jusqu'à 200 ms par
+  frame. Une machine qui tient la cadence tourne exactement sur la grille 250 Hz
+  d'avant, au bit près. Nouveau `sim/src/frame-pacing.js` et
+  `tools/frame-pacing-selftest.mjs` (9 tests, dans la chaîne CI).
 
 - **Le curseur disparaissait dès qu'un clic tombait à côté d'un bouton.** Le
   curseur EST le focus natif du navigateur : cliquer sur le fond d'un écran, un

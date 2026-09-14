@@ -13,10 +13,12 @@
 // symmetry) that a wrong implementation cannot satisfy by accident.
 import {
 	Propulsion, inducedVelocity, kThrustOf, kInflowOf, kLateralOf, INFLOW_K0,
-	mixOf, cruiseSpeedOf,
+	mixOf, cruiseSpeedOf, vhPerOmegaOf,
 } from '../src/quad.js';
 import { PROFILES, FAMILIES } from '../src/drone-profiles.js';
-import { FlightController, RATE_PRESETS } from '../src/flightController.js';
+import { FlightController, RATE_PRESETS, hoverThrottle } from '../src/flightController.js';
+
+const IDENTITY_Q = { x: 0, y: 0, z: 0, w: 1 };
 
 const DT = 1 / 250;
 const GRAVITY = 9.81;
@@ -57,6 +59,7 @@ console.log('1. translational lift generalises the axial inflow');
 // the exported coefficients — an expression that shares no code with step().
 {
 	let worst = 0, worstAt = '';
+	let worstInBand = 0, worstInBandAt = '';
 	for (const fam of FAMILIES) {
 		const profile = PROFILES[fam];
 		const kT = kThrustOf(profile), kI = kInflowOf(profile);
@@ -71,14 +74,122 @@ console.log('1. translational lift generalises the axial inflow');
 				// propwash rather than re-deriving that too — it is not what this
 				// check is about.
 				const pw = 1 - 0.22 * s.prop.propwash;
-				const want = Math.max(0, kT * w * w - kI * w * vy) * pw;
+				// The axial term is a first-order slope and is applied only as far
+				// as the windmill brake boundary Vc = -2*vh, past which a descent
+				// no longer buys thrust without limit (see step()). Written out
+				// here from the exported coefficients, sharing no code with it.
+				const vyAxial = Math.max(vy, -2 * w * vhPerOmegaOf(profile));
+				const want = Math.max(0, kT * w * w - kI * w * vyAxial) * pw;
 				const rel = Math.abs(s.thrust[0] - want) / Math.max(1e-9, Math.abs(want));
 				if (rel > worst) { worst = rel; worstAt = `${fam} thr=${thr} vy=${vy}`; }
+				// Inside the slope's own validity band nothing may have moved: the
+				// bound must not have disturbed hover, climb or a gentle descent.
+				if (vy >= -2 * w * vhPerOmegaOf(profile)) {
+					const unbounded = Math.max(0, kT * w * w - kI * w * vy) * pw;
+					const relU = Math.abs(s.thrust[0] - unbounded) / Math.max(1e-9, Math.abs(unbounded));
+					if (relU > worstInBand) { worstInBand = relU; worstInBandAt = `${fam} thr=${thr} vy=${vy}`; }
+				}
 			}
 		}
 	}
-	check('no edgewise speed: thrust is exactly the old axial formula',
+	check('no edgewise speed: thrust is exactly the bounded axial formula',
 		worst < 1e-15, `worst relative error ${worst.toExponential(1)} (${worstAt})`);
+	check('inside the slope\'s validity band the axial branch is untouched',
+		worstInBand < 1e-15,
+		`worst relative error ${worstInBand.toExponential(1)} (${worstInBandAt})`);
+}
+
+// The anti-float invariant, stated structurally rather than as a recorded
+// number: past the windmill brake boundary, falling faster must not buy more
+// thrust. Unbounded, the first-order axial slope did exactly that — at a held
+// hover throttle freestyle5 made 0.92x its weight at 8 m/s of descent and
+// 1.23x at 25 m/s, so the harder it fell the harder it pushed back. That is
+// the "it floats, it has no weight" a pilot reports, and nothing else in this
+// file was in a position to catch it.
+{
+	let worst = 0, worstAt = '';
+	for (const fam of FAMILIES) {
+		const profile = PROFILES[fam];
+		for (let n = 1; n <= 20; n++) {
+			const thr = n / 20;
+			let prev = null;
+			// The boundary is -2*vh and vh follows the rpm, so it moves with the
+			// throttle: derive it from the settled omega rather than assuming a
+			// descent rate that is past it for every family (a toothpick at 0.7
+			// throttle is still inside the band at 14 m/s).
+			const settled = settle(profile, flat(thr), air({ y: -1 }));
+			const boundary = 2 * settled.omega[0] * vhPerOmegaOf(profile);
+			for (let vy = -boundary - 1; vy >= -boundary - 30; vy -= 2) {
+				const s = settle(profile, flat(thr), air({ y: vy }));
+				const t = s.thrust[0];
+				if (prev !== null && t > prev) {
+					const rise = (t - prev) / Math.max(1e-9, prev);
+					if (rise > worst) { worst = rise; worstAt = `${fam} thr=${thr} vy=${vy}`; }
+				}
+				prev = t;
+			}
+		}
+	}
+	check('past the windmill brake boundary, falling faster never buys more thrust',
+		worst < 1e-12, `worst rise ${worst.toExponential(1)} (${worstAt})`);
+}
+
+// The vortex ring state is a BAND, not a ramp that saturates. It had absolute
+// m/s thresholds shared by every family (the kAxial mistake of #71 again: vh
+// runs from 5.3 to 11.5 m/s across the six, so a fixed 2 m/s onset meant 0.38
+// vh on one airframe and 0.17 vh on another), and it never let go — a disc was
+// held in full VRS at 40 m/s of descent, where no ring can exist because the
+// rotor is firmly in the windmill brake state.
+//
+// Structural, not recorded numbers: zero at a hover, zero once past the
+// boundary, and a single interior maximum in between.
+{
+	let worstHover = 0, worstHoverAt = '';
+	let worstPast = 0, worstPastAt = '';
+	let notUnimodal = '';
+	// The stick that holds a hover. Since src/motor.js this is a torque
+	// balance, not a power law, so it comes from the one implementation of it
+	// rather than being re-derived here.
+	const hoverStick = (p) => hoverThrottle(p, IDENTITY_Q);
+	for (const fam of FAMILIES) {
+		const profile = PROFILES[fam];
+		const thr = hoverStick(profile);
+		const settled = settle(profile, flat(thr), air({ y: 0 }));
+		const vh = settled.omega[0] * vhPerOmegaOf(profile);
+
+		if (settled.prop.propwash > worstHover) {
+			worstHover = settled.prop.propwash; worstHoverAt = fam;
+		}
+		// Just past the windmill brake boundary and well beyond: the ring must
+		// be gone. Probed from 2.05 rather than exactly 2 because vh here is
+		// the HOVER rpm's, while the model divides by the rpm the rotor
+		// actually settles at in a descent — the two differ by a fraction of a
+		// percent, so a probe sitting exactly on the boundary lands an epsilon
+		// inside the band and proves nothing either way.
+		for (const mult of [2.05, 3, 5, 8]) {
+			const s = settle(profile, flat(thr), air({ y: -mult * vh }));
+			if (s.prop.propwash > worstPast) {
+				worstPast = s.prop.propwash; worstPastAt = `${fam} at ${mult}*vh`;
+			}
+		}
+		// One rise then one fall, no second hump.
+		const curve = [];
+		for (let m = 0; m <= 2.4; m += 0.05) {
+			curve.push(settle(profile, flat(thr), air({ y: -m * vh })).prop.propwash);
+		}
+		let turns = 0;
+		for (let i = 1; i < curve.length - 1; i++) {
+			const a = curve[i] - curve[i - 1], b = curve[i + 1] - curve[i];
+			if (a > 1e-9 && b < -1e-9) turns++;
+		}
+		if (turns > 1 && !notUnimodal) notUnimodal = `${fam} has ${turns} peaks`;
+	}
+	check('a hover is never in the vortex ring state',
+		worstHover === 0, `worst propwash ${worstHover.toExponential(1)} (${worstHoverAt})`);
+	check('the vortex ring state is gone past the windmill brake boundary',
+		worstPast === 0, `worst propwash ${worstPast.toExponential(1)} (${worstPastAt})`);
+	check('the vortex ring band has a single peak, for every family',
+		notUnimodal === '', notUnimodal || 'one rise, one fall');
 }
 
 // The saturation is structural, not a clamp: as Vx grows, v_i falls to zero, so
@@ -558,7 +669,7 @@ console.log('\n5. what the pilot actually sees');
 	let ok = true, detail = '';
 	for (const fam of FAMILIES) {
 		const profile = PROFILES[fam];
-		const hover = ((profile.mass * GRAVITY) / (4 * profile.maxThrustPerMotor)) ** (1 / (2 * profile.rpmCurve));
+		const hover = hoverThrottle(profile, IDENTITY_Q);
 		// What stick holds the same total thrust at 20 m/s? Bisect on the model.
 		const V = cruiseSpeedOf(profile);
 		const totalAt = (stick, v) => settle(profile, flat(stick), air({ z: -v })).force.y;

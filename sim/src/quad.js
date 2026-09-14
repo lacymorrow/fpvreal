@@ -13,6 +13,7 @@
 
 import { Turbulence, mulberry32 } from './wind.js';
 import { DEFAULT_PROFILE } from './drone-profiles.js';
+import { motorConstants, stepMotor, steadyOmega, dutyForOmega } from './motor.js';
 
 const AIR_DENSITY = 1.225;
 export const GRAVITY = 9.81;
@@ -37,7 +38,12 @@ export const HOVER_THRUST = hoverThrust(QUAD);
 // le manche de stationnaire (hoverStick, tools/selftest.mjs) de la même
 // famille.
 export function idleThrottle(profile = QUAD) {
-	return ((profile.mass * GRAVITY) / (8 * profile.maxThrustPerMotor)) ** (1 / (2 * profile.rpmCurve));
+	// Solved through the motor (src/motor.js) rather than by inverting
+	// cmd^(2*rpmCurve) by hand: rpm comes from a torque balance now, and that
+	// power law was only ever an approximation of it.
+	const c = motorConstants(profile);
+	const omega = Math.sqrt((profile.mass * GRAVITY) / 2 / 4 / kThrustOf(profile));
+	return dutyForOmega(c, omega, profile.battery.cells * 4.2);
 }
 
 // Measured contact forces: gentle landing ~290N, 10 m/s touchdown ~1600N,
@@ -107,6 +113,29 @@ function diskAreaOf(profile) {
 // in `inflowGain`/`buffetGain` — that missing correction, and nobody knowing
 // how much more of it a ~34 g/~20 mm-prop craft would need, is why the
 // prototyped 1S tinywhoop was pulled from PHASE 07.
+// How far into a descent the linear axial inflow term stays applicable, in
+// multiples of the rotor's own hover induced velocity vh. 2 is the windmill
+// brake boundary: for Vc <= -2*vh momentum theory has a solution again, and
+// between there and zero it has none at all (the vortex ring state, carried
+// here by `propwash`). Beyond that boundary a first-order slope fitted around
+// hover is not evidence of anything, so it stops growing. See its use in
+// step().
+const AXIAL_INFLOW_LIMIT = 2;
+
+// The vortex ring band, in multiples of the rotor's hover induced velocity vh.
+// ONSET and PEAK are freestyle5's old absolute 2 and 8 m/s divided by its own
+// 7.17 m/s hover vh, so the reference airframe keeps the behaviour it was
+// tuned to and every other family scales off its own disc. END is the windmill
+// brake boundary: past it the flow through the disc is fully established and
+// no ring can form, so the loss must be gone rather than saturated. LATERAL_IN
+// / LATERAL_OUT are the same treatment of the sideways escape (2 and 8 m/s):
+// translating fast enough leaves your own column behind.
+const VRS_ONSET = 2 / 7.17;
+const VRS_PEAK = 8 / 7.17;
+const VRS_END = AXIAL_INFLOW_LIMIT;
+const VRS_LATERAL_IN = 2 / 7.17;
+const VRS_LATERAL_OUT = 8 / 7.17;
+
 export const INFLOW_K0 = 0.169;
 const BUFFET_K0 = INFLOW_K0;
 
@@ -265,10 +294,13 @@ export class Battery {
 		return cell * this.cells;
 	}
 
-	// `load` is the summed (omega/omegaMax)^3 of the four motors: electrical
-	// power into a prop goes with the cube of rpm.
-	update(load, dt) {
-		this.current = this.maxCurrent * Math.min(1, load / 4);
+	// `current` is the real summed winding current of the four motors, from the
+	// torque balance in src/motor.js. It used to be `maxCurrent * min(1,
+	// load/4)` off a cube-of-rpm proxy — a second fit standing next to the
+	// motor fit, with nothing tying the two together. Now the pack sags because
+	// of the amps the windings are actually drawing.
+	update(current, dt) {
+		this.current = current;
 		this.voltage = Math.max(this.cells * 3.0, this.openCircuit() - this.current * this.internalOhm);
 		if (this.drain) this.usedMah += (this.current * dt * 1000) / 3600;
 		return this.voltage;
@@ -296,6 +328,7 @@ export class Propulsion {
 		this._kBuffet = kBuffetOf(profile);
 		this._kLateral = kLateralOf(profile);
 		this._vhPerOmega = vhPerOmegaOf(profile);
+		this._motor = motorConstants(profile);
 		this.seed = seed >>> 0;
 		this._rng = mulberry32(this.seed);
 		this.battery = new Battery(profile.battery);
@@ -314,6 +347,12 @@ export class Propulsion {
 		this._buffet = [new Turbulence(6, this._rng), new Turbulence(6, this._rng), new Turbulence(6, this._rng)];
 		// Filled in by step(); read by the HUD and the tests.
 		this.force = { x: 0, y: 0, z: 0 };
+		// Where force.y came from, mechanism by mechanism. Diagnostics only —
+		// nothing in the flight model reads it. See Physics.forceBudget().
+		this.diag = {
+			staticThrust: 0, inflow: 0, groundEffect: 0, vortexRing: 0, thrust: 0,
+			bodyDrag: { x: 0, y: 0, z: 0 }, rotorDrag: { x: 0, z: 0 },
+		};
 		this.torque = { x: 0, y: 0, z: 0 };
 	}
 
@@ -337,8 +376,7 @@ export class Propulsion {
 	// axial inflow are left out on purpose: those need real airspeed/agl, and
 	// the very next step() call folds them in anyway.
 	primeFor(cmd) {
-		const omegaMax = this.profile.maxOmega * this.battery.thrustScale;
-		const w = omegaMax * Math.pow(clamp01(cmd), this.profile.rpmCurve);
+		const w = steadyOmega(this._motor, clamp01(cmd), this.battery.voltage);
 		const t = Math.max(0, this._kThrust * w * w);
 		for (let i = 0; i < 4; i++) {
 			this.omega[i] = w;
@@ -363,15 +401,62 @@ export class Propulsion {
 		const shake = air.shake ?? 0;
 		const bat = this.battery;
 		const P = this.profile;
-		const omegaMax = P.maxOmega * bat.thrustScale;
 
 		// Descending into your own downwash: the disc is eating turbulent air it
 		// already threw down, so it loses thrust and the airframe shakes. Moving
 		// sideways fast enough gets you out of the column, which is why propwash
 		// only bites on hard vertical stops and tight corners.
+		// Two things were wrong with the old form
+		// `clamp01((descent - 2) / 6) * clamp01((8 - lateral) / 6)`.
+		//
+		// First, its thresholds were in ABSOLUTE m/s, the same for every family
+		// — exactly the mistake kAxial already made once (issue #71). The
+		// regime is set by the rotor's own induced velocity vh, and that spans
+		// 5.3 m/s (toothpick) to 11.5 m/s (cinewhoop) across the six families,
+		// so a fixed 2 m/s onset meant entering VRS at 0.38 vh on one airframe
+		// and 0.17 vh on another — a factor of 2.2 on a threshold that is
+		// supposed to be a property of the flow, not of the model.
+		//
+		// Second, and worse, it SATURATED and stayed there: once past 8 m/s of
+		// descent the disc was held in full vortex ring state for ever, at 20
+		// or 40 m/s alike. A vortex ring cannot exist there. Past Vd = 2*vh the
+		// rotor is in the windmill brake state — the same boundary the axial
+		// inflow term stops at, and for the same reason — where the flow is
+		// fully established upward through the disc and smooth. The real curve
+		// is a BAND, not a ramp: it rises from onset, peaks while the ring is
+		// fully formed, and is gone by the windmill brake boundary.
+		//
+		// The band is in units of vh, with the ends chosen to reproduce
+		// freestyle5's measured onset and peak exactly on its own 7.17 m/s
+		// hover vh (2 and 8 m/s -> 0.279 and 1.116 vh) — the same rule the rest
+		// of this file follows (INFLOW_K0, LATERAL_K0,
+		// GROUND_EFFECT_REACH_RATIO): the reference airframe keeps the feel it
+		// was tuned to, every other family scales off its own disc instead of
+		// borrowing freestyle5's numbers.
+		//
+		// vh here is the rotor group's, from the PREVIOUS step's mean rpm — the
+		// per-rotor vh is not known until the loop below, and `buffet` already
+		// uses the same mean for the same reason. With the motors stopped there
+		// is no downwash to descend into and no vh to divide by, hence the
+		// guard.
 		const lateral = Math.hypot(vBody.x, vBody.z);
 		const descent = -vBody.y;
-		this.propwash = clamp01((descent - 2) / 6) * clamp01((8 - lateral) / 6);
+		const vhRef = ((this.omega[0] + this.omega[1] + this.omega[2] + this.omega[3]) / 4)
+			* this._vhPerOmega;
+		if (vhRef <= 0) {
+			this.propwash = 0;
+		} else {
+			const x = descent / vhRef;
+			const band = x <= VRS_ONSET || x >= VRS_END
+				? 0
+				: x < VRS_PEAK
+					? (x - VRS_ONSET) / (VRS_PEAK - VRS_ONSET)
+					: (VRS_END - x) / (VRS_END - VRS_PEAK);
+			const escape = clamp01(
+				(VRS_LATERAL_OUT - lateral / vhRef) / (VRS_LATERAL_OUT - VRS_LATERAL_IN),
+			);
+			this.propwash = band * escape;
+		}
 
 		// Ground effect: the disc pushes against a surface it cannot displace, so
 		// thrust rises. Reach is one rotor diameter-ish, scaled off THIS profile's
@@ -384,7 +469,8 @@ export class Propulsion {
 		const groundReach = GROUND_EFFECT_REACH_RATIO * P.propRadius;
 		const ground = agl === null ? 1 : 1 + 0.18 * Math.exp(-Math.max(0, agl - P.propRadius) / groundReach);
 
-		let load = 0, thrustTotal = 0;
+		let current = 0, thrustTotal = 0;
+		let staticTotal = 0, inflowTotal = 0, groundExtra = 0, vrsLoss = 0;
 		let tx = 0, ty = 0, tz = 0;
 		let dragX = 0, dragZ = 0;
 		// Net angular momentum of the four spinning rotors, about body +Y.
@@ -406,12 +492,20 @@ export class Propulsion {
 			// lag is the single biggest contributor to how a quad feels: it is
 			// what separates "snappy" from "floaty", and making spin-down slower
 			// than spin-up is what makes an inverted save genuinely hard.
-			const target = omegaMax * Math.pow(clamp01(motors[i]), P.rpmCurve);
-			const tau = target > this.omega[i] ? P.tauSpinUp : P.tauSpinDown;
+			// The prop's own aerodynamic torque is what loads the motor, and it is
+			// THIS rotor's real thrust from the previous step, not kQ*omega^2:
+			// descending into your own wake loads the disc harder and the rpm
+			// droops for it. One step of lag on a 4 ms grid, and a coupling the
+			// old first-order lag could not express at all.
 			const prev = this.omega[i];
-			this.omega[i] = prev + (target - prev) * (1 - Math.exp(-dt / tau));
-			const w = this.omega[i];
+			const spun = stepMotor(
+				this._motor, prev, clamp01(motors[i]), bat.voltage,
+				P.torqueRatio * this.thrust[i], dt,
+			);
+			this.omega[i] = spun.omega;
+			const w = spun.omega;
 			const dOmega = (w - prev) / dt;
+			current += spun.packCurrent;
 
 			// Thrust: static term minus what the inflow takes away. Clamped at
 			// zero rather than allowed to go negative — a prop windmilling
@@ -440,11 +534,43 @@ export class Propulsion {
 			// edgewise term, which is the one that was missing.
 			const vh = w * this._vhPerOmega;
 			const vEdge2 = vx * vx + vz * vz;
-			const dw = vy + 2 * (inducedVelocity(vh, vEdge2) - vh);
-			let t = this._kThrust * w * w - this._kInflow * w * dw;
-			t = Math.max(0, t) * ground * (1 - 0.22 * this.propwash);
+			// The axial part of `dw` is a FIRST-ORDER slope — the comment above
+			// derives it as such, from the Vc/2 excess that momentum theory gives
+			// "to first order". Unbounded, it was being evaluated at Vc/vh as far
+			// out as -3.5 in a fast descent, several times past anything a linear
+			// expansion can claim. The consequence was backwards: at a held hover
+			// throttle the quad produced 0.92x its weight at 8 m/s of descent but
+			// 1.23x at 25 m/s, so the faster it fell the harder it pushed back.
+			// It refused to fall, which is the "it floats, it has no weight"
+			// the pilot reports — and `propwash` could not answer for it, being
+			// saturated from 8 m/s onwards.
+			//
+			// The bound is the windmill-brake boundary Vc = -2*vh, not a chosen
+			// number: it is where momentum theory has a valid solution again
+			// (between it and zero lies the vortex ring state, which has none and
+			// which this file models empirically as `propwash`). Past it, the
+			// linear term stops growing instead of running away.
+			//
+			// ONLY the descent side of the axial term is clamped. Hover (vy = 0),
+			// climb, and the edgewise term — translational lift, the whole point
+			// of inducedVelocity() — come through untouched and bit-identical.
+			const vyAxial = Math.max(vy, -AXIAL_INFLOW_LIMIT * vh);
+			const dw = vyAxial + 2 * (inducedVelocity(vh, vEdge2) - vh);
+			const tStatic = this._kThrust * w * w;
+			const tInflow = -this._kInflow * w * dw;
+			let t = tStatic + tInflow;
+			const tBare = Math.max(0, t);
+			t = tBare * ground * (1 - 0.22 * this.propwash);
 			this.thrust[i] = t;
 			thrustTotal += t;
+			// Diagnostics, not physics: the same thrust split into where it came
+			// from, so a force budget can say which mechanism is holding the
+			// machine up. Five adds per rotor against a loop that already does
+			// two square roots — see Physics.forceBudget().
+			staticTotal += tStatic;
+			inflowTotal += tBare - Math.max(0, tStatic);
+			groundExtra += tBare * (ground - 1) * (1 - 0.22 * this.propwash);
+			vrsLoss += tBare * ground * 0.22 * this.propwash;
 
 			// Roll and pitch torque come out of where the motors are, not out of
 			// a coefficient: tau = sum(r x F) with F along body +Y.
@@ -471,7 +597,6 @@ export class Propulsion {
 
 
 			hRotor += m.spin * P.propInertia * w;
-			load += (w / P.maxOmega) ** 3;
 		}
 
 		// Gyroscopic precession of the rotor group. The rotors carry angular
@@ -508,7 +633,7 @@ export class Propulsion {
 		tx += hRotor * omega.z;
 		tz -= hRotor * omega.x;
 
-		bat.update(load, dt);
+		bat.update(current, dt);
 
 		// Airframe drag, quadratic and anisotropic in the body frame.
 		const q = 0.5 * AIR_DENSITY;
@@ -519,6 +644,18 @@ export class Propulsion {
 		this.force.x = dragX + bx;
 		this.force.y = thrustTotal + by;
 		this.force.z = dragZ + bz;
+
+		// The body-frame breakdown behind force.y, for the force budget. By
+		// construction staticThrust + inflow + groundEffect - vortexRing is
+		// thrustTotal exactly, which Physics asserts rather than assumes.
+		const d = this.diag;
+		d.staticThrust = staticTotal;
+		d.inflow = inflowTotal;
+		d.groundEffect = groundExtra;
+		d.vortexRing = vrsLoss;
+		d.thrust = thrustTotal;
+		d.bodyDrag = { x: bx, y: by, z: bz };
+		d.rotorDrag = { x: dragX, z: dragZ };
 
 		if (this.propwash > 0.01) {
 			// Turbulent thrust across the disc is uneven, so the airframe gets

@@ -77,7 +77,189 @@ pair): `tour-eiffel` and `ile-de-la-cite-et-ile-saint-louis`. To add another:
 "Adding a map", for the options and for sizing `--radius`.
 
 
+### In flight right now: `claude/drone-gravity-fix-ofdhrh` (2026-09-14)
+
+> **Resuming this? Read [`docs/PICKUP.md`](docs/PICKUP.md) and run `npm run
+> resume` from `sim/`.** That file is the current brief for this branch — what
+> is on it, what is open and in what order — and the script fetches the
+> propeller database, runs the validation that needs it, and runs the physics
+> benches. The block below is the older summary and PICKUP.md supersedes it
+> where they disagree.
+
+Six commits, not merged, no pull request. Started from "the drone's gravity is
+wrong", then "it floats, it is too light, everywhere". Five of the six are
+flight-model or scheduling fixes, each measured and each with its own guard in
+the selftest chain; the sixth is the instrument that should decide what comes
+next.
+
+**NOTHING ON THIS BRANCH HAS BEEN FLOWN IN A BROWSER.** Every number in it is
+bench measurement on the pure model. That is the single most important thing to
+change, and it is why the branch is waiting.
+
+First thing to do locally, before any more code:
+
+```bash
+git fetch origin claude/drone-gravity-fix-ofdhrh
+git checkout claude/drone-gravity-fix-ofdhrh
+cd sim && npm install && npm run dev
+```
+
+then fly the way that felt wrong, and in the browser console:
+
+```js
+__sim.budget()        // start measuring
+// ... 30 s of the flying that feels floaty ...
+__sim.budget(true)    // read it back
+```
+
+Everything it prints is a fraction of the airframe's weight along world +Y. A
+hover should be `thrustUp` ~ 1.00 with the rest at zero. **Whatever else is
+above zero is the air carrying the machine**, which is the "it floats" being
+reported. The leading suspect it was built to test: `UPDRAFT_GAIN = 0.35 *
+wind speed` in `wind.js` gives up to 3.2 m/s of slope lift near terrain in a
+fresh wind — measured at 5.6% of weight and +1.3 m/s of climb on a held hover
+stick — and the weather is the zone's real forecast. If instead `thrustUp` is
+1.00 and everything else is zero while it still feels light, the flight model
+is not the problem and the rendered world scale is the next place to look.
+
+Open items, in the order they matter:
+
+1. The toothpick is measurably worse off (see the motor-model entry below):
+   the tuner reports 4 axis/family combinations outside target where it
+   reported 2. Needs real bench numbers for a 2.5" micro, not an invented
+   value. Worth an issue.
+2. A hover now sits at 0.342 stick, which is right on `TPA_BREAK` (0.35).
+   Unexamined, and the first thing to check if the tune feels odd near hover.
+3. The remaining ranked gaps, none started: blade flapping moment (#91), gyro
+   noise / Betaflight filter chain / loop latency, CT/CQ against advance
+   ratio, thrust clamped at zero.
+4. `race5` shares the toothpick's data problem (48-51% of no-load rpm) but is
+   not yet failing anything.
+
+
 ## Vérifié
+
+- **The motors are a torque balance now, not a curve fit (2026-09-13).** The
+  first of the five ranked gaps below. `omega = omegaMax * cmd^rpmCurve` plus a
+  first-order lag was three fitted constants per family standing in for one
+  mechanism, and being fitted they could absorb anything — no combination was
+  ever wrong, so nothing could be checked. `src/motor.js` is the textbook
+  model: back-EMF, winding current, `Ke*(i - i0)` of torque, and
+  `J*domega/dt = Q_motor - Q_prop`.
+  - **What it preserves.** Winding resistance is DERIVED from `maxOmega`
+    rather than stored, so every family's top-end rpm — and its thrust, its
+    thrust-to-weight, its top speed — is unchanged to the digit. Verified:
+    steadyOmega at full throttle reproduces `maxOmega` to 0.0000% for all six.
+  - **What it replaces.** `rpmCurve`, `tauSpinUp` and `tauSpinDown` are gone
+    from the profiles; `motor: { kv, noLoadCurrent }` (from the motor each
+    family already named in its comment) replaces them. The spin-up/spin-down
+    asymmetry is now a CONSEQUENCE of the ESC passing only part of the
+    regenerative current, measured at 24 ms against 36 ms where the old fitted
+    pair said 22/45.
+  - **Two physics errors fixed on the way.** The hover stick now inverts the
+    real balance instead of `cmd^(2*rpmCurve)` (freestyle5 0.245 -> 0.342,
+    closer to the ~30% a real 6:1 5" actually hovers at); and pack current is
+    not winding current — an ESC is a buck converter and the pack only supplies
+    the `duty` fraction, which took a 5" hover from 34 A to **12 A**, what a
+    650 g quad really draws.
+  - **Measured against the old fit** (freestyle5): hover drift still exactly 0,
+    climb 31.93 -> 34.04 m/s, terminal descent on a chop -16.96 -> **-18.67
+    m/s**, top speed at 42 deg 97 -> 100 km/h. The harder fall is the idle
+    motor making less than the power law pretended.
+  - PID blocks rewritten by `tools/tune-pid.mjs --write all`, never by hand.
+  - **A finding the fit could not have produced, and a REGRESSION to weigh.**
+    Made to answer for real motors, `race5` and `toothpick` come out at 48-51%
+    of no-load rpm, and the toothpick's numbers imply ~11 A a motor where a
+    real 1102 pulls 5-7. Their data was scaled from freestyle5, never measured.
+    The consequence is visible in the tuner: it reported **2** axis/family
+    combinations outside their targets before this change and **4** after, and
+    both new ones are the toothpick's roll and pitch (rise 62 ms against a
+    49 ms limit). The model is right and the toothpick's data is not, but the
+    toothpick is measurably worse off today than it was. Correcting it needs
+    real bench numbers for a 2.5" micro, which nobody has here — worth an issue
+    rather than an invented value.
+  - **Non vérifié** : no browser has flown this either. The hover stick moving
+    from 0.245 to 0.342 also puts a hover right on `TPA_BREAK` (0.35), which is
+    where throttle-dependent gain attenuation starts — unexamined, and the
+    first thing to look at if the tune feels odd around hover.
+
+- **The rotor made the drone float, two ways (2026-09-13).** Reported as "the
+  drone's gravity is wrong", then "it floats, it is too light, everywhere".
+  Both defects are in `quad.js`, both in the descent branch, and neither is a
+  tuning constant — the flight model's headline numbers all sit inside real
+  5" envelopes (mass 0.65 kg, T/W 6.3, hover stick 0.245, flat terminal
+  16-19 m/s, 97 km/h at 42 deg, 32 m/s climb) and were left alone.
+  - **The axial inflow term had no bound.** It is a first-order slope — the
+    comment deriving it says so — but it was evaluated as far out as
+    Vc/vh = -3.5. The consequence ran backwards: at a held hover throttle
+    `freestyle5` made 0.92x its weight at 8 m/s of descent and **1.23x at
+    25 m/s**, so the faster it fell the harder it pushed back. It now stops at
+    the windmill brake boundary Vc = -2*vh, where momentum theory has a valid
+    solution again. Braking thrust at 25 m/s: 1.23x -> 1.035x.
+  - **The vortex ring state used absolute m/s thresholds and never let go.**
+    The #71 mistake again: vh spans 5.3 m/s (toothpick) to 11.5 m/s
+    (cinewhoop), so a fixed 2 m/s onset meant 0.38 vh on one airframe and
+    0.17 vh on another. And it saturated for ever — a disc was held in full
+    VRS at 40 m/s of descent, where the rotor is firmly in windmill brake and
+    no ring can exist. It is now a band in units of vh, its ends calibrated to
+    reproduce `freestyle5`'s measured onset and peak exactly on its own
+    7.17 m/s hover vh. freestyle5's rising edge is unchanged to the hundredth;
+    the toothpick now peaks at 6 m/s and the cinewhoop at 12 instead of both
+    at 8.
+  - Hover and full-throttle climb are bit-identical (31.928 m/s before and
+    after both changes). Terminal descent on a throttle chop: -16.4 ->
+    -16.96 m/s. `aero-selftest` goes from 21 to 25 checks, the four new ones
+    all structural rather than recorded numbers; each was confirmed to fail
+    against the behaviour it replaces.
+  - **Non vérifié** : no browser has flown either change. Everything above is
+    bench measurement on the pure model. Whether the airframe now *feels*
+    heavy enough to the pilot is exactly what is untested, and the remaining
+    "too light" may not be a defect at all — see the audit below.
+  - **Known remaining gaps, ranked** (none of them started): no motor/ESC
+    electrical model (`omega = omegaMax * cmd^rpmCurve` plus a first-order lag
+    is a kinematic fit, not a torque balance); no blade flapping moment
+    (issue #91, reverted by #103, still open); no gyro noise / Betaflight
+    filter chain / loop latency, so the controller reads perfect body rates;
+    CT/CQ constant with advance ratio; thrust clamped at zero, so no braking
+    or inverted prop behaviour; and `UPDRAFT_GAIN = 0.35 * wind speed` in
+    `wind.js` hands out up to +3.2 m/s of slope lift near terrain in a fresh
+    wind, which is real physics but is the leading remaining suspect for
+    "it floats everywhere".
+
+- **Gravity stopped whenever the render slowed down (2026-09-13).** Reported as
+  "the drone's gravity is wrong / the quad does not respect real physics". The
+  flight model was **not** the cause and was left untouched: benched headlessly,
+  `freestyle5` holds 9.81 m/s² of weight against a correct Rapier mass, reaches
+  a 19.3 m/s flat terminal velocity, sinks correctly with tilt (−2.4 m/s at 42°
+  on the level hover stick) and descends smoothly right across the throttle
+  band. Two clock defects, both outside `quad.js`:
+  - `Physics.step(motors, dt)` **ignored its `dt`** for Rapier, which always
+    integrated `world.timestep`. The airframe advanced by `dt` while gravity,
+    velocities and contacts advanced by 1/250 s — a 1/50 s step fell at a fifth
+    of g. Measured: `dv = −0.039 m/s` for every `dt`. Now the world timestep
+    follows `dt`, mirrored JS-side because Rapier keeps it as an f32 (reading it
+    back gives `0.004000000189989805`, so comparing against it reported a change
+    on every step).
+  - The frame loop bought at most `12 × 1/250 s = 48 ms` of world per frame and
+    **discarded** the rest of the accumulator. Below ~21 fps the whole
+    simulation ran in slow motion: 96 % of real time at 20 fps, 72 % at 15,
+    **48 % at 10**, and 3 % through the 700–1700 ms streaming stalls already
+    documented under #184/#187. The visible symptom is a drone hanging in the
+    air instead of falling. The step is now **stretched** (capped at 1/60 s)
+    rather than dropped, so a frame honours up to 200 ms of real time while the
+    catch-up still costs at most 12 steps. Past that the excess is still
+    dropped on purpose: replaying more than a fifth of a second of blind flight
+    in one frame flies the quad into terrain it never saw.
+  - The schedule moved to `src/frame-pacing.js` (pure, no DOM, no Rapier) so it
+    could be asserted without a browser. `tools/frame-pacing-selftest.mjs`, 9
+    tests, in the CI chain; both defects were re-introduced one at a time and
+    confirmed to fail it. A machine keeping up steps on the same 250 Hz grid as
+    before, bit for bit. `npm run selftest:ci` and `npm run build` pass.
+  - **Non vérifié** : no browser has flown this. The frame-rate claims are
+    measured against the schedule and against Rapier headlessly, not against a
+    real stalling render loop. Whether 1/60 s catch-up steps stay visually
+    smooth through a real streaming wave — and whether CCD holds the 0.15 m
+    sphere on those longer steps against live rocktree colliders — is untested.
 
 - **Issue #26 — l'onglet `DATA`** (branche `feat/data-tab`) : `ARCHIVE` est
   renommé et devient une page qui défile, neuf sections dans l'ordre de la spec

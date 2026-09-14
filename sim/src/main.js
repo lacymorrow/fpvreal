@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { loadManifest, loadChunks, loadCollision, loadSceneList, sceneBase, setFog, setDim, setNight, setDistantGround, releaseTileMaterials } from './loader.js';
 import { releaseTexturePixels } from './TileMaterial.js';
 import { initPhysics, Physics, rotateVec } from './physics.js';
+import { FIXED_STEP, MAX_STEPS_PER_FRAME, catchUpStep } from './frame-pacing.js';
 import { crashThreshold, idleThrottle } from './quad.js';
 import { CHASE, chaseTarget, chaseStep } from './chase-camera.js';
 import { generateEntryState } from './entry-state.js';
@@ -93,8 +94,13 @@ THREE.ColorManagement.enabled = false;
 // if this ever changes, sun.js's own bench check would start failing loudly
 // instead of comparing itself to a stale copy of itself.
 const FOG_DENSITY = 0.00085;
-const FIXED_STEP = 1 / 250;
-const MAX_STEPS_PER_FRAME = 12;   // give up rather than spiral if a frame stalls
+// The physics schedule lives in frame-pacing.js: the rule that simulated time
+// must track wall-clock time is worth asserting without a browser, so it is
+// stated there and tested by tools/frame-pacing-selftest.mjs. FIXED_STEP is
+// the 250 Hz grid; catchUpStep() stretches it, bounded, when a frame ran long
+// instead of letting the loop discard the time it could not afford — which is
+// what used to run the whole simulation, gravity included, in slow motion
+// below ~21 fps.
 // The ground station's antenna, above whatever the pilot is standing on. The
 // pilot is at the spawn point, because that is where you took off from.
 const ANTENNA_HEIGHT = 1.2;
@@ -773,6 +779,33 @@ function exposeDebugGlobal() {
 		// sliders are gone (PHASE 04) and the world decides. They exist for
 		// debugging and for tuning, not as a hidden settings panel.
 		setFog: (f) => fog.setParams(f),
+		// A tape measure between two points of the flight. Call it once where you
+		// want to measure FROM, fly, call it again: it reports the separation in
+		// local ENU metres. Built to settle whether the rendered world is at
+		// true scale, which is what is left once the force budget says no force
+		// is holding the machine up: fly level with the foot of a landmark, call
+		// it, climb level with its top, call it again. The Eiffel Tower is 330 m
+		// to the tip, 276 m to the top floor, 115 m to the second.
+		ruler: (() => {
+			let from = null;
+			return () => {
+				const p = physics.position;
+				if (!from) { from = { x: p.x, y: p.y, z: p.z }; return { marked: from }; }
+				const dx = p.x - from.x, dy = p.y - from.y, dz = p.z - from.z;
+				from = null;
+				return {
+					up: +dy.toFixed(1),
+					horizontal: +Math.hypot(dx, dz).toFixed(1),
+					straightLine: +Math.hypot(dx, dy, dz).toFixed(1),
+				};
+			};
+		})(),
+		// Where the drone's weight actually goes, in flight, over real terrain
+		// and the real weather of the place. __sim.budget() starts it,
+		// __sim.budget(true) reads it back. Everything is a fraction of weight
+		// resolved along world +Y: thrustUp near 1 in a hover, and whatever the
+		// air is carrying on top of it is the "it floats" the pilot feels.
+		budget: (read = false) => (read ? physics.forceBudget() : physics.beginForceBudget()),
 		// What the world said about this zone today, and what it became.
 		weather: () => weather,
 		// The flight session in progress (PHASE 06), or null.
@@ -2077,9 +2110,14 @@ function frame() {
 		physics.setGroundHold(touchdown);
 
 		accumulator += dt;
+		// Normally exactly FIXED_STEP, so an unstalled frame steps the world on
+		// the same 250 Hz grid it always did, bit for bit. Only once the backlog
+		// exceeds what MAX_STEPS_PER_FRAME steps of 1/250 s can pay off does the
+		// step stretch, and only as far as MAX_CATCHUP_STEP — see its comment.
+		const h = catchUpStep(accumulator);
 		let steps = 0;
-		while (accumulator >= FIXED_STEP && steps < MAX_STEPS_PER_FRAME) {
-			const { motors } = controller.update(sticks, physics, FIXED_STEP);
+		while (accumulator >= h && steps < MAX_STEPS_PER_FRAME) {
+			const { motors } = controller.update(sticks, physics, h);
 			// Assisted turtle mode (#105). It reads the PREVIOUS frame's `stuck`
 			// — flightEnd.update() runs after this loop — and that is harmless:
 			// stillness is measured over four seconds, and one frame of lag does
@@ -2087,7 +2125,7 @@ function frame() {
 			const q = physics.rotation;
 			const up = rotateVec(q, 0, 1, 0);
 			turtle.update({
-				dt: FIXED_STEP,
+				dt: h,
 				armed: controller.armed && !flightEnd.out.linkDead,
 				stuck: flightEnd.out.stuck,
 				pressed: turtlePressed,
@@ -2153,7 +2191,7 @@ function frame() {
 					}
 				}
 			}
-			const impact = physics.step(motors, FIXED_STEP, fenceForce,
+			const impact = physics.step(motors, h, fenceForce,
 				turtle.out.active ? turtle.out.torque : null);
 			// NO LOSS (PHASE 26): at the bench an impact is still an impact — the
 			// physics is not negotiable, the machine takes it, tumbles and stops.
@@ -2176,9 +2214,12 @@ function frame() {
 				}
 			}
 			if (impact > peakImpact) peakImpact = impact;
-			accumulator -= FIXED_STEP;
+			accumulator -= h;
 			steps++;
 		}
+		// The backlog outran even the stretched budget (a frame longer than
+		// MAX_STEPS_PER_FRAME * MAX_CATCHUP_STEP): drop what is left rather than
+		// carry it into the next frame and spiral.
 		if (steps === MAX_STEPS_PER_FRAME) accumulator = 0;
 
 		// ONCE per FRAME, outside the accumulation loop (#187): inside the loop
