@@ -125,6 +125,20 @@ with tempfile.TemporaryDirectory() as d:
     ys = verts[:, 1]
     ok(ys.min() < -0.5 and (np.abs(ys - 0.0) < 0.4).sum() > 1000, "the floor is at y = 0 and the net is below it")
     ok((np.abs(verts[:, 0] - 5.0) < 0.4).sum() > 200, "the wall stands at x = 5")
+    # Space carving: cameras at x = -8 saw points at x = 9, straight through
+    # the wall, so the wall must go; the floor, which no sightline crosses, stays.
+    # Two cameras per target, so every crossed voxel gets the two votes it needs.
+    ys, zs = np.arange(-1.0, 4.6, 0.25), np.arange(-5.0, 5.01, 0.25)
+    cams = np.array([[cx, 1.5, zz] for zz in zs for yy in ys for cx in (-8.0, -7.0)])
+    tgts = np.array([[9.0, yy, zz] for zz in zs for yy in ys for cx in (-8.0, -7.0)])
+    verts2, faces2, _ = meshmod.build(ply, transform, path, voxel=0.25, margin=8.0, sightlines=(cams, tgts))
+    ok((np.abs(verts2[:, 0] - 5.0) < 0.4).sum() < (np.abs(verts[:, 0] - 5.0) < 0.4).sum() * 0.3, "sightlines through the wall carve it away")
+    ok((np.abs(verts2[:, 1] - 0.0) < 0.4).sum() > 1000, "the floor survives the carving")
+    # The flown path: a tube through a wall is open.
+    path2 = [[0, 5.0, 1.5, -3.0], [1, 5.0, 1.5, 3.0]]
+    verts3, faces3, _ = meshmod.build(ply, transform, path2, voxel=0.25, margin=8.0)
+    on_line = lambda v: ((np.abs(v[:, 0] - 5.0) < 0.3) & (np.abs(v[:, 1] - 1.5) < 0.4) & (np.abs(v[:, 2]) < 2.5)).sum()
+    ok(on_line(verts3) < on_line(verts) * 0.1, f"the path tube is carved through the wall ({on_line(verts3)} verts left on the line, {on_line(verts)} before)")
 
 print(f"{'FAILED ' + str(FAILED) if FAILED else 'all ok'}")
 sys.exit(1 if FAILED else 0)

@@ -69,14 +69,15 @@ def main(argv=None):
 
     images = colmap.read_images(dataset / "sparse" / "images.bin")
     poses = colmap.poses(images)
-    points, _ = colmap.read_points(dataset / "sparse" / "points3D.bin")
+    points, _, seen = colmap.read_points(dataset / "sparse" / "points3D.bin", tracks=True)
+    rays = colmap.sightlines(images, points, seen)
     try:
         transform = align.align(poses, times, assumed_speed=a.speed, points=points)
     except RuntimeError as e:
         fail(str(e))
 
     try:
-        verts, faces, bounds = mesh.build(ply, transform, transform["path"], voxel=a.voxel)
+        verts, faces, bounds = mesh.build(ply, transform, transform["path"], voxel=a.voxel, sightlines=rays)
     except RuntimeError as e:
         fail(str(e))
 

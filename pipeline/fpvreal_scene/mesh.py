@@ -1,8 +1,13 @@
 # Stage 5: something to crash into. A splat is a cloud of fuzzy blobs with no
 # surface, and Rapier wants triangles. Every blob near the flown path pays
-# its opacity into a voxel grid, so a wall of faint splats adds up to a wall
-# and a lone floater does not. Small islands are dropped, the grid is
-# smoothed and a surface is pulled out with marching cubes, then decimated to
+# its opacity into a voxel grid, so a wall of faint splats adds up to a wall.
+# But a splat also fills free air with haze, and inside a bando the haze the
+# pilot flew through is as dense as the floor, so density alone cannot tell
+# them apart. Two things can. Every reconstructed point was seen from its
+# cameras, so the line from each camera to each of its points is empty
+# space; and the flown path is a tube the quad demonstrably fitted through.
+# Both are carved out of the grid. Then small islands are dropped, the grid
+# is smoothed and a surface is pulled out with marching cubes, decimated to
 # a count a browser physics engine is happy with. A safety-net floor sits
 # under all of it, so a hole in the reconstruction is a bump, not a fall.
 
@@ -25,8 +30,36 @@ def load_splats(ply_path):
     return xyz, opacity, scale
 
 
+# A voxel crossed by this many camera-to-point sightlines is free air.
+FREE_VOTES = 2
+# The flown path is carved as a tube of this radius, in metres.
+PATH_TUBE_M = 0.75
+
+
+def _carve_segments(free, a, b, lo, voxel, dims, chunk=20000):
+    """Counts, per voxel, the segments a[i] to b[i] that cross it."""
+    step = voxel / 2
+    for i in range(0, len(a), chunk):
+        aa, bb = a[i:i + chunk], b[i:i + chunk]
+        length = np.linalg.norm(bb - aa, axis=1)
+        n = int(np.ceil(length.max() / step)) + 1 if len(length) else 0
+        if n == 0:
+            continue
+        ts = np.linspace(0.0, 1.0, n)[None, :, None]
+        # Stop one voxel short of the point: the point itself is surface.
+        end = aa + (bb - aa) * np.clip(1 - voxel / np.maximum(length, 1e-6), 0, 1)[:, None]
+        pts = aa[:, None, :] + (end - aa)[:, None, :] * ts
+        idx = np.floor((pts.reshape(-1, 3) - lo) / voxel).astype(int)
+        ok = np.all((idx >= 0) & (idx < dims), axis=1)
+        idx = idx[ok]
+        # One vote per segment per voxel: dedupe within the chunk's samples.
+        seg = np.repeat(np.arange(len(aa)), n)[ok]
+        key = np.unique(np.stack([seg, idx[:, 0], idx[:, 1], idx[:, 2]], axis=1), axis=0)
+        np.add.at(free, (key[:, 1], key[:, 2], key[:, 3]), 1)
+
+
 def build(ply_path, transform, path, *, voxel=0.25, margin=15.0, opacity_min=0.05, solid=0.15,
-          blob_max_m=1.5, min_blob_voxels=12, max_faces=250_000):
+          blob_max_m=1.5, min_blob_voxels=12, max_faces=250_000, sightlines=None):
     xyz, opacity, scale = load_splats(ply_path)
     R, s, t = transform["R"], transform["s"], transform["t"]
     p = xyz @ R.T * s + t
@@ -55,7 +88,36 @@ def build(ply_path, transform, path, *, voxel=0.25, margin=15.0, opacity_min=0.0
             ok = np.all((q >= 0) & (q < dims), axis=1)
             np.add.at(weight, (q[ok, 0], q[ok, 1], q[ok, 2]), share[ok])
 
-    occ = remove_small_objects(weight >= solid, max_size=min_blob_voxels - 1)
+    occ = weight >= solid
+    before = int(occ.sum())
+
+    # Space carving: what the cameras looked through is air.
+    if sightlines is not None and len(sightlines[0]) > 0:
+        free = np.zeros(dims, dtype=np.int32)
+        a = np.asarray(sightlines[0], dtype=np.float64) @ R.T * s + t
+        b = np.asarray(sightlines[1], dtype=np.float64) @ R.T * s + t
+        _carve_segments(free, a, b, lo, voxel, dims)
+        occ &= free < FREE_VOTES
+        stage("mesh", f"{len(a)} sightlines carved {before - int(occ.sum())} of {before} solid voxels")
+
+    # The flown path: a tube the quad fitted through.
+    tube = np.zeros(dims, dtype=bool)
+    r = int(np.ceil(PATH_TUBE_M / voxel))
+    # The path is resampled so the tube is continuous between frames.
+    dense = [pts[0]]
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(np.ceil(np.linalg.norm(b - a) / (voxel / 2))))
+        dense.extend(a + (b - a) * (k / n) for k in range(1, n + 1))
+    pidx = np.floor((np.array(dense) - lo) / voxel).astype(int)
+    for off in itertools.product(range(-r, r + 1), repeat=3):
+        if np.linalg.norm(off) * voxel > PATH_TUBE_M:
+            continue
+        q = pidx + np.array(off)
+        q = q[np.all((q >= 0) & (q < dims), axis=1)]
+        tube[q[:, 0], q[:, 1], q[:, 2]] = True
+    occ &= ~tube
+
+    occ = remove_small_objects(occ, max_size=min_blob_voxels - 1)
     filled = int(occ.sum())
     if filled == 0:
         raise RuntimeError("no solid splats near the flown path; the splat is empty or the alignment is off")

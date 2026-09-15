@@ -682,9 +682,18 @@ function settleOnPad({ origin, top, reach, noPad, credit }) {
 		top,
 		reach,
 	});
-	if (!pad) throw new Error(noPad);
-	spawnPoint = { x: pad.x, y: pad.y + SPAWN_ABOVE_GROUND_M, z: pad.z };
-	spawnQuat = yawQuaternion(pad.yaw);
+	if (!pad && !fallback) throw new Error(noPad);
+	if (pad) {
+		spawnPoint = { x: pad.x, y: pad.y + SPAWN_ABOVE_GROUND_M, z: pad.z };
+		spawnQuat = yawQuaternion(pad.yaw);
+	} else {
+		// No open pad, but a point the pilot flew through is free space by
+		// definition: start there, on whatever ground is close under it.
+		const g = physics.groundBelow(fallback.x, fallback.y, fallback.z, SCENE_PAD_BELOW_M);
+		spawnPoint = { x: fallback.x, y: (g === null ? fallback.y : g + SPAWN_ABOVE_GROUND_M), z: fallback.z };
+		spawnQuat = yawQuaternion(0);
+		console.warn('[spawn] no open pad; starting on the pilot\'s own line');
+	}
 	physics.spawn.x = spawnPoint.x; physics.spawn.y = spawnPoint.y; physics.spawn.z = spawnPoint.z;
 	emitter = { x: pad.x, y: pad.y + ANTENNA_HEIGHT, z: pad.z };
 	// A radio starts in acro. Keys start self-levelled: for someone here to

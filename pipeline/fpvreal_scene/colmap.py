@@ -193,8 +193,10 @@ def read_images(path):
     return images
 
 
-def read_points(path):
-    xyz, rgb = [], []
+def read_points(path, tracks=False):
+    """xyz and rgb; with tracks=True also, per point, the ids of the images
+    that saw it, which is what space carving needs."""
+    xyz, rgb, seen = [], [], []
     with open(path, "rb") as f:
         n = struct.unpack("<Q", f.read(8))[0]
         for _ in range(n):
@@ -203,8 +205,28 @@ def read_points(path):
             rgb.append(struct.unpack("<BBB", f.read(3)))
             f.read(8)
             tl = struct.unpack("<Q", f.read(8))[0]
-            f.seek(8 * tl, 1)
-    return np.array(xyz), np.array(rgb, dtype=np.uint8)
+            raw = f.read(8 * tl)
+            if tracks:
+                seen.append(np.frombuffer(raw, dtype="<i4")[0::2].copy())
+    out = (np.array(xyz), np.array(rgb, dtype=np.uint8))
+    return out + (seen,) if tracks else out
+
+
+def sightlines(images, xyz, seen):
+    """Every (camera centre, point) pair with a point on a camera's track.
+    The segment between them was looked through, so it is empty."""
+    centres = {}
+    for im in images.values():
+        R = qvec_to_rot(im.qvec)
+        centres[im.id] = -R.T @ im.tvec
+    a, b = [], []
+    for point, ids in zip(xyz, seen):
+        for i in ids:
+            c = centres.get(int(i))
+            if c is not None:
+                a.append(c)
+                b.append(point)
+    return np.array(a), np.array(b)
 
 
 def qvec_to_rot(q):

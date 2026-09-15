@@ -85,9 +85,12 @@ The original pilot's line is drawn through the scene. The scale is a guess
 from an assumed cruising speed of 8 m/s, printed and written into
 `scene.json`; if the place feels too big or too small, rerun with `--speed`.
 Pick the cruising section of a freestyle clip with `--from` and `--to`; flips
-and dives register badly. Budget hours: on an M1 the first clip took about
-four, most of it Brush. `docs/M2.md` has the design, the limits and what the
-first run found; `docs/m2-hole-in-one.jpg` is what came out.
+and dives register badly. Budget time by the GPU: the same 30 s clip took
+four hours on an M1 and thirteen minutes on an RTX 3090. On a Windows GPU
+box, `pipeline/run-scene.cmd` is the launcher (the COLMAP CUDA zip, Brush
+and ffmpeg unpacked into `D:\tools`, uv installed). `docs/M2.md` has the
+design, the limits and what the first runs found; `docs/m2-hole-in-one.jpg`
+is what came out.
 
 ## Where it comes from
 
