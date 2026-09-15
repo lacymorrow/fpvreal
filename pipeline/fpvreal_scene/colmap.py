@@ -27,6 +27,16 @@ CAMERA_MODELS = {
 }
 
 
+def has_cuda(colmap):
+    """COLMAP says so in its own banner; the CUDA build is many times faster."""
+    try:
+        out = subprocess.run([colmap, "-h"], capture_output=True, text=True, timeout=60)
+        banner = (out.stdout + out.stderr).splitlines()[0] if (out.stdout + out.stderr) else ""
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return "without GPU" not in banner and "without CUDA" not in banner
+
+
 def _run(cmd, log, what):
     with open(log, "ab") as f:
         f.write(("\n$ " + " ".join(cmd) + "\n").encode())
@@ -77,19 +87,20 @@ def reconstruct(frames_dir, work, *, camera_model="OPENCV_FISHEYE", overlap=12, 
     sparse = work / "sparse"
     log = work / "colmap.log"
     threads = str(threads or max(1, (os.cpu_count() or 4) - 1))
+    gpu = "1" if has_cuda(colmap) else "0"
     if db.exists():
         db.unlink()
     sparse.mkdir(parents=True, exist_ok=True)
 
     params, f, w, h = _camera_prior(frames_dir, camera_model, focal_fraction)
-    stage("colmap", f"features, {camera_model}, {w}x{h}, focal prior {f:.0f} px")
+    stage("colmap", f"features, {camera_model}, {w}x{h}, focal prior {f:.0f} px, {'CUDA' if gpu == '1' else 'CPU'} SIFT")
     _run([
         colmap, "feature_extractor",
         "--database_path", str(db), "--image_path", str(frames_dir),
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", camera_model,
         "--ImageReader.camera_params", params,
-        "--FeatureExtraction.use_gpu", "0",
+        "--FeatureExtraction.use_gpu", gpu,
         "--FeatureExtraction.num_threads", threads,
         "--SiftExtraction.max_num_features", "6000",
     ], log, "feature_extractor")
@@ -101,7 +112,7 @@ def reconstruct(frames_dir, work, *, camera_model="OPENCV_FISHEYE", overlap=12, 
         "--SequentialMatching.overlap", str(overlap),
         "--SequentialMatching.quadratic_overlap", "1",
         "--SequentialMatching.loop_detection", "0",
-        "--FeatureMatching.use_gpu", "0",
+        "--FeatureMatching.use_gpu", gpu,
         "--FeatureMatching.num_threads", threads,
     ], log, "sequential_matcher")
 
