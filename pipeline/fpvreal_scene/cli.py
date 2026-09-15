@@ -69,8 +69,9 @@ def main(argv=None):
 
     images = colmap.read_images(dataset / "sparse" / "images.bin")
     poses = colmap.poses(images)
+    points, _ = colmap.read_points(dataset / "sparse" / "points3D.bin")
     try:
-        transform = align.align(poses, times, assumed_speed=a.speed)
+        transform = align.align(poses, times, assumed_speed=a.speed, points=points)
     except RuntimeError as e:
         fail(str(e))
 

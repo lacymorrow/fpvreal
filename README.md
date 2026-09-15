@@ -68,14 +68,14 @@ brew install ffmpeg colmap
 uv tool install yt-dlp
 # Brush: download brush-app-<your platform> from
 # https://github.com/ArthurBrussee/brush/releases and put brush_app on your PATH
-cd pipeline && uv run fpvreal-scene "https://www.youtube.com/watch?v=XRcnQfmXYAA" --from 10 --to 70
+cd pipeline && uv run fpvreal-scene "https://www.youtube.com/watch?v=XRcnQfmXYAA" --from 12 --to 42
 ```
 
 One line per stage: frames, COLMAP camera poses, a Gaussian splat trained
 with Brush on your GPU (Metal, Vulkan or DX12, no CUDA needed), the up vector
 from the pilot's camera, the scale from the clock, a collision mesh. The last
-line says where the scene went. Copy the folder into `sim/public/scenes/` and
-open it:
+line says where the scene went. Copy or symlink the folder into
+`sim/public/scenes/` and open it:
 
 ```
 http://localhost:5173/?scene=/scenes/hole-in-one/
@@ -85,7 +85,9 @@ The original pilot's line is drawn through the scene. The scale is a guess
 from an assumed cruising speed of 8 m/s, printed and written into
 `scene.json`; if the place feels too big or too small, rerun with `--speed`.
 Pick the cruising section of a freestyle clip with `--from` and `--to`; flips
-and dives register badly. `docs/M2.md` has the design and the limits.
+and dives register badly. Budget hours: on an M1 the first clip took about
+four, most of it Brush. `docs/M2.md` has the design, the limits and what the
+first run found; `docs/m2-hole-in-one.jpg` is what came out.
 
 ## Where it comes from
 

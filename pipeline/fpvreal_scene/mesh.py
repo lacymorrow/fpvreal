@@ -1,9 +1,10 @@
 # Stage 5: something to crash into. A splat is a cloud of fuzzy blobs with no
-# surface, and Rapier wants triangles. The solid blobs near the flown path are
-# stamped into a voxel grid, floaters are dropped, the grid is smoothed and a
-# surface is pulled out with marching cubes, then decimated to a count a
-# browser physics engine is happy with. A safety-net floor sits under all of
-# it, so a hole in the reconstruction is a bump, not a fall to nowhere.
+# surface, and Rapier wants triangles. Every blob near the flown path pays
+# its opacity into a voxel grid, so a wall of faint splats adds up to a wall
+# and a lone floater does not. Small islands are dropped, the grid is
+# smoothed and a surface is pulled out with marching cubes, then decimated to
+# a count a browser physics engine is happy with. A safety-net floor sits
+# under all of it, so a hole in the reconstruction is a bump, not a fall.
 
 import itertools
 
@@ -24,7 +25,7 @@ def load_splats(ply_path):
     return xyz, opacity, scale
 
 
-def build(ply_path, transform, path, *, voxel=0.25, margin=15.0, opacity_min=0.5,
+def build(ply_path, transform, path, *, voxel=0.25, margin=15.0, opacity_min=0.05, solid=0.15,
           blob_max_m=1.5, min_blob_voxels=12, max_faces=250_000):
     xyz, opacity, scale = load_splats(ply_path)
     R, s, t = transform["R"], transform["s"], transform["t"]
@@ -36,23 +37,25 @@ def build(ply_path, transform, path, *, voxel=0.25, margin=15.0, opacity_min=0.5
     hi = pts.max(axis=0) + margin
     inside = np.all((p >= lo) & (p < hi), axis=1)
     keep = (opacity >= opacity_min) & (ext < blob_max_m) & inside
-    p, ext = p[keep], ext[keep]
-    stage("mesh", f"{keep.sum()} of {len(keep)} splats are solid and near the path")
+    p, ext, opacity = p[keep], ext[keep], opacity[keep]
+    stage("mesh", f"{keep.sum()} of {len(keep)} splats are near the path")
 
     dims = np.ceil((hi - lo) / voxel).astype(int) + 1
-    occ = np.zeros(dims, dtype=bool)
+    weight = np.zeros(dims, dtype=np.float32)
     idx = np.floor((p - lo) / voxel).astype(int)
     radius = np.clip(np.round(ext / voxel), 0, 2).astype(int)
     for r in range(3):
-        sel = idx[radius == r]
-        if len(sel) == 0:
+        sel = radius == r
+        if not sel.any():
             continue
-        for off in itertools.product(range(-r, r + 1), repeat=3):
-            q = sel + np.array(off)
-            q = q[np.all((q >= 0) & (q < dims), axis=1)]
-            occ[q[:, 0], q[:, 1], q[:, 2]] = True
+        cells = list(itertools.product(range(-r, r + 1), repeat=3))
+        share = opacity[sel] / len(cells)
+        for off in cells:
+            q = idx[sel] + np.array(off)
+            ok = np.all((q >= 0) & (q < dims), axis=1)
+            np.add.at(weight, (q[ok, 0], q[ok, 1], q[ok, 2]), share[ok])
 
-    occ = remove_small_objects(occ, max_size=min_blob_voxels - 1)
+    occ = remove_small_objects(weight >= solid, max_size=min_blob_voxels - 1)
     filled = int(occ.sum())
     if filled == 0:
         raise RuntimeError("no solid splats near the flown path; the splat is empty or the alignment is off")

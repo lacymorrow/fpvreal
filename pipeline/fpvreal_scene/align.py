@@ -3,11 +3,13 @@
 # the one transform that carries COLMAP units into the sim's metres: Y up, X
 # east, Z south, the first camera at the origin, its nose along -Z.
 #
-# Down comes from the pilot. An FPV camera is bolted to the frame with a
-# tilt and no roll, so over a flight the camera's right vector sweeps the
-# horizontal plane while the pilot yaws. The normal of that plane is gravity.
-# Frames flown rolled (a flip, a knife-edge) are outliers and are weighted
-# down.
+# Down comes from the pilot and the ground. An FPV camera is bolted to the
+# frame with a tilt and no roll, so over a flight the camera's right vector
+# sweeps the horizontal plane while the pilot yaws. The normal of that plane
+# is gravity, give or take the banking. Frames flown rolled (a flip, a
+# knife-edge) are outliers and are weighted down. Then the lowest of the
+# reconstructed points, which is the floor, refines it: floors are flat. The
+# sign is the easy part: a pilot flies above most of the scene, not below it.
 #
 # Scale comes from the clock. The frames have timestamps, the poses have
 # distances, and an FPV pilot cruising a bando moves at a known-ish speed. The
@@ -39,7 +41,7 @@ def _rot_y(a):
     return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
 
 
-def find_up(rights, downs):
+def find_up(rights, downs, points=None):
     """Gravity's up direction in the reconstruction frame."""
     w = np.ones(len(rights))
     v = None
@@ -51,7 +53,27 @@ def find_up(rights, downs):
         w = np.exp(-((rights @ v) ** 2) / 0.15)
     if float((-downs @ v).sum()) < 0:
         v = -v
-    return v / np.linalg.norm(v)
+    v /= np.linalg.norm(v)
+    if points is not None and len(points) > 200:
+        # The floor: the lowest third of the points, flattened. Its normal
+        # replaces the pilot's estimate when the two roughly agree.
+        h = points @ v
+        low = points[h < np.percentile(h, 35)]
+        low = low - low.mean(axis=0)
+        eigval, eigvec = np.linalg.eigh(low.T @ low)
+        n = eigvec[:, 0]
+        if n @ v < 0:
+            n = -n
+        if math.degrees(math.acos(float(np.clip(n @ v, -1, 1)))) < 25:
+            v = n / np.linalg.norm(n)
+    return v
+
+
+def points_below(points, centres, up):
+    """The share of the scene under the cameras. A pilot flies over it."""
+    if points is None or len(points) == 0:
+        return None
+    return float(((points @ up) < (centres @ up).mean()).mean())
 
 
 def find_scale(poses, times, assumed_speed, max_gap_s=1.0):
@@ -87,14 +109,19 @@ def to_quaternion(R):
     return q
 
 
-def align(poses, times, *, assumed_speed):
+def align(poses, times, *, assumed_speed, points=None):
     """Returns the transform p_sim = s R p + t, and the flown path in sim metres."""
     rights = np.array([p["right"] for p in poses])
     downs = np.array([p["down"] for p in poses])
     forwards = np.array([p["forward"] for p in poses])
     centres = np.array([p["centre"] for p in poses])
 
-    up = find_up(rights, downs)
+    up = find_up(rights, downs, points)
+    below = points_below(points, centres, up)
+    if below is not None and below < 0.5:
+        up = -up
+        below = 1 - below
+    # Where the pilot looked on average: a diving pilot looks below the horizon.
     tilt = math.degrees(math.asin(float(np.clip((forwards @ up).mean(), -1, 1))))
     R1 = _rotation_to(up, np.array([0.0, 1.0, 0.0]))
 
@@ -117,11 +144,27 @@ def align(poses, times, *, assumed_speed):
         q = s * (R @ p["centre"]) + t
         path.append([round(float(times.get(p["name"], -1)), 3), *[round(float(v), 3) for v in q]])
 
-    stage("align", f"camera tilt reads {tilt:.0f} deg, median speed {median_units:.3f} units/s, "
-                   f"{s:.3f} m per unit at an assumed {assumed_speed} m/s")
-    if not (5 <= tilt <= 60):
-        stage("align", f"warning: a camera tilt of {tilt:.0f} deg is not an FPV camera; the up vector may be wrong")
+    # The floor, in sim metres: the height of the lowest third of the points.
+    # The sim's pad search starts from here. Without points, the lowest the
+    # pilot flew is the best guess.
+    if points is not None and len(points) > 200:
+        h = (points @ R.T) * s + t
+        hy = h[:, 1]
+        floor_y = float(np.median(hy[hy < np.percentile(hy, 35)]))
+    else:
+        floor_y = float(min(q[2] for q in path))
+    # Where the pilot flew lowest: a pad near there is on the floor they used.
+    low = min(path, key=lambda q: q[2])
+    spawn_hint = {"x": low[1], "z": low[3]}
+
+    stage("align", f"{'' if below is None else f'{below * 100:.0f}% of the scene is below the pilot, '}"
+                   f"the camera looks {abs(tilt):.0f} deg {'above' if tilt >= 0 else 'below'} the horizon on average")
+    stage("align", f"median speed {median_units:.3f} units/s, {s:.3f} m per unit at an assumed {assumed_speed} m/s")
+    stage("align", f"floor {-floor_y:.1f} m below the first frame, the pilot flew down to {-low[2]:.1f} m below it")
+    if below is not None and below < 0.65:
+        stage("align", f"warning: only {below * 100:.0f}% of the scene is below the pilot; the up vector may be wrong")
     return {
         "R": R, "s": s, "t": t, "quaternion": to_quaternion(R),
         "tilt_deg": tilt, "median_speed_units": median_units, "path": path,
+        "floor_y": round(floor_y, 3), "spawn_hint": spawn_hint,
     }

@@ -61,6 +61,10 @@ const BOOT_DEADLINE_MS = 45000;
 const PROFILE = PROFILES.freestyle5;
 // Rates everyone starts on until they pick their own.
 const DEFAULT_RATES = 'cinematic';
+// In a video scene, how far above and below the fitted floor the pad search
+// looks for ground.
+const SCENE_PAD_ABOVE_M = 6;
+const SCENE_PAD_BELOW_M = 6;
 // The picture the goggles show once the link is gone.
 const DEAD_LINK = { quality: 0, rssiDbm: -100, lossDb: 999, frozen: true };
 const ZERO = { x: 0, y: 0, z: 0 };
@@ -645,17 +649,25 @@ async function bootScene(url) {
 	});
 	scene.add(ghostLine(json));
 	scene.fog.density = 0;
+	const t0 = performance.now();
 	try {
 		await splat.ready;
 	} catch (err) {
 		throw new Error(`The splat did not load: ${err?.message ?? err}`);
 	}
+	console.log(`[scene] ${json.name}: splat in ${((performance.now() - t0) / 1000).toFixed(1)} s, ${json.collision.triangles} collision triangles`);
 
+	// The pad goes on the floor the pilot used: the pipeline writes the floor
+	// height it fitted and where the pilot flew lowest. The search may only
+	// see a few metres either side of that floor, because the scene's safety
+	// net, far below, is the lowest and most open ground there is.
+	const floorY = Number.isFinite(json.floorY) ? json.floorY : start.y;
+	const hint = json.spawnHint ?? start;
 	settleOnPad({
-		origin: { x: start.x, z: start.z },
-		top: start.y + 30,
-		reach: 200,
-		noPad: 'No ground under the pilot\'s first frame. The scale or the up vector in scene.json is off; rerun the pipeline with --speed.',
+		origin: { x: hint.x, z: hint.z },
+		top: floorY + SCENE_PAD_ABOVE_M,
+		reach: SCENE_PAD_ABOVE_M + SCENE_PAD_BELOW_M,
+		noPad: 'No floor where the pilot flew lowest. The scale or the up vector in scene.json is off; rerun the pipeline with --speed.',
 		credit: `Scene: ${json.credit}`,
 	});
 }

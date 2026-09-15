@@ -89,6 +89,10 @@ the pilot's path is a ghost line. Nothing in the browser runs the pipeline;
 that needs compute there is no money for.
 
 Done when one bando video becomes a flyable scene with the original pilot's line.
+First run 2026-09-15: a 30 s section of a bando clip became a scene the sim
+boots in 6 s, pad on the floor, the pilot's line through the building
+(`docs/m2-hole-in-one.jpg`, the numbers in `docs/M2.md`). Not yet flown with
+a radio.
 
 ### M3, the racing loop.
 

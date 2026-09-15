@@ -47,6 +47,8 @@ def write(out, *, name, source, splat_ply, verts, faces, transform, bounds, assu
         "collision": {"file": "collision.bin", "vertices": int(len(verts)), "triangles": int(len(faces))},
         "bounds": bounds,
         "path": transform["path"],
+        "floorY": transform["floor_y"],
+        "spawnHint": transform["spawn_hint"],
         "frames": {"extracted": frames, "registered": registered},
     }
     (out / "scene.json").write_text(json.dumps(scene, indent=1))
