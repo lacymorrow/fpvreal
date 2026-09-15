@@ -3,78 +3,12 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<!-- The mark is a pixel grid: the hinted exports stay crisp where an SVG
-	     resampled to 16 px would not. See docs/brand.md. -->
-	<link rel="icon" type="image/png" sizes="16x16" href="/brand/png/fpvtp-icon-16.png">
-	<link rel="icon" type="image/png" sizes="32x32" href="/brand/png/fpvtp-icon-32.png">
-	<link rel="icon" type="image/png" sizes="48x48" href="/brand/png/fpvtp-icon-48.png">
-	<title>FPVThePlanet!</title>
-
-	<!-- The card a link to a deployed instance unfurls into. og:url is
-	     deliberately absent: deploy/ fixes no domain, and a wrong canonical URL
-	     is worse than none. The image path is root-relative for the same reason
-	     — scrapers resolve it against the page. Whoever pins a domain should add
-	     og:url and make this absolute. See docs/brand.md. -->
-	<meta property="og:type" content="website">
-	<meta property="og:site_name" content="FPVThePlanet!">
-	<meta property="og:title" content="FPVThePlanet!">
-	<meta property="og:description" content="Fly FPV over real cities, in the browser. The scenery is not modelled: it is 3D photogrammetry, the geometry and textures of a place that exists.">
-	<meta property="og:image" content="/brand/fpvtp-og-1200x630.png">
-	<meta property="og:image:width" content="1200">
-	<meta property="og:image:height" content="630">
-	<meta property="og:image:alt" content="FPVThePlanet! — it's not a level, it's Tokyo.">
-	<meta name="twitter:card" content="summary_large_image">
-
+	<title>FPV Real</title>
+	<meta name="description" content="Pick a place on Earth and fly it FPV with your radio, in the browser.">
 	<link rel="stylesheet" href="/src/style.css">
 </head>
 <body>
 	<div id="ui"></div>
-
-	<!-- WebGL2 probe, deliberately a CLASSIC script and deliberately here rather
-	     than in the bundle. three r170 asks for a "webgl2" context and nothing
-	     else; WebGLRenderer throws when it cannot get one, at module top level,
-	     which aborts main.js before anything exists that could report it. The
-	     result used to be a permanently black page with no text at all.
-
-	     This runs before the module (classic scripts are not deferred), needs no
-	     bundle, no stylesheet and no font: whatever failed further down the
-	     chain, these words reach the screen. The styles are inline for the same
-	     reason. If the probe passes, this script leaves no trace. -->
-	<script>
-		(function () {
-			var ok = false;
-			try {
-				var c = document.createElement('canvas');
-				ok = !!(window.WebGL2RenderingContext && c.getContext('webgl2'));
-			} catch (e) { ok = false; }
-			if (ok) return;
-			// The module tag below still loads and still throws. The flag lets
-			// main.js recognise the case and keep this panel instead of painting
-			// its own, less specific, message over it.
-			window.__FPVTP_NO_WEBGL2 = true;
-			var box = 'max-width:34em;margin:0 auto;padding:2em 1.5em;'
-				+ 'font:400 14px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;'
-				+ 'color:#ece7dd;letter-spacing:.02em;';
-			document.getElementById('ui').innerHTML =
-				'<div style="position:fixed;inset:0;background:#0a0908;overflow:auto;display:flex;'
-				+ 'align-items:center;justify-content:center;z-index:99">'
-				+ '<div style="' + box + '">'
-				+ '<p style="margin:0 0 1.4em;color:#c8504a;text-transform:uppercase;letter-spacing:.12em">'
-				+ 'This browser has no WebGL2</p>'
-				+ '<p style="margin:0 0 1em">FPVThePlanet! renders real photogrammetry and needs WebGL2. '
-				+ 'Your browser either does not support it or has it turned off.</p>'
-				+ '<p style="margin:0 0 1em;color:rgba(236,231,221,.62)">Things that usually fix it:</p>'
-				+ '<ul style="margin:0 0 1.4em;padding-left:1.2em;color:rgba(236,231,221,.62)">'
-				+ '<li>Update to a current Chrome, Edge, Firefox or Safari 15+.</li>'
-				+ '<li>Firefox: set <code>webgl.disabled</code> to false in about:config.</li>'
-				+ '<li>Chrome: turn on "Use graphics acceleration when available" in Settings &gt; System.</li>'
-				+ '<li>In a virtual machine or over remote desktop, hardware acceleration is often absent.</li>'
-				+ '</ul>'
-				+ '<p style="margin:0;color:rgba(236,231,221,.62)">Nothing else on this page will load.</p>'
-				+ '</div></div>';
-		})();
-	</script>
-
 	<script type="module" src="/src/main.js"></script>
 </body>
 </html>
