@@ -55,6 +55,11 @@ Found on the first flight, carried into M1:
 
 ### M1, drop in anywhere with a radio. The demo.
 
+Built 2026-09-15, waiting on the radio walk. Everything below is in the tree
+and exercised in Chrome with a keyboard; the arm switch, the calibration
+wizard, per-radio rates and the latency bench need a transmitter in the room,
+which the session that built them did not have.
+
 - Map screen: Leaflet, Nominatim search, geolocate, pin, FLY. Location and view range in the URL so a link is a place.
 - Spawn: raycast down from the pin to the first trusted tile, back off to open ground, place the quad 1 m up facing the longest clear ray.
 - Arm on an aux channel with a threshold. Refuse to arm above idle throttle. Disarm on the same switch. Keyboard fallback stays.
@@ -66,6 +71,11 @@ Found on the first flight, carried into M1:
 - Loading, no-terrain, no-radio and no-location states designed on purpose.
 
 Done when a 60 second recording with the radio in frame passes the demo test.
+
+What the keyboard walk found on 2026-09-15: the first pad search scored a
+roof over the street (fixed: mean clearance plus a strong low-ground term),
+then put the quad on a hillside where it sat rolled 35 degrees (fixed: a
+flatness probe rules out slopes over 25 %). Both are in `spawn-selftest.mjs`.
 
 ### M2, video to scene.
 

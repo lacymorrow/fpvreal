@@ -16,26 +16,27 @@ git clone https://github.com/lacymorrow/fpvreal.git
 cd fpvreal/sim && npm install && npm run dev
 ```
 
-Open http://localhost:5173. It boots over uptown Charlotte. To fly somewhere
-else, for now, put the coordinates in the URL:
+Open http://localhost:5173. A map asks where. Search a place or click it,
+press FLY, and the terrain streams in around the pad. The place goes into the
+URL, so a link is a place:
 
 ```
 http://localhost:5173/?at=48.8584,2.2945
 ```
-
-The map screen that replaces this is the next milestone.
 
 ## Controls
 
 | | |
 |---|---|
 | radio or gamepad | detected automatically in Mode 2. EdgeTX and OpenTX radios are recognised by USB id |
+| `Tab` | setup: calibrate the radio, teach it your arm switch, pick rates, set the camera tilt |
+| arm switch | once taught, it arms and disarms like a flight controller: throttle down to arm, off then on after a crash |
 | throttle, yaw | `W` `S`, `A` `D` |
 | roll, pitch | arrow keys |
 | `R` | respawn |
 | `V` | FPV or chase view |
 | `M` | flight mode: acro, angle, altitude |
-| `P` | rates: cinematic, freestyle, race, and the family presets |
+| `P` | rates: cinematic, freestyle, race, and the family presets. Remembered per radio |
 | `Space` | pause |
 
 Acro is the default, on the keyboard too. Held keys ramp instead of snapping
@@ -43,6 +44,16 @@ to full deflection, which is what makes acro survivable without a stick. A
 crash cuts the video for a moment and puts you back on the pad.
 
 Sound needs one key press or click first. That is a browser rule.
+
+## Latency
+
+The sticks are read inside every 250 Hz physics step, not once per frame, so
+a radio snapshot is flown on the step after it arrives. What the browser adds
+on top is measured, not claimed: open http://localhost:5173/latency.html with
+the radio plugged in, move a stick for ten seconds, and it reports the
+Gamepad API snapshot rate, the display rate, and the worst case the two add
+together. The number for a Radiomaster on Chrome goes here once it has been
+measured on real hardware.
 
 ## Where it comes from
 

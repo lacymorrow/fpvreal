@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>FPV Real latency bench</title>
+	<link rel="stylesheet" href="/src/style.css">
+</head>
+<body class="page">
+	<main class="bench">
+		<h1>Input latency bench</h1>
+		<p class="setup-note">What the browser and the sim add between your stick and the picture. Plug in the radio, then move a stick continuously for ten seconds.</p>
+		<p id="pad"></p>
+		<p id="moving" class="setup-note"></p>
+
+		<table>
+			<tr><th>Gamepad snapshots</th><td><span id="snap-hz"></span></td><td>mean <span id="snap-mean"></span> ms</td><td>p95 <span id="snap-p95"></span> ms</td><td>max <span id="snap-max"></span> ms</td><td>n=<span id="snap-n"></span></td></tr>
+			<tr><th>Display frames</th><td><span id="frame-hz"></span></td><td>mean <span id="frame-mean"></span> ms</td><td>p95 <span id="frame-p95"></span> ms</td><td></td><td></td></tr>
+			<tr><th>Physics hold</th><td><span id="hold"></span> ms</td><td colspan="4">the most a fresh snapshot waits for the next 250 Hz step</td></tr>
+			<tr><th>Worst case added</th><td><span id="total"></span> ms</td><td colspan="4">snapshot p95 + hold + frame p95. The radio's own USB and gimbal latency is on top of this and needs a camera to measure.</td></tr>
+		</table>
+
+		<textarea id="report" rows="8" readonly></textarea>
+		<div class="setup-row"><button id="reset" type="button">RESET</button></div>
+	</main>
+	<script type="module" src="/src/latency.js"></script>
+</body>
+</html>

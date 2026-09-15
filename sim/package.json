@@ -10,13 +10,14 @@
 		"dev": "vite",
 		"build": "vite build && node tools/precompress.mjs",
 		"preview": "vite preview",
-		"selftest": "node tools/frame-pacing-selftest.mjs && node tools/input-selftest.mjs && node tools/calibration-selftest.mjs && node tools/key-map-selftest.mjs && node tools/menu-nav-selftest.mjs && node tools/chase-camera-selftest.mjs && node tools/physics-collider-selftest.mjs && node tools/force-budget-selftest.mjs && node tools/blade-element-selftest.mjs && node tools/aero-selftest.mjs && node tools/geofence-selftest.mjs && node tools/rocktree-fence-selftest.mjs && node tools/live-node-queue-selftest.mjs && node tools/rocktree-window-selftest.mjs && node tools/rocktree-pool-selftest.mjs && node tools/rocktree-cache-selftest.mjs && node tools/rocktree-lod-selftest.mjs && node tools/rocktree-geodesy-selftest.mjs && node tools/rocktree-unpack-selftest.mjs && node tools/rocktree-build-node-selftest.mjs && node tools/rocktree-selftest.mjs && node tools/rocktree-material-selftest.mjs && node tools/decoder-selftest.mjs && node tools/imagery-selftest.mjs && node tools/loader-guard-selftest.mjs && node tools/memory-release-selftest.mjs && node tools/sun-agc-selftest.mjs",
+		"selftest": "node tools/frame-pacing-selftest.mjs && node tools/input-selftest.mjs && node tools/calibration-selftest.mjs && node tools/key-map-selftest.mjs && node tools/menu-nav-selftest.mjs && node tools/chase-camera-selftest.mjs && node tools/physics-collider-selftest.mjs && node tools/force-budget-selftest.mjs && node tools/blade-element-selftest.mjs && node tools/aero-selftest.mjs && node tools/geofence-selftest.mjs && node tools/rocktree-fence-selftest.mjs && node tools/live-node-queue-selftest.mjs && node tools/rocktree-window-selftest.mjs && node tools/rocktree-pool-selftest.mjs && node tools/rocktree-cache-selftest.mjs && node tools/rocktree-lod-selftest.mjs && node tools/rocktree-geodesy-selftest.mjs && node tools/rocktree-unpack-selftest.mjs && node tools/rocktree-build-node-selftest.mjs && node tools/rocktree-selftest.mjs && node tools/rocktree-material-selftest.mjs && node tools/decoder-selftest.mjs && node tools/imagery-selftest.mjs && node tools/loader-guard-selftest.mjs && node tools/memory-release-selftest.mjs && node tools/sun-agc-selftest.mjs && node tools/arm-switch-selftest.mjs && node tools/spawn-selftest.mjs",
 		"fuzz": "node tools/fuzz-rocktree.mjs",
 		"tune": "node tools/tune-pid.mjs",
 		"validate:props": "node tools/uiuc-prop-validate.mjs"
 	},
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "^0.14.0",
+		"leaflet": "^1.9.4",
 		"three": "^0.170.0"
 	},
 	"devDependencies": {

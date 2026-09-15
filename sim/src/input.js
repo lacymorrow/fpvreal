@@ -14,6 +14,7 @@ import {
 	loadKeyMap,
 	actionForKey,
 } from './key-map.js';
+import { loadArmStore, saveArmStore, armStoreGet, armStoreSet, armFromSignals } from './arm-switch.js';
 
 const STORAGE_KEY = 'fpvtp.gamepadMap';
 // Measured calibrations, indexed PER DEVICE (issue #277). STORAGE_KEY only ever
@@ -340,6 +341,11 @@ export class Input {
 		this._calStore = loadCalStore();
 		this.calibration = null;
 
+		// The arm switch, one mapping per device (arm-switch.js). null while
+		// the device has none: the shell then arms on the pad by itself.
+		this._armStore = loadArmStore(globalThis.localStorage);
+		this.armMap = null;
+
 		// Re-evaluated when a pad is activated: a radio keeps full travel,
 		// everything else goes to half travel.
 		this.throttleMode = THROTTLE_MODE.gamepad;
@@ -349,6 +355,9 @@ export class Input {
 			roll: 0,
 			pitch: 0,
 			yaw: 0,
+			// true/false from a mapped arm switch, null from the keyboard or an
+			// unmapped device.
+			arm: null,
 		};
 
 		this.gamepadIndex = null;
@@ -597,6 +606,7 @@ export class Input {
 		// is the only source that guesses nothing. It also fixes the throttle
 		// travel mode, which is then no longer deduced from the brand.
 		this.applyCalibration(calStoreGet(this._calStore, p.id));
+		this.armMap = armStoreGet(this._armStore, p.id);
 
 		console.log('[input] using gamepad:', p.id, `(${kind})`);
 		console.log('[input] active map:', this.map, this.throttleMode);
@@ -624,6 +634,14 @@ export class Input {
 		this._calStore = calStoreSet(this._calStore, padId, cal);
 		saveCalStore(this._calStore);
 		this.applyCalibration(cal);
+	}
+
+	// The arm switch found by the setup panel, persisted under the device id
+	// like a calibration.
+	setArmSwitch(padId, mapping) {
+		this._armStore = armStoreSet(this._armStore, padId, mapping);
+		saveArmStore(globalThis.localStorage, this._armStore);
+		this.armMap = mapping;
 	}
 
 	// The active device's id — the storage key for a calibration.
@@ -670,6 +688,7 @@ export class Input {
 			this.map = defaultMapForKind(kind);
 			this.throttleMode = throttleModeForKind(kind);
 			this.applyCalibration(calStoreGet(this._calStore, pad.id));
+			this.armMap = armStoreGet(this._armStore, pad.id);
 
 			console.log(
 				'[input] manually selected:',
@@ -740,6 +759,7 @@ export class Input {
 			this.usingGamepad = true;
 		} else {
 			this.usingGamepad = false;
+			this.sticks.arm = null;
 			this.readKeyboard(frozen ? 0 : dt);
 		}
 
@@ -755,7 +775,9 @@ export class Input {
 		// centre, travel and noise taken on THIS hardware. The path below stays
 		// the one for never-calibrated devices, with its guesses.
 		if (this.calibration) {
-			Object.assign(this.sticks, sticksFromCalibration(padSignals(pad), this.calibration));
+			const signals = padSignals(pad);
+			Object.assign(this.sticks, sticksFromCalibration(signals, this.calibration));
+			this.sticks.arm = armFromSignals(this.armMap, signals);
 			return true;
 		}
 
@@ -809,6 +831,8 @@ export class Input {
 			applyDeadband(
 				raw('roll') ?? 0
 			);
+
+		this.sticks.arm = armFromSignals(this.armMap, padSignals(pad));
 
 		return true;
 	}

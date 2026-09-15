@@ -47,6 +47,15 @@ fuzz`, `npm run tune`. No lint is configured. Plain JavaScript, no transpiler.
 
 ## Milestones
 
-M0 hollow fork (done 2026-09-15). M1 map screen, spawn on open ground, arm
-switch on aux, sticks sampled per physics substep, measured input latency.
-M2 video to scene. M3 racing loop. See `docs/PLAN.md`.
+M0 hollow fork (done 2026-09-15). M1 map screen, flat open-ground spawn, arm
+switch on aux, sticks sampled per physics substep, setup panel, latency bench
+(built 2026-09-15, needs the radio walk). M2 video to scene. M3 racing loop.
+See `docs/PLAN.md`.
+
+New shell modules: `map.js` (Leaflet, Nominatim, FLY), `spawn.js` (pure pad
+search, injected raycasts), `arm-switch.js` (pure switch model, consumed by
+`input.js`), `setup.js` (Tab panel), `latency.js` + `latency.html` (bench).
+
+Do not drive the desktop (keystrokes, clicks, window focus) to test the sim
+while Lacy may be at the keyboard: a stray keystroke landed in another
+terminal on 2026-09-15. Ask Lacy to fly it, or use a headless browser.

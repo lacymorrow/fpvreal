@@ -2,9 +2,9 @@
 //
 // The flight stack (input, controller, airframe, physics) and the terrain
 // streaming come from FPVThePlanet by lionrayonnant, AGPL-3.0. This file is
-// the shell around them: boot, the flight loop, respawn. Nothing here knows
-// the airframe, the controller or the radio; those modules keep their
-// upstream boundaries so fixes can be pulled in.
+// the shell around them: the map, the boot, the flight loop, respawn. Nothing
+// here knows the airframe, the controller or the radio; those modules keep
+// their upstream boundaries so fixes can be pulled in.
 
 import * as THREE from 'three';
 import { initPhysics, Physics } from './physics.js';
@@ -25,44 +25,39 @@ import { warmUp as warmUpNodePool } from './rocktree-worker-pool.js';
 import { push as rocktreeFencePush } from './rocktree-fence.js';
 import { chaseTarget, chaseStep, CHASE } from './chase-camera.js';
 import { localEnuToEcef, ecefToGeodetic } from '../tools/lib/rocktree/geodesy.mjs';
+import { pickPlace, saveLastPlace } from './map.js';
+import { Setup, loadTilt, loadRates, saveRates } from './setup.js';
+import { findSpawn, yawQuaternion } from './spawn.js';
 
 // ---------------------------------------------------------------------------
-// Where and what
+// Constants
 
-// Uptown Charlotte, NC. ?at=lat,lon flies anywhere else. M1 replaces this
-// with the map screen.
-const DEFAULT_AT = [35.2271, -80.8431];
 // Google Earth octree level. 21 is street-level photogrammetry; measured
 // upstream as the level that keeps a 600 m window under budget.
 const ROCKTREE_LEVEL = 21;
 // The disc of terrain kept loaded around the quad, in metres.
 const VIEW_RANGE_M = 600;
-// Spawn height over the first ground found under the origin. Low on purpose:
-// a racing pilot arms on the pad, not in a fall.
-const SPAWN_ABOVE_GROUND_M = 1.0;
-// The pilot stands at the spawn; the video receiver's antenna is at head
-// height. The link model degrades with distance and occlusion from here.
+// Spawn height over the ground the search picked. Low: a racing pilot arms on
+// the pad, not in a fall.
+const SPAWN_ABOVE_GROUND_M = 0.5;
+// The pilot stands at the pad; the video antenna is at head height. The link
+// model degrades with distance and occlusion from here.
 const ANTENNA_HEIGHT = 1.2;
-// FPV camera: field of view and uptilt, both in degrees.
+// FPV camera: field of view and default uptilt, in degrees.
 const CAMERA_FOV = 120;
 const CAMERA_TILT = 25;
 // After a crash the picture dies, then you are back on the pad.
 const RESPAWN_AFTER_MS = 700;
-// How long to wait for the ground under the spawn before giving up.
+// How long to wait for the first wave of terrain before giving up.
 const BOOT_DEADLINE_MS = 45000;
 // Family flown. freestyle5 is the 5-inch reference airframe upstream tuned.
 const PROFILE = PROFILES.freestyle5;
 // The picture the goggles show once the link is gone.
 const DEAD_LINK = { quality: 0, rssiDbm: -100, lossDb: 999, frozen: true };
-
-const params = new URLSearchParams(location.search);
-const AT = params.has('at') ? params.get('at').split(',').map(Number) : DEFAULT_AT;
-if (AT.length !== 2 || !AT.every(Number.isFinite)) {
-	throw new Error(`?at= expects "lat,lon", got "${params.get('at')}"`);
-}
+const ZERO = { x: 0, y: 0, z: 0 };
 
 // ---------------------------------------------------------------------------
-// Scene, renderer, screen
+// Screen
 
 // The imagery already carries its own light and colour: the whole pipeline is
 // pass-through. With colour management on, Three would re-encode the sky.
@@ -70,13 +65,15 @@ THREE.ColorManagement.enabled = false;
 
 const ui = document.getElementById('ui');
 ui.insertAdjacentHTML('beforeend', `
-	<div id="boot">
+	<div id="boot" hidden>
 		<p id="boot-title">FPV REAL</p>
-		<p id="boot-status">Reaching the terrain</p>
+		<p id="boot-status"></p>
 		<p id="boot-detail"></p>
+		<button id="boot-back" type="button" hidden>PICK ANOTHER PLACE</button>
 	</div>
 	<div id="osd" hidden>
 		<span id="osd-left"></span>
+		<span id="osd-hint"></span>
 		<span id="osd-right"></span>
 	</div>
 	<p id="credit" hidden>Imagery © Google</p>
@@ -85,26 +82,31 @@ const el = {
 	boot: ui.querySelector('#boot'),
 	status: ui.querySelector('#boot-status'),
 	detail: ui.querySelector('#boot-detail'),
+	back: ui.querySelector('#boot-back'),
 	osd: ui.querySelector('#osd'),
 	osdLeft: ui.querySelector('#osd-left'),
+	osdHint: ui.querySelector('#osd-hint'),
 	osdRight: ui.querySelector('#osd-right'),
 	credit: ui.querySelector('#credit'),
 };
+el.back.addEventListener('click', () => { location.href = location.pathname; });
+
 function bootStatus(text, detail = '') {
+	el.boot.hidden = false;
 	el.status.textContent = text;
 	el.detail.textContent = detail;
 }
 function bootFail(err) {
 	console.error(err);
-	el.boot.hidden = false;
 	el.boot.classList.add('failed');
-	bootStatus(String(err?.message ?? err), 'Reload to try again, or pick another place with ?at=lat,lon');
+	bootStatus(String(err?.message ?? err), '');
+	el.back.hidden = false;
+	try { el.back.focus(); } catch { /* focus is never load-bearing */ }
 }
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(SKY);
-// The terrain edge dissolves into this fog rather than stopping dead. The
-// density is pushed per frame from the streaming window's radius.
+// The terrain edge dissolves into this fog rather than stopping dead.
 scene.fog = new THREE.FogExp2(SKY, 0);
 const skyDome = new SkyDome(scene);
 skyDome.setState({});
@@ -124,6 +126,7 @@ try {
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 renderer.toneMapping = THREE.NoToneMapping;
+renderer.domElement.hidden = true;
 document.body.appendChild(renderer.domElement);
 
 const input = new Input();
@@ -240,13 +243,38 @@ let crashedAt = 0;
 let accumulator = 0;
 let lastTime = performance.now();
 let groundY = null;
+let cameraTilt = loadTilt(CAMERA_TILT);
+let spawnPoint = { x: 0, y: 0, z: 0 };
+let spawnQuat = { x: 0, y: 0, z: 0, w: 1 };
 let emitter = { x: 0, y: 0, z: 0 };
+// With an arm switch, a respawn wants the switch seen OFF once before it arms
+// again, the way a flight controller does. Without one, the pad arms itself.
+let armLatch = false;
+let hint = '';
+let lastDevice = null;
 const linkState = { distance: 0, blocked: false, span: 0 };
 const fenceForce = { x: 0, y: 0, z: 0 };
 const _fwd = new THREE.Vector3();
 const _camQ = new THREE.Quaternion();
 const _tilt = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
+
+const setup = new Setup(ui, input, {
+	tilt: cameraTilt,
+	onTilt: (deg) => { cameraTilt = deg; },
+	onRates: (name) => setRates(name),
+	getController: () => controller,
+});
+
+function deviceId() {
+	return input.usingGamepad ? (input.activePadId() ?? 'gamepad') : 'keyboard';
+}
+
+function setRates(name) {
+	if (!controller) return;
+	controller.setPreset(name);
+	saveRates(deviceId(), controller.preset);
+}
 
 function droneYaw(q) {
 	_fwd.set(0, 0, -1).applyQuaternion(q);
@@ -266,7 +294,7 @@ function placeCamera(dt) {
 		camera.lookAt(p.x, p.y, p.z);
 	} else {
 		camera.position.set(p.x, p.y, p.z);
-		_tilt.setFromAxisAngle(X_AXIS, CAMERA_TILT * Math.PI / 180);
+		_tilt.setFromAxisAngle(X_AXIS, cameraTilt * Math.PI / 180);
 		camera.quaternion.copy(_camQ).multiply(_tilt);
 	}
 }
@@ -279,14 +307,22 @@ function setView(mode) {
 	placeCamera(0);
 }
 
+// Back on the pad, nose where the search pointed it, motors primed.
+function placeOnPad() {
+	physics.applyEntryState({ position: spawnPoint, quaternion: spawnQuat, linvel: ZERO, angvel: ZERO });
+}
+
 function respawn() {
 	if (!physics) return;
-	physics.reset();
+	placeOnPad();
 	link.reset();
-	controller.arm();
 	controller.setMode(controller.mode);
 	input.resetKeyboardThrottle();
 	crashed = false;
+	// A mapped switch re-arms on its own once it has been seen off; the pad
+	// arms itself for everyone else.
+	if (input.sticks.arm === null) controller.arm();
+	else { controller.disarm(); armLatch = true; }
 	setView('fpv');
 }
 
@@ -297,12 +333,38 @@ function togglePause(force) {
 }
 
 input.onAction = (action, event) => {
-	if (action === 'respawn') respawn();
+	if (action === 'tab') { event.preventDefault(); setup.toggle(); if (!setup.open) { accumulator = 0; lastTime = performance.now(); } }
+	else if (action === 'escape' && setup.open) setup.toggle(false);
+	else if (!controller) return;
+	else if (action === 'respawn') respawn();
 	else if (action === 'pause') { event.preventDefault(); togglePause(); }
 	else if (action === 'view') setView(viewMode === 'fpv' ? 'chase' : 'fpv');
-	else if (action === 'cyclePreset') controller?.cyclePreset();
-	else if (action === 'cycleMode') controller?.cycleMode();
+	else if (action === 'cyclePreset') { controller.cyclePreset(); saveRates(deviceId(), controller.preset); }
+	else if (action === 'cycleMode') controller.cycleMode();
 };
+
+// The arm switch decides, when there is one. The refusal to arm with the
+// throttle up is what a flight controller does, and for the same reason.
+function applyArmSwitch(sticks) {
+	const sw = sticks.arm;
+	if (sw === null) {
+		hint = input.usingGamepad ? '' : 'KEYS · plug in a radio and move a stick';
+		if (!controller.armed && !crashed) controller.arm();
+		return;
+	}
+	if (sw === false) armLatch = false;
+	if (crashed) return;
+	if (sw && !controller.armed) {
+		if (armLatch) hint = 'FLIP THE ARM SWITCH OFF, THEN ON';
+		else if (sticks.throttle > idleThrottle(physics.profile)) hint = 'THROTTLE DOWN TO ARM';
+		else { controller.arm(); hint = ''; }
+	} else if (!sw && controller.armed) {
+		controller.disarm();
+		hint = '';
+	} else {
+		hint = controller.armed ? '' : 'ARM SWITCH TO FLY';
+	}
+}
 
 // ---------------------------------------------------------------------------
 // The frame
@@ -311,10 +373,20 @@ function frame() {
 	const now = performance.now();
 	const dt = Math.min((now - lastTime) / 1000, 0.25);
 	lastTime = now;
-	const frozen = paused;
+	const frozen = paused || setup.open;
 
-	const sticks = input.update(dt, { frozen });
+	// One read for the frame's bookkeeping (dt 0: the keyboard ramps only
+	// inside the substeps below, once per step, so it is never counted twice).
+	let sticks = input.update(0, { frozen });
 	audio.setMuted(frozen);
+
+	// Rates follow the device in the pilot's hands.
+	const dev = deviceId();
+	if (dev !== lastDevice) {
+		lastDevice = dev;
+		const saved = loadRates(dev);
+		if (saved) controller.setPreset(saved);
+	}
 
 	// Streaming is not simulation: it carries on while paused.
 	processLiveNodeWork();
@@ -330,6 +402,8 @@ function frame() {
 
 	let peakImpact = 0;
 	if (!frozen) {
+		applyArmSwitch(sticks);
+
 		// Resting on the ground: throttle cut and skimming the surface pins the
 		// quad, otherwise a sphere with angular velocity rolls for ever.
 		const pp = physics.position;
@@ -342,6 +416,9 @@ function frame() {
 		const h = catchUpStep(accumulator);
 		let steps = 0;
 		while (accumulator >= h && steps < MAX_STEPS_PER_FRAME) {
+			// The sticks are read again for every 250 Hz step, so a snapshot that
+			// arrived mid-frame is flown on the step after it, not the frame after.
+			sticks = input.update(h);
 			const { motors } = controller.update(sticks, physics, h);
 			if (touchdown) motors.fill(0);
 			// The loaded disc has an edge. Past the trusted radius the terrain is
@@ -438,6 +515,7 @@ function updateOsd(sticks) {
 		input.usingGamepad ? 'RADIO' : 'KEYS',
 		crashed ? 'CRASH' : controller.armed ? 'ARMED' : 'DISARMED',
 	].join('  ·  ');
+	el.osdHint.textContent = hint;
 	el.osdRight.textContent = [
 		`${(speed * 3.6).toFixed(0)} km/h`,
 		agl === null ? '' : `${agl.toFixed(1)} m`,
@@ -450,6 +528,12 @@ function updateOsd(sticks) {
 // Boot
 
 async function boot([lat, lon]) {
+	if (navigator.onLine === false) {
+		throw new Error('You are offline. The terrain streams from Google Earth and needs a connection.');
+	}
+	bootStatus('Reaching the terrain', `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+	renderer.domElement.hidden = false;
+
 	// Three latencies overlapped: Rapier's WASM, the first tile traverse, and
 	// the worker start-up.
 	const physicsReady = initPhysics();
@@ -474,14 +558,14 @@ async function boot([lat, lon]) {
 
 	await physicsReady;
 	const emptyCollision = { vertices: new Float32Array(0), indices: new Uint32Array(0) };
-	// Provisional height: the real spawn is set on the real ground below.
+	// Provisional: the real spawn is set on real ground below.
 	physics = new Physics(emptyCollision, { x: 0, y: 80, z: 0 }, { profile: PROFILE });
 	physics.reset();
 	audio.setProfile(physics.profile);
 	await firstWave;
 
-	// Wait for the ground under the spawn and for the first wave to settle, so
-	// the quad is put down on terrain that exists.
+	// Wait for the first wave to settle, so the pad search sees terrain that
+	// exists. Past the deadline, fly with what is there.
 	const deadline = performance.now() + BOOT_DEADLINE_MS;
 	let groundHere = null;
 	for (;;) {
@@ -489,20 +573,33 @@ async function boot([lat, lon]) {
 		if (groundHere === null) groundHere = physics.groundBelow(0, 3000, 0, 6000);
 		const pending = liveWindow.pendingCount();
 		const waveDone = pending === 0 && liveQueue.idle();
-		if (groundHere !== null && waveDone) break;
+		if (waveDone) break;
 		bootStatus('Reaching the terrain', `${pending} tiles in flight, ${groundHere === null ? 'no ground yet' : 'ground found'}`);
 		if (performance.now() > deadline) {
-			if (groundHere === null) throw new Error('No terrain arrived for this place. Google Earth has no 3D coverage here, or the tile server is blocked.');
 			console.warn(`[rocktree] boot released at the deadline, ${pending} fetches still in flight`);
 			break;
 		}
 		await new Promise((r) => setTimeout(r, 10));
 	}
 
-	physics.spawn.y = groundHere + SPAWN_ABOVE_GROUND_M;
-	physics.reset();
-	emitter = { x: 0, y: groundHere + ANTENNA_HEIGHT, z: 0 };
+	bootStatus('Finding a pad', '');
+	const pad = findSpawn({
+		groundBelow: (x, y, z, d) => physics.groundBelow(x, y, z, d),
+		obstructionBetween: (...a) => physics.obstructionBetween(...a),
+		origin: { x: 0, z: 0 },
+		top: (groundHere ?? 0) + 500,
+		reach: 6000,
+	});
+	if (!pad) {
+		throw new Error('No terrain arrived for this place. Google Earth has no 3D coverage here, or the tile server is blocked.');
+	}
+	spawnPoint = { x: pad.x, y: pad.y + SPAWN_ABOVE_GROUND_M, z: pad.z };
+	spawnQuat = yawQuaternion(pad.yaw);
+	physics.spawn.x = spawnPoint.x; physics.spawn.y = spawnPoint.y; physics.spawn.z = spawnPoint.z;
+	emitter = { x: pad.x, y: pad.y + ANTENNA_HEIGHT, z: pad.z };
 	controller = new FlightController({ profile: PROFILE });
+	placeOnPad();
+	console.log(`[spawn] pad at ${pad.x.toFixed(1)}, ${pad.z.toFixed(1)}, ground ${pad.y.toFixed(1)} m, clearance ${pad.clearance} m`);
 
 	setView('fpv');
 	renderer.compile(scene, camera);
@@ -510,9 +607,29 @@ async function boot([lat, lon]) {
 	el.osd.hidden = false;
 	// Google requires its imagery credited wherever it is shown.
 	el.credit.hidden = false;
-	window.__sim = { physics, controller, input, liveWindow, respawn };
+	window.__sim = { physics, controller, input, liveWindow, respawn, pad };
 	lastTime = performance.now();
 	renderer.setAnimationLoop(frame);
 }
 
-boot(AT).catch(bootFail);
+// ---------------------------------------------------------------------------
+// Start: a place in the URL flies at once, otherwise the map asks for one.
+
+async function start() {
+	const params = new URLSearchParams(location.search);
+	let at = null;
+	if (params.has('at')) {
+		at = params.get('at').split(',').map(Number);
+		if (at.length !== 2 || !at.every(Number.isFinite)) {
+			throw new Error(`?at= expects "lat,lon", got "${params.get('at')}"`);
+		}
+	} else {
+		const place = await pickPlace(ui);
+		at = [place.lat, place.lon];
+		history.replaceState(null, '', `?at=${place.lat.toFixed(6)},${place.lon.toFixed(6)}`);
+	}
+	saveLastPlace({ lat: at[0], lon: at[1] });
+	await boot(at);
+}
+
+start().catch(bootFail);
