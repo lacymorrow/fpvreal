@@ -4,3 +4,8 @@
 sim/node_modules/
 sim/dist/
 sim/.cache/
+scenes/
+sim/public/scenes/
+pipeline/.venv/
+pipeline/__pycache__/
+pipeline/**/__pycache__/

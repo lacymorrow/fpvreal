@@ -28,6 +28,7 @@ import { localEnuToEcef, ecefToGeodetic } from '../tools/lib/rocktree/geodesy.mj
 import { pickPlace, saveLastPlace } from './map.js';
 import { Setup, loadTilt, loadRates, saveRates, loadFeel } from './setup.js';
 import { findSpawn, yawQuaternion } from './spawn.js';
+import { loadSceneManifest, loadSplat, ghostLine, pathStart } from './scene-splat.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -421,7 +422,7 @@ function frame() {
 
 	// Streaming is not simulation: it carries on while paused.
 	processLiveNodeWork();
-	{
+	if (liveWindow) {
 		const p = physics.position;
 		const ecef = localEnuToEcef(p, liveWindow.originEcef, liveWindow.originBasis);
 		const geo = ecefToGeodetic(...ecef);
@@ -455,7 +456,7 @@ function frame() {
 			// The loaded disc has an edge. Past the trusted radius the terrain is
 			// not there yet, so a soft push keeps the quad over ground that exists.
 			let push = null;
-			const c = liveWindow.windowCenterLocal;
+			const c = liveWindow?.windowCenterLocal;
 			if (c) {
 				const dp = physics.position;
 				const dx = dp.x - c.x, dz = dp.z - c.z;
@@ -501,7 +502,7 @@ function frame() {
 	skyDome.update(camera, frozen ? 0 : dt);
 
 	// The terrain's edge fade follows the streaming window.
-	if (liveWindow.windowCenterLocal) {
+	if (liveWindow?.windowCenterLocal) {
 		const { x, z } = liveWindow.windowCenterLocal;
 		const radius = liveWindow.loadRadiusM();
 		liveEdgeUniforms.uWindowCenter.value.set(x, z);
@@ -613,17 +614,63 @@ async function boot([lat, lon]) {
 		await new Promise((r) => setTimeout(r, 10));
 	}
 
+	settleOnPad({
+		origin: { x: 0, z: 0 },
+		top: (groundHere ?? 0) + 500,
+		reach: 6000,
+		noPad: 'No terrain arrived for this place. Google Earth has no 3D coverage here, or the tile server is blocked.',
+		// Google requires its imagery credited wherever it is shown.
+		credit: 'Imagery © Google',
+	});
+}
+
+// A scene built from a video (pipeline/): the splat is the picture, its
+// triangles are the ground, and the line is the pilot who flew it.
+async function bootScene(url) {
+	bootStatus('Opening the scene', url);
+	renderer.domElement.hidden = false;
+	const physicsReady = initPhysics();
+	const manifest = await loadSceneManifest(url);
+	const { json } = manifest;
+	bootStatus('Opening the scene', json.name);
+
+	await physicsReady;
+	const start = pathStart(json);
+	physics = new Physics(manifest.collision, { x: start.x, y: start.y, z: start.z }, { profile: PROFILE, shake: feel === 'real' ? 1 : 0 });
+	physics.reset();
+	audio.setProfile(physics.profile);
+
+	const splat = loadSplat(manifest, renderer, scene, (p) => {
+		bootStatus('Opening the scene', `${json.name}, ${(p * 100).toFixed(0)}% of the splat`);
+	});
+	scene.add(ghostLine(json));
+	scene.fog.density = 0;
+	try {
+		await splat.ready;
+	} catch (err) {
+		throw new Error(`The splat did not load: ${err?.message ?? err}`);
+	}
+
+	settleOnPad({
+		origin: { x: start.x, z: start.z },
+		top: start.y + 30,
+		reach: 200,
+		noPad: 'No ground under the pilot\'s first frame. The scale or the up vector in scene.json is off; rerun the pipeline with --speed.',
+		credit: `Scene: ${json.credit}`,
+	});
+}
+
+// The end of every boot: a pad near the origin, the controller, the OSD.
+function settleOnPad({ origin, top, reach, noPad, credit }) {
 	bootStatus('Finding a pad', '');
 	const pad = findSpawn({
 		groundBelow: (x, y, z, d) => physics.groundBelow(x, y, z, d),
 		obstructionBetween: (...a) => physics.obstructionBetween(...a),
-		origin: { x: 0, z: 0 },
-		top: (groundHere ?? 0) + 500,
-		reach: 6000,
+		origin,
+		top,
+		reach,
 	});
-	if (!pad) {
-		throw new Error('No terrain arrived for this place. Google Earth has no 3D coverage here, or the tile server is blocked.');
-	}
+	if (!pad) throw new Error(noPad);
 	spawnPoint = { x: pad.x, y: pad.y + SPAWN_ABOVE_GROUND_M, z: pad.z };
 	spawnQuat = yawQuaternion(pad.yaw);
 	physics.spawn.x = spawnPoint.x; physics.spawn.y = spawnPoint.y; physics.spawn.z = spawnPoint.z;
@@ -645,7 +692,7 @@ async function boot([lat, lon]) {
 	renderer.compile(scene, camera);
 	el.boot.hidden = true;
 	el.osd.hidden = false;
-	// Google requires its imagery credited wherever it is shown.
+	el.credit.textContent = credit;
 	el.credit.hidden = false;
 	window.__sim = { physics, controller, input, liveWindow, respawn, pad };
 	lastTime = performance.now();
@@ -657,6 +704,10 @@ async function boot([lat, lon]) {
 
 async function start() {
 	const params = new URLSearchParams(location.search);
+	if (params.has('scene')) {
+		await bootScene(params.get('scene'));
+		return;
+	}
 	let at = null;
 	if (params.has('at')) {
 		at = params.get('at').split(',').map(Number);

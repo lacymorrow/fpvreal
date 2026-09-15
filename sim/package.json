@@ -17,8 +17,9 @@
 	},
 	"dependencies": {
 		"@dimforge/rapier3d-compat": "^0.14.0",
+		"@sparkjsdev/spark": "^2.2.0",
 		"leaflet": "^1.9.4",
-		"three": "^0.170.0"
+		"three": "^0.186.0"
 	},
 	"devDependencies": {
 		"sharp": "^0.35.4",

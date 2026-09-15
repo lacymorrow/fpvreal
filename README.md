@@ -57,6 +57,36 @@ Gamepad API snapshot rate, the display rate, and the worst case the two add
 together. The number for a Radiomaster on Chrome goes here once it has been
 measured on real hardware.
 
+## Fly a video
+
+A bando on YouTube can become a place you fly. This part runs on your own
+machine, not in the browser: it is hours of compute, and the result is a
+folder of a few hundred megabytes.
+
+```bash
+brew install ffmpeg colmap
+uv tool install yt-dlp
+# Brush: download brush-app-<your platform> from
+# https://github.com/ArthurBrussee/brush/releases and put brush_app on your PATH
+cd pipeline && uv run fpvreal-scene "https://www.youtube.com/watch?v=XRcnQfmXYAA" --from 10 --to 70
+```
+
+One line per stage: frames, COLMAP camera poses, a Gaussian splat trained
+with Brush on your GPU (Metal, Vulkan or DX12, no CUDA needed), the up vector
+from the pilot's camera, the scale from the clock, a collision mesh. The last
+line says where the scene went. Copy the folder into `sim/public/scenes/` and
+open it:
+
+```
+http://localhost:5173/?scene=/scenes/hole-in-one/
+```
+
+The original pilot's line is drawn through the scene. The scale is a guess
+from an assumed cruising speed of 8 m/s, printed and written into
+`scene.json`; if the place feels too big or too small, rerun with `--speed`.
+Pick the cruising section of a freestyle clip with `--from` and `--to`; flips
+and dives register badly. `docs/M2.md` has the design and the limits.
+
 ## Where it comes from
 
 The flight stack and the terrain streaming are from

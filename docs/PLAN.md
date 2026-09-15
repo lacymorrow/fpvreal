@@ -79,9 +79,16 @@ flatness probe rules out slopes over 25 %). Both are in `spawn-selftest.mjs`.
 
 ### M2, video to scene.
 
-Paste a YouTube link or drop a file. A job off the browser: frames, camera poses with VGGT or MASt3R, a Gaussian splat, an extracted collision mesh. The splat renders through Spark in the same Three.js scene, the mesh goes to Rapier, and the recovered camera path becomes a ghost line. Scale from a known object or a blackbox log. The scene provider interface from M1 is what this plugs into. Its own plan once M1 has shipped.
+Built 2026-09-15, its own plan in `docs/M2.md`. A local command
+(`pipeline/`, `fpvreal-scene`) turns a YouTube link or a file into a scene
+folder: frames, COLMAP poses, a Brush splat trained on the Mac's GPU, the up
+vector from the pilot's camera, the scale from the clock, a marching-cubes
+collision mesh. The sim opens the folder with `?scene=`: Spark renders the
+splat in the same scene, Rapier gets the mesh, the pad search runs on it, and
+the pilot's path is a ghost line. Nothing in the browser runs the pipeline;
+that needs compute there is no money for.
 
-Done when one bando video becomes a flyable scene with the original pilot's ghost.
+Done when one bando video becomes a flyable scene with the original pilot's line.
 
 ### M3, the racing loop.
 

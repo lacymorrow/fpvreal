@@ -17,13 +17,22 @@ and terrain streaming are upstream's, the shell is ours.
 - `sim/src/{lens,link,rain,sky,sun,audio,audio-bus,space,chase-camera,fence-field,geofence}.js`:
   goggles optics, video link, sky, sound. Upstream, kept.
 - `sim/tools/*-selftest.mjs`: one per kept module. `npm run selftest` runs them.
-- `docs/PLAN.md`: what was kept, cut, and the milestones. `docs/upstream/`:
-  upstream's own notes on the flight model, sound and rendering.
+- `sim/src/scene-splat.js`: opens a scene folder built by the pipeline
+  (Spark splat, collision trimesh, ghost line). The second scene provider.
+- `pipeline/`: `fpvreal-scene`, the video-to-scene command. Python on uv,
+  stages in `fpvreal_scene/`, `selftest.py` for the maths.
+- `docs/PLAN.md`: what was kept, cut, and the milestones. `docs/M2.md`: the
+  video-to-scene design. `docs/upstream/`: upstream's own notes on the
+  flight model, sound and rendering.
 
 ## Commands
 
 From `sim/`: `npm run dev`, `npm run build`, `npm run selftest`, `npm run
 fuzz`, `npm run tune`. No lint is configured. Plain JavaScript, no transpiler.
+From `pipeline/`: `uv run fpvreal-scene <url or file>`, `uv run python
+selftest.py`. Needs ffmpeg, colmap (brew) and brush_app (a GitHub release)
+on the PATH. Scene folders (`scenes/`, `sim/public/scenes/`) are not
+committed: they are hundreds of megabytes each.
 
 ## Rules that bite
 
@@ -49,8 +58,8 @@ fuzz`, `npm run tune`. No lint is configured. Plain JavaScript, no transpiler.
 
 M0 hollow fork (done 2026-09-15). M1 map screen, flat open-ground spawn, arm
 switch on aux, sticks sampled per physics substep, setup panel, latency bench
-(built 2026-09-15, needs the radio walk). M2 video to scene. M3 racing loop.
-See `docs/PLAN.md`.
+(built 2026-09-15, needs the radio walk). M2 video to scene (built
+2026-09-15, `docs/M2.md`). M3 racing loop. See `docs/PLAN.md`.
 
 New shell modules: `map.js` (Leaflet, Nominatim, FLY), `spawn.js` (pure pad
 search, injected raycasts), `arm-switch.js` (pure switch model, consumed by
