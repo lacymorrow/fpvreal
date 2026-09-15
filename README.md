@@ -37,7 +37,7 @@ http://localhost:5173/?at=48.8584,2.2945
 | `R` | respawn |
 | `V` | FPV or chase view |
 | `M` | flight mode: acro, angle, altitude |
-| `P` | rates: cinematic, freestyle, race, and the family presets. Remembered per radio |
+| `P` | rates: cinematic (the default), freestyle, race, and the family presets. Remembered per radio |
 | `Space` | pause |
 
 A radio starts in acro. The keyboard starts self-levelled, because someone

@@ -58,6 +58,8 @@ const RESPAWN_AFTER_MS = 700;
 const BOOT_DEADLINE_MS = 45000;
 // Family flown. freestyle5 is the 5-inch reference airframe upstream tuned.
 const PROFILE = PROFILES.freestyle5;
+// Rates everyone starts on until they pick their own.
+const DEFAULT_RATES = 'cinematic';
 // The picture the goggles show once the link is gone.
 const DEAD_LINK = { quality: 0, rssiDbm: -100, lossDb: 999, frozen: true };
 const ZERO = { x: 0, y: 0, z: 0 };
@@ -628,7 +630,14 @@ async function boot([lat, lon]) {
 	emitter = { x: pad.x, y: pad.y + ANTENNA_HEIGHT, z: pad.z };
 	// A radio starts in acro. Keys start self-levelled: for someone here to
 	// look at a place, not to race it, angle mode is the fun one. M cycles.
-	controller = new FlightController({ profile: PROFILE, mode: input.getGamepad() ? 'acro' : 'angle' });
+	// Cinematic rates to start: half the stick sensitivity of the freestyle
+	// preset upstream defaults to, which is a racer's setting. P cycles, Tab
+	// picks, and the choice is remembered per radio.
+	controller = new FlightController({
+		profile: PROFILE,
+		mode: input.getGamepad() ? 'acro' : 'angle',
+		preset: DEFAULT_RATES,
+	});
 	placeOnPad();
 	console.log(`[spawn] pad at ${pad.x.toFixed(1)}, ${pad.z.toFixed(1)}, ground ${pad.y.toFixed(1)} m, clearance ${pad.clearance} m`);
 
