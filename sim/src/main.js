@@ -26,7 +26,7 @@ import { push as rocktreeFencePush } from './rocktree-fence.js';
 import { chaseTarget, chaseStep, CHASE } from './chase-camera.js';
 import { localEnuToEcef, ecefToGeodetic } from '../tools/lib/rocktree/geodesy.mjs';
 import { pickPlace, saveLastPlace } from './map.js';
-import { Setup, loadTilt, loadRates, saveRates } from './setup.js';
+import { Setup, loadTilt, loadRates, saveRates, loadFeel } from './setup.js';
 import { findSpawn, yawQuaternion } from './spawn.js';
 
 // ---------------------------------------------------------------------------
@@ -46,6 +46,12 @@ const ANTENNA_HEIGHT = 1.2;
 // FPV camera: field of view and default uptilt, in degrees.
 const CAMERA_FOV = 120;
 const CAMERA_TILT = 25;
+// The smooth feel's camera filter: how long the picture takes to catch up
+// with the frame. Short enough that a flick still reads as a flick, long
+// enough to swallow anything above ~8 Hz, where nausea lives.
+const CAMERA_TAU_S = 0.045;
+// Shutter for each feel, seconds. Short means less smear on a fast pan.
+const SHUTTER_S = { smooth: 0.003, real: 0.008 };
 // After a crash the picture dies, then you are back on the pad.
 const RESPAWN_AFTER_MS = 700;
 // How long to wait for the first wave of terrain before giving up.
@@ -55,6 +61,9 @@ const PROFILE = PROFILES.freestyle5;
 // The picture the goggles show once the link is gone.
 const DEAD_LINK = { quality: 0, rssiDbm: -100, lossDb: 999, frozen: true };
 const ZERO = { x: 0, y: 0, z: 0 };
+// 'smooth' or 'real', see setup.js. Read before the lens is built: the
+// shutter depends on it.
+let feel = loadFeel();
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -134,7 +143,7 @@ const audio = new EngineAudio();
 const lens = new FpvLens(renderer, scene);
 const link = new VideoLink();
 lens.setEnabled(true);
-lens.setParams({ lens: 0.6, vignette: 0.5, shutter: 0.008 });
+lens.setParams({ lens: 0.6, vignette: 0.5, shutter: SHUTTER_S[feel] });
 lens.setLink({ mode: LINK_ANALOG, severity: 1 });
 link.setSeverity(1);
 
@@ -244,6 +253,7 @@ let accumulator = 0;
 let lastTime = performance.now();
 let groundY = null;
 let cameraTilt = loadTilt(CAMERA_TILT);
+let cameraSmoothed = false;
 let spawnPoint = { x: 0, y: 0, z: 0 };
 let spawnQuat = { x: 0, y: 0, z: 0, w: 1 };
 let emitter = { x: 0, y: 0, z: 0 };
@@ -256,13 +266,23 @@ const linkState = { distance: 0, blocked: false, span: 0 };
 const fenceForce = { x: 0, y: 0, z: 0 };
 const _fwd = new THREE.Vector3();
 const _camQ = new THREE.Quaternion();
+const _camSmooth = new THREE.Quaternion();
 const _tilt = new THREE.Quaternion();
 const X_AXIS = new THREE.Vector3(1, 0, 0);
 
+function applyFeel(name) {
+	feel = name;
+	physics?.setShake(feel === 'real' ? 1 : 0);
+	lens.setParams({ lens: 0.6, vignette: 0.5, shutter: SHUTTER_S[feel] });
+	cameraSmoothed = false;
+}
+
 const setup = new Setup(ui, input, {
 	tilt: cameraTilt,
+	feel,
 	onTilt: (deg) => { cameraTilt = deg; },
 	onRates: (name) => setRates(name),
+	onFeel: (name) => applyFeel(name),
 	getController: () => controller,
 });
 
@@ -295,7 +315,15 @@ function placeCamera(dt) {
 	} else {
 		camera.position.set(p.x, p.y, p.z);
 		_tilt.setFromAxisAngle(X_AXIS, cameraTilt * Math.PI / 180);
-		camera.quaternion.copy(_camQ).multiply(_tilt);
+		if (feel === 'smooth') {
+			// A first-order filter on the orientation alone: the position stays
+			// bolted to the body so the picture never floats off the machine.
+			if (!cameraSmoothed || dt <= 0) { _camSmooth.copy(_camQ); cameraSmoothed = true; }
+			else _camSmooth.slerp(_camQ, 1 - Math.exp(-dt / CAMERA_TAU_S));
+			camera.quaternion.copy(_camSmooth).multiply(_tilt);
+		} else {
+			camera.quaternion.copy(_camQ).multiply(_tilt);
+		}
 	}
 }
 
@@ -315,6 +343,7 @@ function placeOnPad() {
 function respawn() {
 	if (!physics) return;
 	placeOnPad();
+	cameraSmoothed = false;
 	link.reset();
 	controller.setMode(controller.mode);
 	input.resetKeyboardThrottle();
@@ -559,7 +588,7 @@ async function boot([lat, lon]) {
 	await physicsReady;
 	const emptyCollision = { vertices: new Float32Array(0), indices: new Uint32Array(0) };
 	// Provisional: the real spawn is set on real ground below.
-	physics = new Physics(emptyCollision, { x: 0, y: 80, z: 0 }, { profile: PROFILE });
+	physics = new Physics(emptyCollision, { x: 0, y: 80, z: 0 }, { profile: PROFILE, shake: feel === 'real' ? 1 : 0 });
 	physics.reset();
 	audio.setProfile(physics.profile);
 	await firstWave;
@@ -597,7 +626,9 @@ async function boot([lat, lon]) {
 	spawnQuat = yawQuaternion(pad.yaw);
 	physics.spawn.x = spawnPoint.x; physics.spawn.y = spawnPoint.y; physics.spawn.z = spawnPoint.z;
 	emitter = { x: pad.x, y: pad.y + ANTENNA_HEIGHT, z: pad.z };
-	controller = new FlightController({ profile: PROFILE });
+	// A radio starts in acro. Keys start self-levelled: for someone here to
+	// look at a place, not to race it, angle mode is the fun one. M cycles.
+	controller = new FlightController({ profile: PROFILE, mode: input.getGamepad() ? 'acro' : 'angle' });
 	placeOnPad();
 	console.log(`[spawn] pad at ${pad.x.toFixed(1)}, ${pad.z.toFixed(1)}, ground ${pad.y.toFixed(1)} m, clearance ${pad.clearance} m`);
 

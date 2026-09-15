@@ -319,8 +319,14 @@ export class Propulsion {
 	// nondeterminism in the flight model, and without a seed two runs of
 	// tools/selftest.mjs differ from each other, which makes a regression
 	// indistinguishable from noise.
-	constructor({ profile = QUAD, seed = 0x5eed } = {}) {
+	// `shake` scales the two disturbance torques below (propwash and buffet)
+	// without touching the thrust they ride on: 1 is the measured airframe, 0
+	// is the same machine with a perfectly even disc. The shell's "smooth"
+	// feel sets 0; the physics that decides thrust, drag and battery is
+	// unchanged either way.
+	constructor({ profile = QUAD, seed = 0x5eed, shake = 1 } = {}) {
 		this.profile = profile;
+		this.shake = shake;
 		this._motors = motorsOf(profile);
 		this._mix = mixOf(profile);
 		this._kThrust = kThrustOf(profile);
@@ -679,7 +685,7 @@ export class Propulsion {
 			// les 0,05 N·m historiques sur freestyle5 au vol stationnaire — le
 			// ressenti de référence est conservé au centième, seule l'échelle
 			// entre familles change.
-			const s = this.propwash * PROPWASH_TORQUE_FRAC * (thrustTotal / 4) * P.armZ;
+			const s = this.shake * this.propwash * PROPWASH_TORQUE_FRAC * (thrustTotal / 4) * P.armZ;
 			tx += this._wash[0].next(dt) * s;
 			ty += this._wash[1].next(dt) * s * 0.5;
 			tz += this._wash[2].next(dt) * s;
@@ -693,7 +699,7 @@ export class Propulsion {
 			// and that acts on the arm — so the torque is that product, and it
 			// grows with rpm exactly like the thrust it perturbs does.
 			const wMean = (this.omega[0] + this.omega[1] + this.omega[2] + this.omega[3]) / 4;
-			const s = this._kBuffet * wMean * shake * P.armZ;
+			const s = this.shake * this._kBuffet * wMean * shake * P.armZ;
 			tx += this._buffet[0].next(dt) * s;
 			ty += this._buffet[1].next(dt) * s * 0.4;
 			tz += this._buffet[2].next(dt) * s;

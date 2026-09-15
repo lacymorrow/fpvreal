@@ -29,7 +29,8 @@ http://localhost:5173/?at=48.8584,2.2945
 | | |
 |---|---|
 | radio or gamepad | detected automatically in Mode 2. EdgeTX and OpenTX radios are recognised by USB id |
-| `Tab` | setup: calibrate the radio, teach it your arm switch, pick rates, set the camera tilt |
+| `Tab` | setup: calibrate the radio, teach it your arm switch, pick the feel and rates, set the camera tilt |
+| feel | `smooth` (default) turns off the propwash shake and steadies the camera. `real` is the measured airframe with the camera bolted to the frame |
 | arm switch | once taught, it arms and disarms like a flight controller: throttle down to arm, off then on after a crash |
 | throttle, yaw | `W` `S`, `A` `D` |
 | roll, pitch | arrow keys |
@@ -39,9 +40,10 @@ http://localhost:5173/?at=48.8584,2.2945
 | `P` | rates: cinematic, freestyle, race, and the family presets. Remembered per radio |
 | `Space` | pause |
 
-Acro is the default, on the keyboard too. Held keys ramp instead of snapping
-to full deflection, which is what makes acro survivable without a stick. A
-crash cuts the video for a moment and puts you back on the pad.
+A radio starts in acro. The keyboard starts self-levelled, because someone
+with no stick is here to look at a place, not to race it; `M` cycles to acro.
+Held keys ramp instead of snapping to full deflection. A crash cuts the video
+for a moment and puts you back on the pad.
 
 Sound needs one key press or click first. That is a browser rule.
 

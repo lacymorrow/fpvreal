@@ -138,7 +138,8 @@ export class Physics {
 		this.events = new RAPIER.EventQueue(true);
 
 		this._seed = options.seed;
-		this.propulsion = new Propulsion({ profile: this.profile, seed: options.seed });
+		this._shake = options.shake ?? 1;
+		this.propulsion = new Propulsion({ profile: this.profile, seed: options.seed, shake: this._shake });
 		this.wind = new WindField(options.windSeed);
 		if (options.weather) this.wind.setParams(options.weather);
 		// Reused, so the per-step call into quad.js does not allocate.
@@ -185,7 +186,7 @@ export class Physics {
 	// checks across every family. The collider stays a 0.15 m sphere.
 	setProfile(profile) {
 		this.profile = profile;
-		this.propulsion = new Propulsion({ profile, seed: this._seed });
+		this.propulsion = new Propulsion({ profile, seed: this._seed, shake: this._shake });
 		this.body.setAdditionalMassProperties(
 			profile.mass, ZERO,
 			{ x: profile.inertia.x, y: profile.inertia.y, z: profile.inertia.z },
@@ -313,6 +314,13 @@ export class Physics {
 	get velocity() { return this.body.linvel(); }
 	get angularVelocity() { return this.body.angvel(); }
 	get battery() { return this.propulsion.battery; }
+
+	// How much the disturbance torques (propwash, buffet) shake the airframe,
+	// 0..1. Thrust, drag and battery do not change with it.
+	setShake(v) {
+		this._shake = v;
+		this.propulsion.shake = v;
+	}
 
 	// speed m/s at 10 m, direction in degrees the wind comes from, gust and
 	// turbulence 0..1. See wind.js for what each one does.

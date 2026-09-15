@@ -10,6 +10,17 @@ import { beginArmDetect, feedArmDetect } from './arm-switch.js';
 
 const TILT_KEY = 'fpvreal.cameraTilt';
 const RATES_KEY = 'fpvreal.rates';
+const FEEL_KEY = 'fpvreal.feel';
+
+// 'smooth' is the default: no propwash shake, a filtered camera, a short
+// shutter. 'real' is the measured airframe, camera bolted to the frame.
+export const FEELS = ['smooth', 'real'];
+export function loadFeel() {
+	try { const v = localStorage.getItem(FEEL_KEY); return FEELS.includes(v) ? v : 'smooth'; } catch { return 'smooth'; }
+}
+export function saveFeel(v) {
+	try { localStorage.setItem(FEEL_KEY, v); } catch { /* private mode */ }
+}
 
 export function loadTilt(fallback) {
 	const v = Number(localStorage.getItem(TILT_KEY));
@@ -35,11 +46,13 @@ export function saveRates(deviceId, name) {
 }
 
 export class Setup {
-	// onTilt(deg), onRates(name), getController() -> the live controller or null.
-	constructor(root, input, { onTilt, onRates, getController, tilt }) {
+	// onTilt(deg), onRates(name), onFeel(name), getController() -> the live controller or null.
+	constructor(root, input, { onTilt, onRates, onFeel, getController, tilt, feel }) {
 		this.input = input;
 		this.onTilt = onTilt;
 		this.onRates = onRates;
+		this.onFeel = onFeel;
+		this.feel = feel;
 		this.getController = getController;
 		this.open = false;
 		this._cal = null;
@@ -72,6 +85,12 @@ export class Setup {
 					</section>
 
 					<section>
+						<h2>Feel</h2>
+						<div id="setup-feel" class="setup-row"></div>
+						<p class="setup-note">Smooth: no propwash shake, a steadied camera. Real: the measured airframe, camera bolted to the frame.</p>
+					</section>
+
+					<section>
 						<h2>Rates</h2>
 						<div id="setup-rates" class="setup-row"></div>
 					</section>
@@ -96,9 +115,18 @@ export class Setup {
 			cal: q('#setup-cal'), arm: q('#setup-arm'), note: q('#setup-radio-note'),
 			wizard: q('#setup-wizard'), step: q('#wiz-step'), prompt: q('#wiz-prompt'), hint: q('#wiz-hint'),
 			bar: q('#wiz-bar'), message: q('#wiz-message'), cancel: q('#wiz-cancel'),
-			summary: q('#setup-summary'), rates: q('#setup-rates'),
+			summary: q('#setup-summary'), rates: q('#setup-rates'), feel: q('#setup-feel'),
 			tilt: q('#setup-tilt'), tiltVal: q('#setup-tilt-val'),
 		};
+
+		for (const name of FEELS) {
+			const b = document.createElement('button');
+			b.type = 'button';
+			b.dataset.feel = name;
+			b.textContent = name;
+			b.addEventListener('click', () => { this.feel = name; saveFeel(name); this.onFeel(name); });
+			this.el.feel.appendChild(b);
+		}
 
 		for (const [name, preset] of Object.entries(RATE_PRESETS)) {
 			const b = document.createElement('button');
@@ -147,6 +175,7 @@ export class Setup {
 
 	render(pad) {
 		const controller = this.getController();
+		for (const b of this.el.feel.children) b.classList.toggle('on', b.dataset.feel === this.feel);
 		for (const b of this.el.rates.children) {
 			b.classList.toggle('on', !!controller && b.dataset.preset === controller.preset);
 		}
